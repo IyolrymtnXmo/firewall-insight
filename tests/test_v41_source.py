@@ -1,6 +1,7 @@
+from conftest import app_source
 from pathlib import Path
 
-MAIN = Path("app/main.py").read_text(encoding="utf-8")
+MAIN = app_source()
 CP = Path("app/checkpoint.py").read_text(encoding="utf-8")
 
 def test_recursive_rulebase_api_present():

@@ -1,6 +1,6 @@
-from pathlib import Path
+from conftest import app_source
 
-MAIN = Path("app/main.py").read_text(encoding="utf-8")
+MAIN = app_source()
 
 def test_raw_access_policy_groups_inline_under_parent():
     assert "function accessHierarchyRows(rows)" in MAIN

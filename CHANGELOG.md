@@ -4,6 +4,169 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.13.0 — project structure, and UI fixes from the lab
+
+### Changed — main.py was 2,473 lines, 83% of it an embedded frontend
+
+`app/main.py` held the routes, the policy orchestration, the cache, the
+progress registry **and** 100KB of HTML + CSS + JavaScript as a single Python
+string. That meant no syntax highlighting or linting for the frontend, no
+browser caching of assets, and one file that every change had to touch.
+
+```
+app/
+  main.py            42 lines  — app factory and router include, nothing else
+  version.py                   — single source of truth for APP_VERSION
+  runtime.py                   — Management client, cache, HTTP error mapping
+  progress.py                  — live phase registry for long requests
+  policy.py                    — fetch -> hydrate -> analyse orchestration
+  api/  meta access nat traffic topology export ui
+  templates/index.html
+  static/css/app.css
+  static/js/app.js
+  (analysis modules unchanged: checkpoint, resolver, analyzer,
+   nat_analyzer, inline_layers, policy_browser, traffic)
+```
+
+**Deliberately not done:** the analysis modules were not moved into a
+`services/` package. They are already single-responsibility and 90–650 lines
+each; renaming them would have churned twelve test files for no structural
+gain. `traffic.py` (651 lines) does deserve a split — matching, tracing, NAT
+correlation and the topology graph are four concerns — but that is a behaviour
+change worth landing separately and re-validating against the lab.
+
+`tests/conftest.py` now exposes `app_source()`, which concatenates every file
+the application is built from. Twenty test files asserted "this string exists
+in app/main.py"; they now assert "this exists in the application", which is
+what they always meant.
+
+New `tests/test_v413_structure.py` keeps the structure from collapsing back:
+main.py under 60 lines, no module over 700, no markup inside a `.py`, routers
+that do not import each other, one home for the version — and, still
+structural, **every route is a GET and no mutating Management command appears
+anywhere in the source**.
+
+### Fixed — five things the lab screenshots exposed
+
+**Monospace applied to words.** `.metric` was styled with JetBrains Mono for
+tabular figures, but metric *values* include `Access Control` and `Standard`,
+which rendered as if broken. `metricCards()` and `setDashboardMetric()` now add
+`.num` only for numeric values, and only `.metric.num` is monospaced.
+
+**A bright bar under every wide table.** `::-webkit-scrollbar-thumb` was styled
+but the *track* was not, so it fell back to light grey against a dark table.
+Track and corner are now transparent and the thumb is inset.
+
+**A bare strip below the sidebar.** The sidebar is `position:sticky` with
+`height:100vh`, so on a page taller than the viewport its grid cell continued
+below it and showed the page background. The column is now painted by a fixed
+layer on `.app` that animates with the rail.
+
+**A legacy media query fighting the new one.** The old `max-width:1100px` block
+turned the sidebar into a horizontal strip, which collided with the collapsible
+rail between 900px and 1100px. Reduced to the card reflow it was actually for.
+
+**Four unlabelled inputs.** Traffic Path showed four bare boxes; you had to
+click into each one to learn which was source, destination or service. They now
+have visible labels, and the panel states up front that no packet is sent.
+
+### Tests
+
+191 → 204. New: `tests/test_v413_structure.py`. Two assertions were rewritten
+to test intent rather than an exact string, for the same reason as in v4.12:
+`test_v44_source` pinned four placeholder strings that moved into labels.
+
+Verified after the move: all 17 routes answer 200 against a fake Management
+client, the page loads from a real uvicorn with both assets served, no console
+errors, and the font stack still renders correctly **with fonts.googleapis.com
+blocked** — the air-gapped case.
+
+---
+
+## v4.12.0 — real progress, collapsible rail, typography
+
+### Fixed — the step indicator was decoration that lied
+
+v4.11 showed Traffic Path a four-step list, but the browser makes **one**
+request and cannot see server-side phases, so the list advanced on a
+client-side guess. Observed behaviour: it sat on step 1 for 27 s and then
+jumped straight to done.
+
+The steps were not merely mistimed — they were the same class of dishonesty
+this project keeps fixing elsewhere: a display that asserts more than the code
+actually knows.
+
+Now the backend records its phase against a client-supplied request id
+(`?rid=`), and the UI polls `GET /api/progress?rid=`:
+
+```
+phase 0  Loading package / inline layer tree
+phase 1  Resolving objects and service
+phase 2  Walking the ordered rulebase
+phase 3  Correlating NAT
+```
+
+Measuring it exposed the real cause of the "stuck" feeling: **phase 0 takes
+tens of seconds while phases 1–3 finish in microseconds.** Since v4.9, first
+load issues one `show-object` per thin object at 0.55 s pacing, and that is
+virtually the whole runtime. Balanced-looking steps would have been a second
+lie, so `hydrate_objects()` now takes an `on_progress` callback and the overlay
+shows a moving counter:
+
+```
+Network: resolving object 34/49
+```
+
+A cached result reports `done` with label `Served from cache` immediately, so
+the overlay can never hang on step 1 for a request that already finished.
+Progress is best-effort throughout: a failure in the progress channel never
+fails the real request, and a request without `rid` is unaffected.
+
+### Changed — toasts moved to the top right
+
+### Added — collapsible sidebar
+
+`Ctrl/Cmd+B` or the Collapse button shrinks the sidebar to a 74px icon rail
+with hover tooltips; the state persists in `localStorage`. The active marker
+moved from `::before` to an inset shadow because a button has only two
+pseudo-elements and the rail needs `::before` for the icon and `::after` for
+the tooltip. Icons come from an explicit `data-icon` attribute — `::first-letter`
+does not apply to buttons, so the first attempt rendered a blank rail. The
+sidebar also gets `z-index` in rail mode, or the tooltip draws behind the
+panels.
+
+### Added — typography
+
+`Nunito` for Latin (rounded, blunt terminals), `Anuphan` for Thai
+(loopless — ไม่มีหัว — geometric, pairs with Nunito), `JetBrains Mono` with
+tabular figures for rule numbers, IPs, ports, scores and elapsed time, so
+columns of data line up. The stack falls back to `system-ui` and
+`Noto Sans Thai`; **air-gapped installs should self-host the three families and
+replace the `<link>` with local `@font-face`**, since a Management network
+usually cannot reach fonts.googleapis.com. Noted inline in the CSS.
+
+### Added — motion polish
+
+Metric scale on card hover, alert badges pulse on drill hover, pill lift on row
+hover, input focus rings, animated sidebar width. All still disabled under
+`prefers-reduced-motion`.
+
+### Changed — one test now asserts intent instead of a literal
+
+`test_phase310` pinned the exact string
+`data-page="browser" onclick="…">▤ Access Policy</button>`. Adding `data-label`
+for the rail tooltip broke it, while the property it exists to protect —
+Access Policy ordered before Analyze — still held. It now compares attribute
+positions and checks the labels separately.
+
+### Tests
+
+165 → 190. New: `tests/test_v412_progress.py`, including a spy that asserts the
+per-object counter strictly increases and that traffic phases are emitted in
+order.
+
+---
+
 ## v4.11.0 — feedback, status and responsive shell
 
 Reported symptom: after clicking an action the app looked frozen, and telling

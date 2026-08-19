@@ -1,6 +1,6 @@
-from pathlib import Path
+from conftest import app_source
 
-SRC = Path("app/main.py").read_text(encoding="utf-8")
+SRC = app_source()
 
 def test_header_has_no_phase_subtitle():
     assert '<h1>Check Point Firewall Analysis Platform</h1></div>' in SRC

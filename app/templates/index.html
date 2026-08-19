@@ -1,0 +1,249 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Firewall Analysis Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Anuphan:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+<div id="topProgress" aria-hidden="true"><div class="bar"></div></div>
+<div id="offlineBar">You are offline — requests will fail until the connection returns</div>
+<div id="toasts" aria-live="polite" aria-relevant="additions"></div>
+<div id="srLive" class="sr-only" role="status" aria-live="polite"></div>
+<button id="navToggle" onclick="toggleNav()" aria-label="Toggle navigation">&#9776; Menu</button>
+<div id="busyOverlay" role="dialog" aria-modal="true" aria-live="assertive">
+  <div class="busy-card">
+    <div class="spinner"></div>
+    <div class="busy-title" id="busyTitle">Working…</div>
+    <div class="busy-sub" id="busySub"></div>
+    <div class="busy-steps" id="busySteps"></div>
+    <div class="busy-detail" id="busyDetail"></div>
+    <div class="busy-hint" id="busyHint"></div>
+  </div>
+</div>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">Firewall <span>Insight</span></div>
+    <div class="menu">
+      <button class="active" data-page="dashboard" data-icon="◈" data-label="Dashboard" onclick="showPage('dashboard',this)">◈ Dashboard</button>
+      <button data-page="browser" data-icon="▤" data-label="Access Policy" onclick="showPage('browser',this)">▤ Access Policy</button>
+      <button data-page="access" data-icon="◇" data-label="Analyze" onclick="showPage('access',this)">◇ Analyze</button>
+      <button data-page="nat" data-icon="⇄" data-label="NAT Policy" onclick="showPage('nat',this)">⇄ NAT Policy</button>
+      <button data-page="traffic" data-icon="➜" data-label="Traffic Path" onclick="showPage('traffic',this)">➜ Traffic Path</button>
+      <button data-page="mapping" data-icon="⌘" data-label="Network Mapping" onclick="showPage('mapping',this)">⌘ Network Mapping</button>
+
+    </div>
+    <div class="sidebar-bottom">
+      <div class="theme-row"><span>Light Mode</span><span class="switch" onclick="toggleTheme()"><i></i></span></div>
+      <div class="hint" style="padding:8px">Read-only · Management API</div>
+      <button id="railToggle" onclick="toggleRail()" title="Collapse sidebar (Ctrl+B)">&#8676; <span>Collapse</span></button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="header">
+      <div><h1>Check Point Firewall Analysis Platform</h1></div>
+      <div id="conn" class="badge conn"><span class="dot"></span><span>Not tested</span></div>
+    </div>
+
+    <div class="panel">
+      <div class="controls">
+        <button onclick="testConn(event)">Test Connection</button>
+        <button onclick="loadMetadata(true,event)">Refresh Metadata</button>
+        <span id="layerControl"><select id="layer"><option value="">Select Access Layer...</option></select></span>
+        <span id="packageControl"><select id="pkg"><option value="">Select Policy Package...</option></select></span>
+      </div>
+      <div class="statusbar" id="statusBar"><span class="status-icon" id="statusIcon">•</span><div id="status" class="status">Ready. No API calls are made automatically.</div><span class="status-time" id="statusTime"></span></div>
+    </div>
+
+    <section id="dashboard" class="page active">
+      <div class="panel">
+        <div class="section-title">
+          <div>
+            <h2>Security Policy Overview</h2>
+            <p class="muted" style="margin:6px 0 0">Summary of the latest Access and NAT analysis in this browser session.</p>
+          </div>
+          <button class="primary" onclick="dashboardRefresh()">Analyze Selected Policies</button>
+        </div>
+
+        <div id="dashboardCards" class="cards">
+          <div class="card drill-card" onclick="drillTo('browser')" title="Open Policy Browser"><div class="metric-label">Access Rules</div><div id="dAccess" class="metric">—</div><div id="dAccessDetail" class="hint">Selected Access Layer</div></div>
+          <div class="card drill-card" onclick="drillTo('access','shadow')" title="Open Shadow / Redundant"><div class="metric-label">Shadow / Redundant</div><div id="dShadow" class="metric">—</div><div class="hint">Review candidates</div></div>
+          <div class="card drill-card" onclick="drillTo('access','duplicates')" title="Open Duplicate Access"><div class="metric-label">Duplicate Access</div><div id="dDup" class="metric">—</div><div class="hint">Exact duplicate groups</div></div>
+          <div class="card drill-card" onclick="drillTo('nat','rulebase')" title="Open NAT Rulebase"><div class="metric-label">NAT Rules</div><div id="dNat" class="metric">—</div><div class="hint">Selected Policy Package</div></div>
+          <div class="card drill-card" onclick="drillTo('nat','duplicates')" title="Open Duplicate NAT"><div class="metric-label">Duplicate NAT</div><div id="dNatDup" class="metric">—</div><div class="hint">Exact duplicate groups</div></div>
+        </div>
+
+        <div id="inlineAnalysisSummary" class="inline-findings-card" style="display:none">
+          <div class="section-title" style="margin:0">
+            <h3 style="margin:0">Inline Layer Analysis</h3>
+            <span class="hint">Included in the overall Access analysis</span>
+          </div>
+          <div class="inline-findings-grid">
+            <div class="inline-mini"><div class="hint">Inline Layers</div><div id="diLayers" class="v">0</div></div>
+            <div class="inline-mini"><div class="hint">Inline Rules Inspected</div><div id="diRules" class="v">0</div></div>
+            <div class="inline-mini drill-card" onclick="drillTo('access','shadow')" title="Open inline Shadow / Redundant findings"><div class="hint">Shadow / Redundant</div><div id="diShadow" class="v">0</div></div>
+            <div class="inline-mini drill-card" onclick="drillTo('access','duplicates')" title="Open inline Duplicate findings"><div class="hint">Duplicate Groups</div><div id="diDup" class="v">0</div></div>
+            <div class="inline-mini drill-card" onclick="drillTo('access','any')" title="Open inline Any / Any / Any findings"><div class="hint">Any / Any / Any</div><div id="diAny" class="v">0</div></div>
+          </div>
+        </div>
+
+        <div class="dashboard-grid" style="display:grid;grid-template-columns:1.35fr .9fr;gap:14px;margin-top:18px">
+          <div class="card">
+            <div class="section-title"><h3>Optimization Findings</h3><span class="hint">Latest Access analysis</span></div>
+            <div id="dashFindings" class="table-wrap" style="margin-top:12px">
+              <table style="min-width:650px">
+                <thead><tr><th>Finding</th><th>Count</th><th>Meaning</th></tr></thead>
+                <tbody>
+                  <tr><td>Shadow / Redundant</td><td>—</td><td>Run Access analysis to populate.</td></tr>
+                  <tr><td>Duplicate Access</td><td>—</td><td>Run Access analysis to populate.</td></tr>
+                  <tr><td>Any / Any / Any</td><td>—</td><td>Run Access analysis to populate.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3 style="margin-top:0">Quick Actions</h3>
+            <div style="display:grid;gap:9px;margin-top:14px">
+              <button class="primary" onclick="goTo('browser')">Open Access Policy</button>
+              <button onclick="goTo('access')">Open Analyze</button>
+              <button onclick="goTo('nat')">Analyze NAT Policy</button>
+              <button onclick="goTo('traffic')">Trace Source → Destination</button>
+              <button onclick="goTo('mapping')">Open Network Topology</button>
+            </div>
+            <div class="hint" style="margin-top:16px">The tool remains read-only and does not publish or install policy.</div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:14px">
+          <div class="section-title"><h3>Selected Context</h3><span class="hint">Change from Access/NAT pages</span></div>
+          <div class="table-wrap" style="margin-top:12px">
+            <table style="min-width:650px">
+              <tr><th>Access Layer</th><th>Policy Package</th><th>Management API</th><th>Mode</th></tr>
+              <tr><td id="dashLayer">Not selected</td><td id="dashPackage">Not selected</td><td id="dashApi">Not tested</td><td><span class="pill good">Read-only</span></td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="browser" class="page">
+      <div class="panel">
+        <div class="section-title">
+          <div>
+            <h2>Access Policy</h2>
+            <p class="muted" style="margin:6px 0 0">
+              Configured Access Control policy as-is.
+            </p>
+          </div>
+          <span id="browserCount" class="pill purple">Not loaded</span>
+        </div>
+
+        <div class="controls" style="margin-top:16px">
+          <button id="browserBtn" class="primary" onclick="loadPolicyBrowser()">Load Policy</button>
+          <button onclick="exportRawPolicy()">Export Raw CSV</button>
+          <input id="policySearch" placeholder="Search rule, object, service, action..." oninput="filterPolicyBrowser()" style="min-width:310px">
+          <select id="actionFilter" onchange="filterPolicyBrowser()" style="min-width:150px">
+            <option value="">All Actions</option>
+            <option value="accept">Accept</option>
+            <option value="drop">Drop</option>
+            <option value="reject">Reject</option>
+          </select>
+        </div>
+
+        <div id="browserSummary" class="cards access-summary-grid hidden"></div>
+        <div id="browserDq"></div>
+        <div id="browserResults" style="margin-top:18px"></div>
+      </div>
+    </section>
+
+    <section id="access" class="page">
+      <div class="panel">
+        <div class="section-title">
+          <div>
+            <h2>Analyze</h2>
+            <p class="muted" style="margin:6px 0 16px">
+              Optimizer analysis for the selected Access Layer.
+            </p>
+          </div>
+          <button id="accessBtn" class="primary" onclick="runAccess()">Analyze Access Policy</button>
+        </div>
+
+        <div id="accessCards" class="cards hidden"></div>
+        <div id="accessDq"></div>
+        <div id="accessFindings"></div>
+      </div>
+    </section>
+
+    <section id="nat" class="page">
+      <div class="panel">
+        <div class="controls"><button id="natBtn" class="primary" onclick="runNat()">Analyze NAT Policy</button></div>
+        <div id="natCards" class="cards hidden"></div>
+        <div class="tabs" id="natTabs" style="display:none">
+          <button class="active" onclick="showNatTab('rulebase',this)">NAT Rulebase</button>
+          <button onclick="showNatTab('duplicates',this)">Duplicate NAT</button>
+          <button onclick="showNatTab('broad',this)">Broad NAT Rules</button>
+        <button onclick="showNatTab('disabled',this)">Disabled NAT <span id="nat-disabled-tab-count"></span></button>
+          <button onclick="showNatTab('notrans',this)">Possible No-Translation <span id="nat-notrans-tab-count"></span></button>
+        </div>
+        <div id="natResults"></div>
+      
+        <div id="nat-disabled-view" style="display:none">
+          <h3>Disabled NAT Rules</h3>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Rule</th><th>Name</th><th>Original Source</th><th>Original Destination</th><th>Original Service</th><th>Method</th></tr></thead>
+            <tbody id="nat-disabled-body"></tbody>
+          </table></div>
+        </div>
+        <div id="nat-notrans-view" style="display:none">
+          <h3>Possible No-Translation</h3>
+          <p class="muted">Rules where all translated fields remain Original / unchanged. Review before deciding whether the rule is unnecessary.</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Rule</th><th>Name</th><th>Original Source</th><th>Original Destination</th><th>Original Service</th><th>Translated Source</th><th>Translated Destination</th><th>Translated Service</th></tr></thead>
+            <tbody id="nat-notrans-body"></tbody>
+          </table></div>
+        </div>
+</div>
+    </section>
+
+    <section id="traffic" class="page">
+      <div class="panel">
+        <h2>Traffic Path Analyzer</h2>
+        <p class="muted" style="margin:6px 0 0">Configuration-based simulation. No packet is sent, so the hosts do not need to exist.</p>
+        <div class="controls field-row">
+          <label class="field"><span>Source</span>
+            <input id="src" placeholder="IP or FQDN"></label>
+          <label class="field"><span>Destination</span>
+            <input id="dst" placeholder="IP or FQDN"></label>
+          <label class="field" style="flex:0 0 120px"><span>Protocol</span>
+            <select id="proto"><option>tcp</option><option>udp</option></select></label>
+          <label class="field"><span>Port / Service</span>
+            <input id="port" type="text" placeholder="443, https, or a service object"></label>
+          <button class="primary" onclick="trace()">Analyze Path</button>
+        </div>
+        <div id="traceResult"></div>
+      </div>
+    </section>
+
+    <section id="mapping" class="page">
+      <div class="panel">
+        <div class="section-title"><h2>Network Mapping</h2><div><button class="primary" onclick="loadMap(event)">Load Topology</button> <button onclick="mapMode('topology')">Topology</button> <button onclick="mapMode('inventory')">Inventory</button></div></div>
+        <p class="muted">Logical topology: Gateway → Interface → Connected Subnet. Physical cabling and live routing are not inferred.</p>
+        <div id="topology" class="topology"><div class="muted" style="padding:25px">Click Load Topology.</div></div>
+        <div id="inventory" class="map hidden"></div>
+        <p id="mapNote" class="hint"></p>
+      </div>
+    </section>
+
+
+  </main>
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>

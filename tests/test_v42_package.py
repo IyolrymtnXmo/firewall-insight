@@ -1,7 +1,7 @@
-from pathlib import Path
+from conftest import app_source
 from app.inline_layers import aggregate_analyses
 
-MAIN = Path("app/main.py").read_text(encoding="utf-8")
+MAIN = app_source()
 
 def test_access_ui_is_package_first():
     assert "/api/package-analyze?package=" in MAIN

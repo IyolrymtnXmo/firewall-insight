@@ -18,6 +18,8 @@ reported them all as statically unevaluable, which:
     type"), hiding real findings.
 """
 
+from conftest import app_source
+
 import asyncio
 
 from app.checkpoint import CheckPointClient
@@ -196,5 +198,5 @@ class TestNestedGroups:
 
 def test_hydration_loop_rechecks_completeness_of_known_members():
     from pathlib import Path
-    src = Path("app/main.py").read_text(encoding="utf-8")
+    src = app_source()
     assert "uid not in existing or needs_detail(existing[uid])" in src

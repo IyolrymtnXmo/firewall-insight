@@ -63,7 +63,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass   # Windows PowerShel
 pip install -r requirements.txt
 
 copy .env.example .env      # then edit .env with your Management details
-pytest -q                   # expect: 165 passed
+pytest -q                   # expect: 204 passed
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -89,8 +89,8 @@ docker compose up --build      # reads .env via env_file
 
 | Check | Expected |
 |---|---|
-| `pytest -q` | `165 passed` |
-| `GET /health` | `{"status":"ok","version":"4.11.0","mode":"read-only",...}` |
+| `pytest -q` | `204 passed` |
+| `GET /health` | `{"status":"ok","version":"4.13.0","mode":"read-only",...}` |
 | `GET /api/checkpoint/test` | `{"connected":true,"api_server_version":"...","read_only":true}` |
 | `GET /api/bootstrap` | lists your access layers and policy packages |
 
@@ -159,22 +159,37 @@ under `prefers-reduced-motion`.
 ## Architecture
 
 ```
-Browser (single-page UI served from app/main.py)
-    │  GET /api/*
-    ▼
-FastAPI (app/main.py)  ── in-memory cache, heavy-request lock
-    │
-    ├─► app/checkpoint.py   Management API client: session, pacing,
-    │                       retry/backoff, pagination, Inline Layer tree
-    ├─► app/inline_layers.py  layer-tree traversal, display numbering,
-    │                         per-layer → package aggregation
-    ├─► app/resolver.py     UID → name / IP interval / port interval
-    ├─► app/analyzer.py     Access findings
-    ├─► app/nat_analyzer.py NAT findings
-    ├─► app/policy_browser.py  raw rulebase → table rows
-    └─► app/traffic.py      tri-state matcher, path trace, NAT correlation,
-                            topology graph
+app/
+  main.py               app factory + router include (42 lines)
+  version.py            APP_VERSION, single source of truth
+  config.py             .env settings
+  runtime.py            Management client, response cache, HTTP error mapping
+  progress.py           live phase registry polled by the UI
+  policy.py             fetch → hydrate → analyse orchestration, data_quality
+  api/
+    meta.py             /health, connection test, bootstrap, progress
+    access.py           package analysis and raw rulebase
+    nat.py              NAT analysis
+    traffic.py          traffic-path simulation
+    topology.py         network map
+    export.py           CSV
+    ui.py               serves the single-page UI
+  checkpoint.py         Management API client: session, pacing, retry/backoff,
+                        pagination, Inline Layer tree discovery
+  inline_layers.py      layer-tree traversal, display numbering, aggregation
+  resolver.py           UID → name / IP interval / port interval
+  analyzer.py           Access findings
+  nat_analyzer.py       NAT findings
+  policy_browser.py     raw rulebase → table rows
+  traffic.py            tri-state matcher, path trace, NAT correlation, topology
+  templates/index.html
+  static/css/app.css
+  static/js/app.js
 ```
+
+Every route is a `GET`, and `tests/test_v413_structure.py` asserts that no
+router declares a mutating verb and that no mutating Management command appears
+anywhere in the source. The read-only guarantee is structural, not a promise.
 
 ### Concepts you must understand before changing anything
 
@@ -237,6 +252,7 @@ FastAPI (app/main.py)  ── in-memory cache, heavy-request lock
 | GET | `/api/nat-analyze?package=` | NAT analysis for a policy package |
 | GET | `/api/traffic-path?src=&dst=&protocol=&service=&layer=&package=` | Traffic simulation |
 | GET | `/api/network-map` | Topology nodes and edges |
+| GET | `/api/progress?rid=` | Live phase of a long request (polled by the UI) |
 | GET | `/api/analyze?layer=` | Legacy layer-first analysis |
 | GET | `/api/policy-browser?layer=` | Legacy layer-first raw rulebase |
 | GET | `/api/export.csv?layer=` | Analysis CSV |
@@ -250,7 +266,7 @@ Add `&force=true` to `bootstrap`, `policy-browser`, `package-policy-browser` or
 ## Testing
 
 ```bash
-pytest -q          # 165 tests, no Management Server required
+pytest -q          # 204 tests, no Management Server required
 ```
 
 Tests use fixture payloads shaped like real Management API responses; nothing in the

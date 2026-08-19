@@ -12,9 +12,10 @@ double-submit blocked) was verified in a headless Chromium run; these tests
 stop the wiring from silently disappearing in a later edit.
 """
 
-from pathlib import Path
+from conftest import app_source
 
-SRC = Path("app/main.py").read_text(encoding="utf-8")
+
+SRC = app_source()
 
 
 class TestChrome:
@@ -235,4 +236,4 @@ def test_read_only_promise_is_stated_on_load():
 
 
 def test_version_is_bumped():
-    assert 'APP_VERSION = "4.11.0"' in SRC
+    assert 'APP_VERSION = "4.13.0"' in SRC

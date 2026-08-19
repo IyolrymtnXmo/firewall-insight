@@ -1,4 +1,4 @@
-from pathlib import Path
+from conftest import app_source
 from app.nat_analyzer import analyze_nat_rulebase
 
 
@@ -46,6 +46,6 @@ def test_nat_scalar_fields_do_not_false_duplicate():
 
 
 def test_sidebar_access_policy_entry_exists():
-    source = Path("app/main.py").read_text(encoding="utf-8")
+    source = app_source()
     assert "▤ Access Policy" in source
     assert 'data-page="browser"' in source

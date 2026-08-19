@@ -1,5 +1,5 @@
-from pathlib import Path
-MAIN=Path("app/main.py").read_text(encoding="utf-8")
+from conftest import app_source
+MAIN=app_source()
 
 def test_traffic_ui_shows_matched_policy_path():
     assert "Matched Policy Path" in MAIN

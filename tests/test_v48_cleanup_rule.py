@@ -8,6 +8,8 @@ every Check Point policy is supposed to have. That cost 8 points of
 optimization score for a policy with nothing wrong with it.
 """
 
+from conftest import app_source
+
 from app.analyzer import analyze_rulebase, is_cleanup_rule
 from app.inline_layers import aggregate_analyses
 
@@ -98,7 +100,7 @@ def test_aggregate_reports_cleanup_rules_across_layers():
 
 def test_ui_explains_excluded_cleanup_rules():
     from pathlib import Path
-    src = Path("app/main.py").read_text(encoding="utf-8")
+    src = app_source()
     assert "function cleanupNote(d)" in src
     assert "cleanup_rules" in src
     assert "+cleanupNote(d);" in src

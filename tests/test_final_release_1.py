@@ -1,6 +1,6 @@
-from pathlib import Path
+from conftest import app_source
 
-SRC = Path("app/main.py").read_text(encoding="utf-8")
+SRC = app_source()
 
 def test_dashboard_analyze_populates_raw_access_policy():
     block = SRC.split("async function dashboardRefresh()",1)[1].split("function toggleTheme()",1)[0]

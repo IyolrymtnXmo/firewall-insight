@@ -385,6 +385,7 @@ class CheckPointClient:
         existing: dict[str, dict[str, Any]],
         *,
         refresh_incomplete: bool = True,
+        on_progress=None,
     ):
         """
         Fetch full detail for referenced objects.
@@ -408,7 +409,12 @@ class CheckPointClient:
             elif refresh_incomplete and needs_detail(current):
                 targets.append(uid)
 
-        for uid in targets:
+        total = len(targets)
+        for index, uid in enumerate(targets, 1):
+            if on_progress:
+                # One show-object per thin object at ~0.55s pacing dominates
+                # first-load time. Report it, or the UI shows 27s of silence.
+                on_progress(index, total)
             try:
                 data = await self.call("show-object", {"uid": uid, "details-level": "full"})
                 obj = data.get("object") if isinstance(data, dict) else None

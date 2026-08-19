@@ -1,3 +1,4 @@
+from conftest import app_source
 from pathlib import Path
 
 def test_nat_show_hits_removed():
@@ -6,7 +7,7 @@ def test_nat_show_hits_removed():
     assert '"show-hits"' not in nat
 
 def test_drilldown_and_icons_present():
-    source = Path("app/main.py").read_text(encoding="utf-8")
+    source = app_source()
     assert "function drillTo(" in source
     assert "function topoIcon(" in source
     assert "role==='gateway'" in source

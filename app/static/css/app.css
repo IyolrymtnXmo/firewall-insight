@@ -1,0 +1,637 @@
+:root{
+  /* Nunito  = rounded, blunt-terminal geometric Latin
+     Anuphan = Thai without loops (ไม่มีหัว), geometric, pairs with Nunito
+     JetBrains Mono = tabular figures for rule numbers, IPs and ports
+     Air-gapped install: self-host these and swap the <link> for local @font-face. */
+  --font-ui:'Nunito','Anuphan','Segoe UI Variable','Segoe UI',system-ui,-apple-system,'Noto Sans Thai',sans-serif;
+  --font-mono:'JetBrains Mono',ui-monospace,'Cascadia Mono','Consolas',monospace;
+  font-family:var(--font-ui);
+  letter-spacing:.005em;
+  --bg:#0e0d13;--sidebar:#15131b;--panel:#17151e;--panel2:#1d1a25;--card:#1b1822;
+  --line:#342d42;--text:#f6f2ff;--muted:#a79db8;--purple:#8b5cf6;--purple2:#a78bfa;
+  --good:#38d996;--warn:#f6c453;--bad:#ff7184;--input:#111017;--shadow:0 16px 40px rgba(0,0,0,.30);
+}
+body.light{
+  --bg:#f5f3fb;--sidebar:#ffffff;--panel:#ffffff;--panel2:#faf8ff;--card:#ffffff;
+  --line:#ded8ec;--text:#1a1720;--muted:#71697f;--purple:#7c3aed;--purple2:#8b5cf6;
+  --input:#ffffff;--shadow:0 12px 30px rgba(82,59,116,.10);
+}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);min-height:100vh}
+.app{display:grid;grid-template-columns:250px 1fr;min-height:100vh}
+.sidebar{background:var(--sidebar);border-right:1px solid var(--line);padding:24px 18px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column}
+.brand{font-size:21px;font-weight:850;margin:2px 8px 26px}.brand span{color:var(--purple2)}
+.menu{display:flex;flex-direction:column;gap:7px}.menu button{justify-content:flex-start;width:100%;text-align:left;border:none;background:transparent;color:var(--muted)}
+.menu button.active{background:linear-gradient(90deg,var(--purple),#6d4bea);color:white}
+.sidebar-bottom{margin-top:auto;border-top:1px solid var(--line);padding-top:16px}.theme-row{display:flex;align-items:center;justify-content:space-between;color:var(--muted);padding:9px}
+.switch{width:48px;height:26px;border-radius:999px;background:#393247;position:relative;cursor:pointer}.switch i{position:absolute;width:20px;height:20px;border-radius:50%;background:white;top:3px;left:3px;transition:.2s}.light .switch i{left:25px}.light .switch{background:var(--purple)}
+.main{padding:28px 34px;min-width:0}.header{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}.header h1{margin:0;font-size:30px}.header p{margin:6px 0 0;color:var(--muted)}
+.badge{padding:9px 13px;border-radius:999px;background:#183629;color:#72e7b2;border:1px solid #285443;font-size:13px}
+.panel,.card{background:var(--panel);border:1px solid var(--line);border-radius:15px;box-shadow:var(--shadow)}
+.panel{padding:20px;margin-top:18px}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+button,select,input{height:43px;border:1px solid var(--line);border-radius:9px;background:var(--input);color:var(--text);padding:0 14px;font-size:14px}
+button{font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+button:hover{border-color:var(--purple2)}.primary{background:var(--purple);border-color:var(--purple);color:white}.primary:hover{background:#7c4ce4}
+select{min-width:300px}.status{margin-top:13px;background:var(--input);border:1px solid var(--line);border-radius:10px;padding:13px 15px;color:#d8d0e5;white-space:pre-wrap}.light .status{color:#544c63}
+.page{display:none}.page.active{display:block}.cards{display:grid;grid-template-columns:repeat(5,1fr);gap:13px;margin-top:18px}.card{padding:17px}.metric-label{color:var(--muted);font-size:13px}.metric{font-size:31px;font-weight:850;margin-top:7px}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 13px}.tabs button.active{background:var(--purple);border-color:var(--purple);color:white}
+.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel2)}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;min-width:980px}th,td{padding:12px 13px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+th{background:rgba(139,92,246,.10);color:#d9cdf6;text-transform:uppercase;font-size:11px;letter-spacing:.05em;position:sticky;top:0}.light th{color:#54406f}
+tbody tr:nth-child(even){background:rgba(255,255,255,.015)}tbody tr:hover{background:rgba(139,92,246,.08)}
+.rule-no{font-weight:850;color:#d8c6ff}.light .rule-no{color:#6d28d9}.muted{color:var(--muted)}
+.pill{display:inline-block;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:800}.pill.warn{background:#4a3509;color:#ffd66d}.pill.good{background:#123a28;color:#7ce8b7}.pill.bad{background:#461824;color:#ff9aa7}.pill.purple{background:#33215e;color:#ccb6ff}.pill.inline{background:#17324a;color:#9fd2ff;border:1px solid #285675}
+.section-title{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:20px}.section-title h2,.section-title h3{margin:0}
+.flow{display:flex;gap:9px;align-items:stretch;flex-wrap:wrap;margin-top:16px}.step{flex:1;min-width:190px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:15px}.arrow{align-self:center;color:var(--purple2);font-size:23px}
+.map{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.node{border:1px solid var(--line);border-radius:12px;background:var(--panel2);padding:14px}
+.topology{height:590px;border:1px solid var(--line);border-radius:14px;background:radial-gradient(circle at 50% 20%,rgba(139,92,246,.13),transparent 55%),var(--input);overflow:hidden}
+.topology svg{width:100%;height:100%;cursor:grab}.topology svg:active{cursor:grabbing}.edge{stroke:#8061c6;stroke-width:2;fill:none}.edge-label{fill:var(--muted);font-size:11px}
+.toponode rect{stroke-width:1.5}.toponode text{fill:var(--text);font-weight:750;font-size:12px}.toponode .sub{fill:var(--muted);font-size:10px;font-weight:400}
+.gateway rect{fill:#281c49;stroke:#9b7cf8}.management rect{fill:#15382c;stroke:#46d89a}.interface rect{fill:#342341;stroke:#cf83ff}.network rect{fill:#45370f;stroke:#f2bd4e}.device rect{fill:#23202d;stroke:#7d748d}
+.light .gateway rect{fill:#efe9ff}.light .management rect{fill:#e7f8ef}.light .interface rect{fill:#f5eaff}.light .network rect{fill:#fff6da}.light .device rect{fill:#f4f1f8}
+
+
+
+
+.inline-parent-row{
+  background:rgba(255,255,255,.018)!important;
+  box-shadow:inset 3px 0 0 rgba(56,217,150,.50);
+}
+.inline-parent-row:hover{background:rgba(56,217,150,.045)!important}
+.inline-child-row:hover{background:rgba(96,165,250,.10)!important}
+.inline-child-row .rule-no{color:#b9dcff}
+.inline-parent-row .rule-no{color:#d8c6ff}
+
+.inline-parent-row td{
+  border-bottom-color:rgba(139,92,246,.34)!important;
+}
+.inline-child-row{
+  background:rgba(50,72,92,.12);
+  box-shadow:inset 3px 0 0 rgba(96,165,250,.65);
+}
+.inline-child-row td:first-child{
+  position:relative;
+  padding-left:31px!important;
+}
+.inline-child-row td:first-child:before{
+  content:"";
+  position:absolute;
+  left:13px;
+  top:0;
+  bottom:50%;
+  width:1px;
+  background:rgba(96,165,250,.58);
+}
+.inline-child-row td:first-child:after{
+  content:"";
+  position:absolute;
+  left:13px;
+  top:50%;
+  width:12px;
+  height:1px;
+  background:rgba(96,165,250,.58);
+}
+.inline-layer-name{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+}
+.inline-layer-name:before{
+  content:"↳";
+  color:#93c5fd;
+  font-weight:900;
+}
+.inline-findings-card{
+  margin-top:14px;
+  padding:14px 16px;
+  border:1px solid rgba(244,197,66,.26);
+  background:rgba(244,197,66,.055);
+  border-radius:14px;
+}
+.inline-findings-grid{
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:10px;
+  margin-top:10px;
+}
+.inline-mini{
+  border:1px solid var(--line);
+  border-radius:11px;
+  padding:10px 12px;
+  min-width:0;
+}
+.inline-mini .v{font-size:20px;font-weight:800;margin-top:4px}
+@media(max-width:1100px){.inline-findings-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.access-summary-grid{
+  grid-template-columns:repeat(4,minmax(0,1fr))!important;
+  width:100%;
+}
+.access-summary-grid .card{
+  min-width:0;
+  width:100%;
+}
+@media(max-width:1100px){
+  .access-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+}
+@media(max-width:650px){
+  .access-summary-grid{grid-template-columns:1fr!important}
+}
+
+
+.alert-count{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:38px;
+  height:38px;
+  padding:0 10px;
+  border-radius:999px;
+  background:#f4c542;
+  color:#17120a;
+  border:1px solid #ffd96a;
+  box-shadow:0 0 0 3px rgba(244,197,66,.10);
+  font-weight:800;
+  line-height:1;
+}
+.metric .alert-count{
+  font-size:.72em;
+  vertical-align:middle;
+}
+
+.drill-card{cursor:pointer;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
+.drill-card:hover{transform:translateY(-2px);border-color:var(--purple2);box-shadow:0 14px 34px rgba(124,58,237,.18)}
+.drill-row{cursor:pointer}
+.drill-row:hover td{background:rgba(124,58,237,.10)}
+.alert-count{cursor:pointer}
+.hidden{display:none}.hint{font-size:12px;color:var(--muted)}
+/* Superseded by the 900px rules below; keeping the card reflow only.
+   The old block turned the sidebar into a horizontal strip between
+   900-1100px, which collided with the collapsible rail. */
+@media(max-width:1100px){.dashboard-grid{grid-template-columns:minmax(0,1fr)!important}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.main{padding:22px}}
+
+/* ============================================================
+   v4.11 UX layer: progress, blur overlay, toasts, skeletons,
+   empty/error states, responsive shell, motion.
+   ============================================================ */
+
+:root{
+  --ease:cubic-bezier(.22,.61,.36,1);
+  --ease-out:cubic-bezier(.16,1,.3,1);
+  --t-fast:140ms;
+  --t:220ms;
+  --t-slow:380ms;
+  --glass:rgba(14,13,19,.62);
+  --radius:14px;
+}
+.light{
+  --glass:rgba(255,255,255,.62);
+}
+
+*,*::before,*::after{box-sizing:border-box}
+
+/* Respect the OS setting. Motion is decoration, never the only signal. */
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    animation-duration:.001ms!important;
+    animation-iteration-count:1!important;
+    transition-duration:.001ms!important;
+    scroll-behavior:auto!important;
+  }
+}
+
+/* ---------- 1. Top progress bar (global request activity) ---------- */
+#topProgress{
+  position:fixed;top:0;left:0;right:0;height:3px;z-index:9000;
+  background:transparent;pointer-events:none;
+  opacity:0;transition:opacity var(--t) var(--ease);
+}
+#topProgress.on{opacity:1}
+#topProgress .bar{
+  height:100%;width:40%;border-radius:0 3px 3px 0;
+  background:linear-gradient(90deg,transparent,var(--purple2) 25%,var(--purple) 60%,#e9d5ff);
+  box-shadow:0 0 12px rgba(139,92,246,.75);
+  animation:tp 1.15s var(--ease) infinite;
+}
+@keyframes tp{
+  0%{transform:translateX(-100%) scaleX(.6)}
+  55%{transform:translateX(60%) scaleX(1)}
+  100%{transform:translateX(250%) scaleX(.5)}
+}
+
+/* ---------- 2. Blur / glass busy overlay ---------- */
+#busyOverlay{
+  position:fixed;inset:0;z-index:8500;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--glass);
+  -webkit-backdrop-filter:blur(9px) saturate(120%);
+  backdrop-filter:blur(9px) saturate(120%);
+  opacity:0;visibility:hidden;
+  transition:opacity var(--t) var(--ease),visibility var(--t) step-end;
+}
+#busyOverlay.on{opacity:1;visibility:visible;transition:opacity var(--t) var(--ease),visibility 0s}
+#busyOverlay .busy-card{
+  min-width:320px;max-width:min(560px,92vw);
+  padding:26px 28px;border-radius:20px;
+  background:var(--panel);border:1px solid var(--line);
+  box-shadow:0 30px 80px rgba(0,0,0,.45);
+  text-align:center;
+  transform:translateY(10px) scale(.97);
+  transition:transform var(--t-slow) var(--ease-out);
+}
+#busyOverlay.on .busy-card{transform:translateY(0) scale(1)}
+.busy-title{font-weight:750;font-size:16px;margin:14px 0 4px}
+.busy-sub{color:var(--muted);font-size:13px;line-height:1.55}
+.busy-elapsed{font-variant-numeric:tabular-nums;color:var(--purple2);font-weight:700}
+.busy-hint{
+  margin-top:14px;padding:10px 12px;border-radius:10px;font-size:12.5px;
+  background:rgba(246,196,83,.10);border:1px solid rgba(246,196,83,.28);
+  color:var(--text);text-align:left;
+  opacity:0;max-height:0;overflow:hidden;
+  transition:opacity var(--t) var(--ease),max-height var(--t-slow) var(--ease),margin-top var(--t) var(--ease);
+}
+.busy-hint.on{opacity:1;max-height:160px}
+.busy-steps{
+  margin-top:16px;text-align:left;display:flex;flex-direction:column;gap:7px;
+  font-size:12.5px;color:var(--muted);
+}
+.busy-step{display:flex;align-items:center;gap:9px;transition:color var(--t) var(--ease)}
+.busy-step .dot{
+  width:8px;height:8px;border-radius:50%;background:var(--line);flex:0 0 8px;
+  transition:background var(--t) var(--ease),box-shadow var(--t) var(--ease);
+}
+.busy-step.active{color:var(--text);font-weight:650}
+.busy-step.active .dot{background:var(--purple);box-shadow:0 0 0 4px rgba(139,92,246,.20)}
+.busy-step.done .dot{background:var(--good)}
+.busy-step.done{color:var(--muted)}
+
+/* Spinner: one shape reused everywhere */
+.spinner{
+  width:34px;height:34px;border-radius:50%;
+  border:3px solid var(--line);border-top-color:var(--purple);
+  animation:spin .75s linear infinite;margin:0 auto;
+}
+.spinner.sm{width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:-2px;margin:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---------- 3. Toasts ---------- */
+#toasts{
+  position:fixed;right:18px;top:18px;z-index:9500;
+  display:flex;flex-direction:column;gap:10px;
+  width:min(400px,calc(100vw - 36px));pointer-events:none;
+}
+.toast{
+  pointer-events:auto;position:relative;overflow:hidden;
+  display:flex;gap:11px;padding:13px 14px;
+  border-radius:13px;border:1px solid var(--line);
+  background:var(--panel2);box-shadow:0 18px 44px rgba(0,0,0,.40);
+  transform:translateX(120%);opacity:0;
+  transition:transform var(--t-slow) var(--ease-out),opacity var(--t) var(--ease),margin var(--t) var(--ease);
+}
+.toast.in{transform:translateX(0);opacity:1}
+.toast.out{transform:translateX(120%);opacity:0;margin-top:-58px}
+.toast .ic{flex:0 0 20px;font-size:15px;line-height:1.35;font-weight:800}
+.toast .body{flex:1;min-width:0}
+.toast .t{font-weight:700;font-size:13.5px;margin-bottom:2px}
+.toast .m{font-size:12.5px;color:var(--muted);line-height:1.5;word-break:break-word}
+.toast .x{
+  flex:0 0 auto;background:none;border:0;color:var(--muted);cursor:pointer;
+  font-size:16px;line-height:1;padding:0 2px;border-radius:6px;
+  transition:color var(--t-fast) var(--ease),background var(--t-fast) var(--ease);
+}
+.toast .x:hover{color:var(--text);background:rgba(255,255,255,.07)}
+.toast .life{position:absolute;left:0;bottom:0;height:2px;width:100%;transform-origin:left}
+.toast.success{border-color:rgba(56,217,150,.42)}
+.toast.success .ic{color:var(--good)} .toast.success .life{background:var(--good)}
+.toast.info{border-color:rgba(167,139,250,.42)}
+.toast.info .ic{color:var(--purple2)} .toast.info .life{background:var(--purple2)}
+.toast.warn{border-color:rgba(246,196,83,.48)}
+.toast.warn .ic{color:var(--warn)} .toast.warn .life{background:var(--warn)}
+.toast.error{border-color:rgba(255,113,132,.52)}
+.toast.error .ic{color:var(--bad)} .toast.error .life{background:var(--bad)}
+.toast .act{
+  margin-top:9px;background:rgba(255,255,255,.06);border:1px solid var(--line);
+  color:var(--text);font-size:12px;font-weight:650;padding:5px 11px;border-radius:8px;cursor:pointer;
+  transition:background var(--t-fast) var(--ease),transform var(--t-fast) var(--ease);
+}
+.toast .act:hover{background:rgba(255,255,255,.12)}
+.toast .act:active{transform:translateY(1px)}
+
+/* ---------- 4. Status bar ---------- */
+.statusbar{
+  display:flex;align-items:center;gap:10px;margin-top:12px;
+  padding:11px 13px;border-radius:12px;
+  background:var(--panel2);border:1px solid var(--line);
+  transition:border-color var(--t) var(--ease),background var(--t) var(--ease);
+}
+.statusbar .status-icon{
+  flex:0 0 auto;width:18px;height:18px;display:grid;place-items:center;
+  font-size:12px;font-weight:800;color:var(--muted);
+}
+/* #status keeps its legacy .status class so existing S.textContent calls
+   still work; neutralise its own box so it does not nest inside the bar. */
+.statusbar .status{flex:1;min-width:0;font-size:13px;line-height:1.5;margin:0;padding:0;background:none;border:0;border-radius:0;color:inherit}
+.light .statusbar .status{color:inherit}
+.statusbar .status-time{
+  flex:0 0 auto;font-size:11.5px;color:var(--muted);
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+.statusbar.busy{border-color:rgba(167,139,250,.50);background:rgba(139,92,246,.08)}
+.statusbar.busy .status-icon{color:var(--purple2)}
+.statusbar.success{border-color:rgba(56,217,150,.42)}
+.statusbar.success .status-icon{color:var(--good)}
+.statusbar.warn{border-color:rgba(246,196,83,.46);background:rgba(246,196,83,.07)}
+.statusbar.warn .status-icon{color:var(--warn)}
+.statusbar.error{border-color:rgba(255,113,132,.50);background:rgba(255,113,132,.07)}
+.statusbar.error .status-icon{color:var(--bad)}
+
+/* ---------- 5. Connection badge ---------- */
+.badge.conn{display:inline-flex;align-items:center;gap:8px;transition:all var(--t) var(--ease)}
+.badge.conn .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:0 0 8px}
+.badge.conn.ok .dot{background:var(--good);box-shadow:0 0 0 4px rgba(56,217,150,.18)}
+.badge.conn.bad .dot{background:var(--bad);box-shadow:0 0 0 4px rgba(255,113,132,.18)}
+.badge.conn.testing .dot{background:var(--warn);animation:pulse 1.1s var(--ease) infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.32}}
+
+/* ---------- 6. Skeletons ---------- */
+.skel{
+  position:relative;overflow:hidden;border-radius:8px;
+  background:linear-gradient(90deg,rgba(255,255,255,.045) 0%,rgba(255,255,255,.10) 50%,rgba(255,255,255,.045) 100%);
+  background-size:220% 100%;animation:shimmer 1.35s var(--ease) infinite;
+}
+.light .skel{background:linear-gradient(90deg,rgba(0,0,0,.05) 0%,rgba(0,0,0,.10) 50%,rgba(0,0,0,.05) 100%);background-size:220% 100%}
+@keyframes shimmer{0%{background-position:120% 0}100%{background-position:-120% 0}}
+.skel-line{height:12px;margin:9px 0}
+.skel-row{display:flex;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
+.skel-row>.skel{height:12px;flex:1}
+.skel-card{padding:16px;border:1px solid var(--line);border-radius:var(--radius);background:var(--card)}
+
+/* ---------- 7. Empty & error states ---------- */
+.state{
+  text-align:center;padding:44px 24px;border-radius:var(--radius);
+  border:1px dashed var(--line);background:rgba(255,255,255,.018);
+  animation:fadeUp var(--t-slow) var(--ease-out) both;
+}
+.state .ic{font-size:30px;opacity:.5;margin-bottom:10px}
+.state h4{margin:0 0 6px;font-size:15px}
+.state p{margin:0 auto;max-width:460px;color:var(--muted);font-size:13px;line-height:1.6}
+.state button{margin-top:16px}
+.state.err{border-style:solid;border-color:rgba(255,113,132,.42);background:rgba(255,113,132,.055)}
+.state.err .ic{color:var(--bad);opacity:1}
+.state pre{
+  margin:14px auto 0;max-width:100%;overflow:auto;text-align:left;
+  background:var(--input);border:1px solid var(--line);border-radius:10px;
+  padding:11px 13px;font-size:11.5px;color:var(--muted);white-space:pre-wrap;
+}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ---------- 8. Data-quality banner ---------- */
+.dq{
+  margin:14px 0;padding:13px 15px;border-radius:12px;display:flex;gap:11px;
+  border:1px solid rgba(246,196,83,.34);background:rgba(246,196,83,.075);
+  animation:fadeUp var(--t-slow) var(--ease-out) both;
+}
+.dq .ic{flex:0 0 auto;color:var(--warn);font-weight:800}
+.dq h4{margin:0 0 5px;font-size:13.5px}
+.dq ul{margin:0;padding-left:17px;font-size:12.5px;color:var(--muted);line-height:1.65}
+
+/* ---------- 9. Buttons: busy + press feedback ---------- */
+button{transition:background var(--t-fast) var(--ease),border-color var(--t-fast) var(--ease),
+        transform var(--t-fast) var(--ease),opacity var(--t-fast) var(--ease),box-shadow var(--t-fast) var(--ease)}
+button:not(:disabled):active{transform:translateY(1px)}
+button:disabled{opacity:.55;cursor:not-allowed}
+button[data-busy="1"]{position:relative;color:transparent!important;pointer-events:none}
+button[data-busy="1"]::after{
+  content:"";position:absolute;inset:0;margin:auto;
+  width:15px;height:15px;border-radius:50%;
+  border:2px solid rgba(255,255,255,.35);border-top-color:#fff;
+  animation:spin .7s linear infinite;
+}
+:focus-visible{outline:2px solid var(--purple2);outline-offset:2px;border-radius:8px}
+
+/* ---------- 10. Page transitions ---------- */
+.page{display:none}
+.page.active{display:block;animation:pageIn var(--t-slow) var(--ease-out) both}
+@keyframes pageIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.card,.panel{transition:border-color var(--t) var(--ease),box-shadow var(--t) var(--ease),transform var(--t) var(--ease)}
+.drill-card{cursor:pointer}
+.drill-card:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(0,0,0,.28);border-color:rgba(167,139,250,.45)}
+.menu button{transition:background var(--t-fast) var(--ease),color var(--t-fast) var(--ease),padding-left var(--t-fast) var(--ease)}
+.menu button:hover:not(.active){padding-left:18px}
+tbody tr{transition:background var(--t-fast) var(--ease)}
+
+/* ---------- 11. Tables: sticky header + scroll affordance ---------- */
+.table-wrap{
+  overflow:auto;-webkit-overflow-scrolling:touch;
+  border-radius:12px;border:1px solid var(--line);
+  max-height:min(70vh,720px);
+  scrollbar-width:thin;
+}
+.table-wrap{scrollbar-color:var(--line) transparent}
+.table-wrap::-webkit-scrollbar{height:10px;width:10px}
+/* An unstyled track renders light grey and reads as a bright bar under a
+   dark table. Paint it, and inset the thumb so it does not touch the edges. */
+.table-wrap::-webkit-scrollbar-track{background:transparent}
+.table-wrap::-webkit-scrollbar-corner{background:transparent}
+.table-wrap::-webkit-scrollbar-thumb{
+  background:var(--line);border-radius:99px;
+  border:2px solid transparent;background-clip:content-box;
+}
+.table-wrap::-webkit-scrollbar-thumb:hover{background:var(--purple);background-clip:content-box}
+.table-wrap thead th{
+  position:sticky;top:0;z-index:2;
+  background:var(--panel2);
+  box-shadow:inset 0 -1px 0 var(--line);
+  backdrop-filter:blur(6px);
+}
+
+/* ---------- 12. Responsive shell ---------- */
+#navToggle{display:none}
+@media(max-width:900px){
+  #navToggle{
+    display:inline-flex;align-items:center;gap:8px;
+    position:fixed;left:12px;top:11px;z-index:8000;
+    padding:9px 13px;border-radius:11px;font-size:13px;font-weight:700;
+    background:var(--panel);border:1px solid var(--line);color:var(--text);
+    box-shadow:0 8px 22px rgba(0,0,0,.32);cursor:pointer;
+  }
+  .app{grid-template-columns:1fr!important;display:block!important}
+  .sidebar{
+    position:fixed!important;inset:0 auto 0 0;width:266px;height:100%!important;z-index:8200;
+    transform:translateX(-102%);transition:transform var(--t-slow) var(--ease-out);
+    box-shadow:0 0 60px rgba(0,0,0,.5);overflow:auto;
+  }
+  body.nav-open .sidebar{transform:translateX(0)}
+  body.nav-open::after{
+    content:"";position:fixed;inset:0;z-index:8100;
+    background:rgba(0,0,0,.5);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+  }
+  .sidebar .menu{flex-direction:column!important;overflow:visible!important}
+  .sidebar-bottom{display:block!important}
+  .main{padding:62px 14px 26px!important}
+  .header{flex-direction:column;align-items:flex-start;gap:10px}
+  .header h1{font-size:20px;line-height:1.3}
+  .controls{flex-direction:column;align-items:stretch}
+  .controls>*{width:100%}
+  .controls select,.controls button{width:100%}
+  .cards{grid-template-columns:1fr!important}
+  .inline-findings-grid{grid-template-columns:1fr!important}
+  .access-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  #toasts{right:10px;left:10px;top:60px;width:auto}
+  .table-wrap{max-height:none}
+  .table-wrap thead th{position:static}
+  #busyOverlay .busy-card{min-width:0;width:calc(100vw - 32px);padding:22px}
+}
+@media(max-width:520px){
+  .access-summary-grid{grid-template-columns:1fr!important}
+  .state{padding:32px 16px}
+}
+
+/* ---------- 12b. Grid shrink fix ----------
+   `1fr` is shorthand for minmax(auto,1fr), and `auto` refuses to shrink below
+   the content's min-width. One table with min-width:650px therefore stretched
+   its grid column to 688px and forced the whole document to scroll sideways on
+   a 390px screen. minmax(0,1fr) plus min-width:0 down the chain lets
+   .table-wrap do the scrolling instead of the page, so wide tables stay
+   readable and the layout still fits. */
+.cards,.dashboard-grid,.inline-findings-grid,.access-summary-grid{min-width:0}
+.cards>*,.dashboard-grid>*,.inline-findings-grid>*,.access-summary-grid>*{min-width:0}
+.panel,.card,.main,.section-title{min-width:0}
+.table-wrap{min-width:0;max-width:100%}
+.section-title{flex-wrap:wrap;gap:8px}
+.flow{flex-wrap:wrap}
+@media(max-width:900px){
+  .dashboard-grid{grid-template-columns:minmax(0,1fr)!important}
+  .cards{grid-template-columns:minmax(0,1fr)!important}
+  .inline-findings-grid{grid-template-columns:minmax(0,1fr)!important}
+  .access-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .flow .arrow{display:none}
+  .flow .step{width:100%}
+}
+
+/* ---------- 12c. Typography ---------- */
+body,button,input,select,textarea{font-family:var(--font-ui)}
+h1,h2,h3,h4,.brand,.metric,.busy-title{letter-spacing:-.012em;font-weight:800}
+h1{font-weight:800}
+.brand{font-weight:800}
+/* Tabular data reads far better monospaced, and columns line up. */
+/* Monospace is for figures, not words: "Access Control" and "Standard" are
+   metric VALUES too, and rendering them in JetBrains Mono looked broken.
+   .num is added by metricCards()/setDashboardMetric() only for numerics. */
+.rule-no,.metric.num,.inline-mini .v,.busy-elapsed,.status-time,
+code,pre{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.metric{font-weight:700;letter-spacing:-.02em}
+.metric:not(.num){font-family:var(--font-ui);letter-spacing:-.01em}
+.pill,.badge{font-weight:700;letter-spacing:.01em}
+.muted,.hint{letter-spacing:0}
+
+/* ---------- 12d. Collapsible sidebar (desktop rail) ---------- */
+/* The sidebar is position:sticky with height:100vh, so on a page taller than
+   the viewport its grid cell continued below it and showed the page
+   background as a bare strip. Paint the whole column with a fixed layer
+   instead, and let it animate with the rail. */
+.app{transition:grid-template-columns var(--t-slow) var(--ease-out);position:relative}
+.app:before{
+  content:"";position:fixed;left:0;top:0;bottom:0;width:250px;z-index:0;
+  background:var(--sidebar);border-right:1px solid var(--line);
+  transition:width var(--t-slow) var(--ease-out);
+}
+body.rail .app:before{width:74px}
+.sidebar{background:transparent!important;border-right:0!important;z-index:1}
+.main{position:relative;z-index:1}
+@media(max-width:900px){.app:before{display:none}}
+body.rail .app{grid-template-columns:74px 1fr!important}
+/* The rail tooltip escapes the sidebar, so the sidebar must sit above
+   .main or the tooltip renders behind the panels. */
+body.rail .sidebar{padding-left:8px;padding-right:8px;overflow:visible;position:relative;z-index:200}
+body.rail .brand{font-size:0;justify-content:center;padding:14px 0}
+body.rail .brand:before{
+  content:"FI";font-size:17px;font-weight:800;color:var(--purple2);letter-spacing:-.02em;
+}
+body.rail .menu button{
+  padding:13px 0;text-align:center;font-size:0;position:relative;
+}
+/* ::first-letter does not apply to buttons, so the glyph comes from an
+   explicit data-icon attribute instead of the label's first character. */
+body.rail .menu button:before{
+  content:attr(data-icon);font-size:19px;line-height:1;display:block;
+}
+body.rail .menu button:hover{padding-left:0}
+body.rail .menu button:hover:after{
+  content:attr(data-label);position:absolute;left:calc(100% + 10px);top:50%;
+  transform:translateY(-50%);white-space:nowrap;z-index:300;
+  font-size:12.5px;font-weight:650;padding:7px 11px;border-radius:9px;
+  background:var(--panel2);border:1px solid var(--line);color:var(--text);
+  box-shadow:0 10px 26px rgba(0,0,0,.4);
+}
+body.rail .sidebar-bottom .theme-row span:first-child,
+body.rail .sidebar-bottom .hint{display:none}
+body.rail .sidebar-bottom{text-align:center}
+#railToggle{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  width:100%;margin-top:10px;padding:9px 10px;border-radius:10px;
+  background:rgba(255,255,255,.04);border:1px solid var(--line);
+  color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;
+}
+#railToggle:hover{color:var(--text);background:rgba(255,255,255,.09)}
+body.rail #railToggle span{display:none}
+@media(max-width:900px){#railToggle{display:none}body.rail .app{grid-template-columns:1fr!important}}
+
+/* ---------- 12e. Extra polish ---------- */
+.busy-detail{
+  margin-top:10px;font-size:12px;color:var(--purple2);font-family:var(--font-mono);
+  opacity:0;max-height:0;overflow:hidden;transition:opacity var(--t) var(--ease),max-height var(--t) var(--ease);
+}
+.busy-detail.on{opacity:1;max-height:44px}
+.metric{transition:transform var(--t) var(--ease-out)}
+.card:hover .metric{transform:scale(1.04)}
+.alert-count{transition:transform var(--t) var(--ease-out),box-shadow var(--t) var(--ease)}
+.drill-card:hover .alert-count{transform:scale(1.12);box-shadow:0 0 0 6px rgba(246,196,83,.14)}
+.pill{transition:transform var(--t-fast) var(--ease)}
+tbody tr:hover .pill{transform:translateY(-1px)}
+/* Active marker via inset shadow, so ::before stays free for the rail icon
+   (a button only has two pseudo-elements and ::after is the rail tooltip). */
+.menu button.active{position:relative;box-shadow:inset 3px 0 0 rgba(255,255,255,.92)}
+select,input{transition:border-color var(--t-fast) var(--ease),box-shadow var(--t-fast) var(--ease)}
+select:hover,input:hover{border-color:var(--purple)}
+input:focus,select:focus{box-shadow:0 0 0 4px rgba(139,92,246,.16)}
+
+/* ---------- 12f. Labelled field rows ----------
+   Four bare inputs in a row gave no clue which was source, destination or
+   service - you had to click into each one to read the placeholder. */
+.field-row{align-items:flex-end}
+.field{display:flex;flex-direction:column;gap:6px;flex:1 1 190px;min-width:0}
+.field>span{
+  font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--muted);
+}
+.field input,.field select{width:100%;min-width:0}
+.field-row>button{flex:0 0 auto}
+@media(max-width:900px){
+  .field-row{align-items:stretch}
+  .field{flex:1 1 100%}
+  .field[style]{flex:1 1 100%!important}
+}
+
+/* ---------- 13. Offline / stale ---------- */
+#offlineBar{
+  position:fixed;left:50%;top:12px;transform:translate(-50%,-160%);
+  z-index:9600;padding:9px 16px;border-radius:999px;
+  background:rgba(255,113,132,.16);border:1px solid rgba(255,113,132,.5);
+  color:var(--text);font-size:12.5px;font-weight:650;
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  transition:transform var(--t-slow) var(--ease-out);
+}
+#offlineBar.on{transform:translate(-50%,0)}
+.stale{position:relative}
+.stale::after{
+  content:"stale";position:absolute;right:10px;top:10px;
+  font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+  padding:3px 7px;border-radius:6px;color:var(--warn);
+  background:rgba(246,196,83,.14);border:1px solid rgba(246,196,83,.34);
+}
+
+/* Screen-reader-only live region */
+.sr-only{
+  position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;
+}
