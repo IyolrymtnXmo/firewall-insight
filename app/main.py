@@ -16,7 +16,7 @@ from .inline_layers import aggregate_analyses, aggregate_browser, merge_package_
 from .traffic import trace_access, trace_access_tree, correlate_nat, network_map, resolve_service_query
 from .config import settings
 
-APP_VERSION = "4.8.0"
+APP_VERSION = "4.10.0"
 
 app = FastAPI(
     title="Firewall Insight - Check Point Firewall Analysis Platform",
@@ -55,10 +55,27 @@ async def use_client(fn):
 async def shutdown_event():
     await _cp.close()
 
+MAX_HYDRATION_ROUNDS = 6
+
+
 async def hydrate_rulebase(c, data):
+    """
+    Resolve every object a rule references down to comparable ranges.
+
+    Two things make this more than a single pass:
+
+    1. objects-dictionary entries from details-level=standard are thin -
+       groups have no members, gateways have no address - so an entry being
+       present is not the same as it being usable. `needs_detail()` decides.
+    2. Groups nest, so each round can reveal members that themselves need
+       fetching.
+    """
+    from .resolver import needs_detail
+
     existing = {o["uid"]: o for o in data.get("objects-dictionary", []) if isinstance(o, dict) and o.get("uid")}
     need = collect_referenced_uids(data)
-    for _ in range(4):
+
+    for _ in range(MAX_HYDRATION_ROUNDS):
         existing = await c.hydrate_objects(need, existing)
         discovered = set()
         for o in existing.values():
@@ -71,10 +88,16 @@ async def hydrate_rulebase(c, data):
                             discovered.add(uid)
                 elif isinstance(v, dict) and v.get("uid"):
                     discovered.add(v["uid"])
-        new = discovered - set(existing)
+        # A nested member can already be in the dictionary yet still be a thin
+        # standard-level stub, so re-check completeness, not just presence.
+        new = {
+            uid for uid in discovered
+            if uid not in existing or needs_detail(existing[uid])
+        }
         if not new:
             break
         need = new
+
     data["objects-dictionary"] = list(existing.values())
     return data, existing
 

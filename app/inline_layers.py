@@ -157,7 +157,11 @@ def aggregate_analyses(tree: dict[str, Any], analyses: list[dict[str, Any]]) -> 
                 any_rows.append(row)
 
         disabled.extend(
-            {"layer": row.get("layer"), "rule": row.get("rule")}
+            {
+                "layer": row.get("layer"),
+                "rule": row.get("rule"),
+                "display_rule": row.get("display_rule"),
+            }
             for row in result.get("rules", [])
             if row.get("enabled") is False
         )
@@ -182,7 +186,11 @@ def aggregate_analyses(tree: dict[str, Any], analyses: list[dict[str, Any]]) -> 
             for x in result.get("findings", {}).get("zero_hit_rule_numbers", [])
         }
         zero_hit.extend(
-            {"layer": row.get("layer"), "rule": row.get("rule")}
+            {
+                "layer": row.get("layer"),
+                "rule": row.get("rule"),
+                "display_rule": row.get("display_rule"),
+            }
             for row in result.get("rules", [])
             if str(row.get("rule")) in zero_nums
         )

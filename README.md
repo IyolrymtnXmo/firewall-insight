@@ -63,7 +63,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass   # Windows PowerShel
 pip install -r requirements.txt
 
 copy .env.example .env      # then edit .env with your Management details
-pytest -q                   # expect: 78 passed
+pytest -q                   # expect: 119 passed
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -89,8 +89,8 @@ docker compose up --build      # reads .env via env_file
 
 | Check | Expected |
 |---|---|
-| `pytest -q` | `78 passed` |
-| `GET /health` | `{"status":"ok","version":"4.8.0","mode":"read-only",...}` |
+| `pytest -q` | `119 passed` |
+| `GET /health` | `{"status":"ok","version":"4.10.0","mode":"read-only",...}` |
 | `GET /api/checkpoint/test` | `{"connected":true,"api_server_version":"...","read_only":true}` |
 | `GET /api/bootstrap` | lists your access layers and policy packages |
 
@@ -190,7 +190,19 @@ FastAPI (app/main.py)  ── in-memory cache, heavy-request lock
    statically evaluated and rule 132 (cleanup) matches exactly, the result is
    `UNVERIFIED`, not `Drop`. Reporting a confident wrong answer about a firewall is
    worse than reporting uncertainty.
-8. **Real SmartConsole and gateway logs are the oracle.** Validate counts and traffic
+8. **A dictionary entry being present does not make it usable.**
+   `objects-dictionary` from `details-level: standard` carries only uid, name
+   and type — groups arrive with no members, gateways with no address.
+   `resolver.needs_detail()` decides completeness from the fields the resolver
+   consumes, and hydration re-fetches anything thin. Skip this and every rule
+   using a group silently becomes statically unevaluable.
+9. **Matching and containment need different strictness.** Proving a match
+   needs one hit, so the traffic matchers use `*_atoms_partial()` and can
+   answer through the members of a group they understand. Proving coverage
+   needs every atom, so the analyzer uses the strict `address_atoms()` /
+   `service_atoms()`, which return `None` unless the object is fully modelled.
+   Do not make one of them use the other's resolver.
+10. **Real SmartConsole and gateway logs are the oracle.** Validate counts and traffic
    results against the live environment. Never hardcode expected numbers to make output
    look right.
 
@@ -223,12 +235,23 @@ Add `&force=true` to `bootstrap`, `policy-browser`, `package-policy-browser` or
 ## Testing
 
 ```bash
-pytest -q          # 78 tests, no Management Server required
+pytest -q          # 119 tests, no Management Server required
 ```
 
 Tests use fixture payloads shaped like real Management API responses; nothing in the
 suite touches a live server. `pytest.ini` sets `pythonpath = .` so `pytest` works
 without the `python -m` prefix.
+
+### Diagnosing a live environment
+
+```bash
+python -m tools.diag_resolver <policy-package-name>
+```
+
+Read-only. Prints every object referenced by a rule that the resolver cannot
+turn into an IP or port range, and says whether the cause is "no members
+returned" (a thin dictionary entry) or "members not hydrated". Run this first
+whenever Traffic Path answers `UNVERIFIED` or shadow analysis looks empty.
 
 When a bug is found against a real environment:
 

@@ -89,6 +89,9 @@ class CheckPointClient:
         self._last_request_at = 0.0
         # None = not probed yet, True/False = this Management API's answer.
         self.nat_show_hits_supported: bool | None = None
+        # Set when object hydration stopped early on rate limiting, so callers
+        # can report reduced confidence instead of silently guessing.
+        self.hydration_truncated = False
 
     async def close(self) -> None:
         if self.sid:
@@ -376,13 +379,47 @@ class CheckPointClient:
             "total_layers": len(layers),
         }
 
-    async def hydrate_objects(self,uids:set[str],existing:dict[str,dict[str,Any]]):
-        for uid in [x for x in uids if x and x not in existing]:
+    async def hydrate_objects(
+        self,
+        uids: set[str],
+        existing: dict[str, dict[str, Any]],
+        *,
+        refresh_incomplete: bool = True,
+    ):
+        """
+        Fetch full detail for referenced objects.
+
+        A UID already present in `existing` is NOT automatically complete:
+        objects-dictionary entries from details-level=standard carry only
+        uid/name/type, so groups arrive with no members and gateways with no
+        address. Those must be re-fetched or the resolver reports every one of
+        them as statically unevaluable, which turns correct traffic answers
+        into UNVERIFIED and silently weakens shadow analysis.
+        """
+        from .resolver import needs_detail
+
+        targets = []
+        for uid in uids:
+            if not uid:
+                continue
+            current = existing.get(uid)
+            if current is None:
+                targets.append(uid)
+            elif refresh_incomplete and needs_detail(current):
+                targets.append(uid)
+
+        for uid in targets:
             try:
-                data=await self.call("show-object",{"uid":uid,"details-level":"full"}); obj=data.get("object") if isinstance(data,dict) else None
-                if isinstance(obj,dict): existing[uid]=obj
-            except CheckPointRateLimitError: break
-            except CheckPointAPIError: continue
+                data = await self.call("show-object", {"uid": uid, "details-level": "full"})
+                obj = data.get("object") if isinstance(data, dict) else None
+                if isinstance(obj, dict):
+                    existing[uid] = obj
+            except CheckPointRateLimitError:
+                # Stop hammering, but do not pretend the data is complete.
+                self.hydration_truncated = True
+                break
+            except CheckPointAPIError:
+                continue
         return existing
 
     async def show_gateways_and_servers(self):

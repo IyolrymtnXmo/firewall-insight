@@ -95,9 +95,7 @@ def address_matches(values: Any, address_text: str, res: ObjectResolver) -> tupl
         if is_domain and _domain_object_match(uid, raw, res):
             return True, f"{res.describe_uid(uid)} · domain match"
 
-        atoms = res.address_atoms(uid)
-        if atoms is None:
-            continue
+        atoms, _complete = res.address_atoms_partial(uid)
         for ip in ips:
             n = int(ip)
             if any(a.version == ip.version and a.start <= n <= a.end for a in atoms):
@@ -177,9 +175,7 @@ def service_matches_query(values: Any, query: dict[str, Any], res: ObjectResolve
     for uid in res.uids(values):
         if res.is_any_uid(uid):
             return True, "Any"
-        atoms = res.service_atoms(uid)
-        if atoms is None:
-            continue
+        atoms, _complete = res.service_atoms_partial(uid)
         for qp, qs, qe in q_atoms:
             for a in atoms:
                 proto_ok = a.proto == "any" or qp == "any" or a.proto == qp
@@ -237,16 +233,23 @@ def address_match_state(values: Any, address_text: str, res: ObjectResolver) -> 
         if is_domain and _domain_object_match(uid, raw, res):
             return "match", f"{res.describe_uid(uid)} · domain match"
 
-        atoms = res.address_atoms(uid)
-        if atoms is None:
-            saw_unknown = True
-            unknown_names.append(f"{name} [{typ or 'unknown'}]")
-            continue
+        # Partial resolution: a group with one unmodellable member still
+        # proves a match through the members we DO understand.
+        atoms, complete = res.address_atoms_partial(uid)
 
         for ip in ips:
             n = int(ip)
             if any(a.version == ip.version and a.start <= n <= a.end for a in atoms):
                 return "match", res.describe_uid(uid)
+
+        if not complete:
+            saw_unknown = True
+            blockers = res.unmodelled_names(uid, "address")
+            label = f"{name} [{typ or 'unknown'}]"
+            for blocker in (blockers or [label]):
+                entry = blocker if blocker == label else f"{name} \u2192 {blocker}"
+                if entry not in unknown_names:
+                    unknown_names.append(entry)
 
     if saw_unknown:
         return "unknown", "Static match unavailable for " + ", ".join(unknown_names[:4])
@@ -263,20 +266,25 @@ def service_match_state(values: Any, query: dict[str, Any], res: ObjectResolver)
         if res.is_any_uid(uid):
             return "match", "Any"
 
-        atoms = res.service_atoms(uid)
-        if atoms is None:
-            obj = res.obj(uid)
-            saw_unknown = True
-            unknown_names.append(
-                f"{obj.get('name') or uid} [{obj.get('type') or 'unknown'}]"
-            )
-            continue
+        # Partial resolution: AD-Services contains ALL_DCE_RPC, which has no
+        # fixed port, but a TCP/389 query still matches its ldap member.
+        atoms, complete = res.service_atoms_partial(uid)
 
         for qp, qs, qe in q_atoms:
             for a in atoms:
                 proto_ok = a.proto == "any" or qp == "any" or a.proto == qp
                 if proto_ok and not (qe < a.start or qs > a.end):
                     return "match", res.describe_uid(uid)
+
+        if not complete:
+            obj = res.obj(uid)
+            saw_unknown = True
+            name = str(obj.get("name") or uid)
+            label = f"{name} [{obj.get('type') or 'unknown'}]"
+            for blocker in (res.unmodelled_names(uid, "service") or [label]):
+                entry = blocker if blocker == label else f"{name} \u2192 {blocker}"
+                if entry not in unknown_names:
+                    unknown_names.append(entry)
 
     if saw_unknown:
         return "unknown", "Static service match unavailable for " + ", ".join(unknown_names[:4])

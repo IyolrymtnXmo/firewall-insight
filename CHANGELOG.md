@@ -4,6 +4,161 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.10.0
+
+Follow-up to v4.9. With hydration fixed, `tools/diag_resolver.py` narrowed the
+live lab's remaining unresolvable objects from 10 to 2 — and both turned out to
+be wrong for reasons that had nothing to do with missing data.
+
+```
+AD-Services [service-group]    member count: 10
+    ldap [service-tcp]  ldap-ssl [service-tcp]  microsoft-ds [service-tcp]
+    Kerberos_v5_UDP [service-udp]  ...  ALL_DCE_RPC [service-dce-rpc]
+
+icmp-requests [service-group]  member count: 4
+    echo-request / info-req / timestamp / mask-request  [service-icmp]
+```
+
+### Fixed — one unmodellable member discarded the whole group
+
+`service_atoms()` and `address_atoms()` bailed out on the first member they
+could not model:
+
+```python
+part = self.service_atoms(cu, seen.copy())
+if part is None: return None
+```
+
+`ALL_DCE_RPC` has no fixed port, so `AD-Services` answered `unknown` even to a
+TCP/389 query that plainly matches its `ldap` member.
+
+The two callers were asking different questions with the same strictness:
+
+| Question | Caller | Needs |
+|---|---|---|
+| "is this port in the set?" | traffic matching | **one** hit — positive evidence |
+| "does set A cover set B?" | shadow analysis | **every** atom |
+
+Added `address_atoms_partial()` / `service_atoms_partial()`, returning
+`(atoms, complete)`. The matchers use them: a hit on a modelled member is a
+definite `match`; failing to hit while something is unmodelled stays `unknown`.
+`address_atoms()` / `service_atoms()` remain strict wrappers returning `None`
+unless complete, so containment analysis is unchanged and still conservative.
+
+### Fixed — ICMP-only services answered `unknown` to TCP queries
+
+`service_atoms()` understood only TCP and UDP, so an ICMP service was
+unmodellable rather than simply non-matching. This was a live hazard, not a
+cosmetic one: an `unknown` earlier rule blocks every later definitive verdict,
+so rule 6 (`Lab-Troubleshoot-ICMP`, service `icmp-requests`) would have turned
+otherwise-exact traces into `UNVERIFIED` for any query whose source and
+destination matched it. The lab avoided this only because the tested
+destination fell outside rule 6.
+
+`_leaf_service_atoms()` now models:
+
+- `service-icmp` / `service-icmp6` → atom on `icmp-type` (0–255 if absent)
+- `service-sctp` → port range, proto `sctp`
+- `service-other` → proto `ip-<ip-protocol>`
+
+so a TCP/443 query against an ICMP or GRE service is now a confident
+`no-match`. `service-dce-rpc` and `service-rpc` stay unmodelled deliberately —
+they negotiate ports at runtime, so `no-match` would be a lie.
+
+### Changed — unknown reasons name the blocking leaf
+
+"Static match unavailable for AD-Services [service-group]" did not say what to
+look at. `resolver.unmodelled_names()` walks to the leaves, so the message is
+now:
+
+```
+Static service match unavailable for AD-Services → ALL_DCE_RPC [service-dce-rpc]
+Static match unavailable for Mixed-Nets → DynamicObj [dynamic-object]
+```
+
+`tools/diag_resolver.py` reports partially-modelled objects separately from
+unusable ones, and no longer claims a service group failed because of
+`address_atoms()`.
+
+### Tests
+
+100 → 119. New: `tests/test_v410_partial_resolution.py`.
+
+---
+
+## v4.9.0
+
+### Fixed — objects-dictionary presence mistaken for completeness
+
+`tools/diag_resolver.py` (added this release) reported **10 objects** in a live
+lab's root Access layer that the resolver could not turn into comparable
+ranges, every one of them marked `in dictionary: True` with `member count: 0`:
+
+```
+LAB-Internal-Nets [group]        Admin-Networks [group]
+AD-Services [service-group]      dns / ntp / icmp-requests [service-group]
+External-Cluster [simple-cluster]
+External-GW01 / External-GW02 [cluster-member]
+Internal-GW01 [simple-gateway]
+```
+
+`show-access-rulebase` is called with `details-level: standard`, so its
+`objects-dictionary` entries carry only `uid`, `name` and `type` — no group
+members, no gateway or cluster address. `hydrate_objects()` decided whether to
+fetch full detail with a single test:
+
+```python
+for uid in [x for x in uids if x and x not in existing]:
+```
+
+Present was treated as complete, so all ten were skipped and stayed as stubs.
+
+Consequences, both observed:
+
+- **Traffic Path** returned `UNVERIFIED` for a flow whose real configured path
+  is `Rule 7 → InternetLayer → Rule 7.1 → Accept`, because
+  `address_atoms()` returned `None` for `LAB-Internal-Nets` and the tri-state
+  matcher — correctly — refused to guess.
+- **Shadow analysis** silently under-reported: `_dimension_cover()` answers
+  `"Unsupported object type"` for an unresolvable object, so any rule using a
+  group was skipped instead of compared.
+
+`resolver.needs_detail()` now decides completeness from the fields the resolver
+actually consumes — an address, a port, or members — rather than from presence.
+`hydrate_objects()` re-fetches thin entries, and the hydration loop in
+`hydrate_rulebase()` re-checks nested members for completeness too (a group
+member can itself be a stub), over at most `MAX_HYDRATION_ROUNDS = 6` passes.
+
+Action and track objects (`Accept`, `Drop`, `Log`) reach hydration because
+`action` is in `RULE_FIELDS`; `needs_detail()` excludes them so they do not
+each cost a paced, rate-limited round trip.
+
+**Cost:** first load of a package now issues one `show-object` per thin object.
+At the default 0.55 s pacing that is roughly 10–20 s extra on a small policy,
+then served from the 300 s cache. Requesting `details-level: full` on
+`show-access-rulebase` would trade those N calls for one larger response and is
+worth measuring, but was not changed here.
+
+### Fixed — rate-limited hydration failed silently
+
+`hydrate_objects()` caught `CheckPointRateLimitError` and `break`, leaving a
+partly-resolved dictionary indistinguishable from a complete one. It now sets
+`CheckPointClient.hydration_truncated` so reduced confidence can be reported.
+
+### Changed
+
+- `disabled_rules` and `zero_hit_rules` findings now carry `display_rule`, so
+  an inline finding reads `7.1` instead of the ambiguous `1`.
+- Added `tools/diag_resolver.py`: read-only, prints every referenced object the
+  resolver cannot evaluate and distinguishes "no members returned" from
+  "members not hydrated".
+
+### Tests
+
+78 → 100. New: `tests/test_v49_hydration.py`.
+
+---
+
 ## v4.8.0
 
 Two fixes driven by validation against a live lab Management Server running
