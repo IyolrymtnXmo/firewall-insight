@@ -4,6 +4,106 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.11.0 — feedback, status and responsive shell
+
+Reported symptom: after clicking an action the app looked frozen, and telling
+"working" from "finished" from "crashed" meant opening DevTools → Network.
+
+That was accurate. The only feedback channel was one line of text
+(`S.textContent = …`), and eight code paths ended in
+`catch(e){S.textContent=e.message}` — a raw string with no cause, no remedy and
+no way to report it. Since v4.9 a first package load also issues one
+`show-object` per thin object at 0.55 s pacing, so 10–20 s of apparent silence
+became normal.
+
+### Added — activity is always visible
+
+- **Top progress bar** driven by a global in-flight request counter, so *any*
+  request shows activity without each call site opting in. `aria-busy` is set
+  on `<body>` for assistive tech.
+- **Blur overlay** for blocking work: translucent glass
+  (`backdrop-filter: blur(9px)`, `rgba(…,.62)`, with a light-theme variant),
+  a spinner, an **elapsed-time counter**, and named **step progress** so a long
+  run shows which phase it is in rather than one opaque spinner.
+- After 6 s the overlay explains *why* it is slow — per-object hydration paced
+  under the API rate limit, cached for 5 minutes afterwards — so expected
+  slowness stops reading as a hang.
+- **Per-button busy state**: the clicked button shows its own spinner and is
+  disabled, and `task()` refuses to start a job whose key is already running,
+  so double-clicking can no longer fire two analyses.
+- Requests now have an `AbortController` timeout instead of hanging forever.
+
+### Added — failures reach the user, not the console
+
+`describeError()` maps a failure to a cause and a remedy:
+
+| Symptom | Reported as |
+|---|---|
+| `Failed to fetch` | Cannot reach Firewall Insight — uvicorn looks stopped |
+| `HTTP 429` | Management API rate limit — raise `CHECKPOINT_MIN_REQUEST_INTERVAL` |
+| `HTTP 502` | Management Server unreachable — check `CHECKPOINT_MGMT` |
+| `AbortError` | Request timed out — raise `CHECKPOINT_TIMEOUT` |
+| login/credential | Authentication failed — check `.env` |
+
+Each failure now produces a colour-coded status bar, a toast with a **Copy
+details** action, *and* an inline error panel with a **Retry** button in the
+affected view. `window.onerror` and `unhandledrejection` handlers mean a script
+bug surfaces instead of silently doing nothing — the exact class of problem that
+sent the user to DevTools. Offline/online transitions are detected too.
+
+### Added — toasts, skeletons, empty states
+
+Four toast kinds (success / info / warn / error) with a life-bar countdown;
+**error toasts are sticky** and announce as `role="alert"`. Tables render a
+shimmer skeleton while loading instead of collapsing to blank space. Each page
+opens with an empty state saying what to do next; the Traffic Path one notes
+that the simulation never sends a packet, so the hosts need not exist.
+
+### Added — incomplete results are labelled incomplete
+
+New backend `data_quality()` reports `failed_inline_layers`,
+`object_hydration_truncated` and human-readable warnings on
+`/api/package-analyze`, `/api/package-policy-browser` and `/api/traffic-path`.
+The UI renders a banner plus a toast. Previously a partially-loaded policy was
+presented identically to a complete one — the same failure mode as the v4.9
+bug, one layer up.
+
+Traffic Path feedback now follows confidence rather than flattening it:
+`exact` → success, `inferred` → warning that the gateway log is authoritative,
+`UNVERIFIED` → a sticky warning explaining that guessing here risks being
+confidently wrong. NAT reports whether the build supports hit counts.
+
+### Fixed — horizontal overflow on mobile
+
+`1fr` is shorthand for `minmax(auto,1fr)`, and `auto` will not shrink below its
+content's min-width. One table with `min-width:650px` stretched its grid column
+to 688px and forced the whole document to scroll sideways at 390px.
+`minmax(0,1fr)` plus `min-width:0` down the chain lets `.table-wrap` scroll
+instead of the page, so wide tables stay readable and the layout fits.
+
+### Fixed — status bar nested inside itself
+
+`#status` keeps its legacy `.status` class so every existing `S.textContent`
+assignment still works, but that class carried its own background and border,
+which rendered as a box inside the new status bar. Neutralised in context.
+
+### Added — responsive and motion
+
+Sidebar becomes an off-canvas drawer under 900px with a scrim and a Menu
+button; controls, cards and grids reflow; sticky table headers; touch
+scrolling. Page changes, hovers and cards animate on a shared easing scale,
+all of it disabled under `prefers-reduced-motion`. `:focus-visible` rings for
+keyboard users, `Escape` dismisses toasts and closes the drawer.
+
+### Tests
+
+119 → 165. New: `tests/test_v411_ux.py`. Behaviour was additionally verified in
+headless Chromium: blur applied, overlay reference-counted and dismissed,
+failure reaching the UI, `scrollWidth == 390` at 390px, double-submit blocked,
+no page errors, dark and light themes.
+
+---
+
 ## v4.10.0
 
 Follow-up to v4.9. With hydration fixed, `tools/diag_resolver.py` narrowed the

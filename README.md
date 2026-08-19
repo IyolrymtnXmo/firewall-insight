@@ -63,7 +63,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass   # Windows PowerShel
 pip install -r requirements.txt
 
 copy .env.example .env      # then edit .env with your Management details
-pytest -q                   # expect: 119 passed
+pytest -q                   # expect: 165 passed
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -89,8 +89,8 @@ docker compose up --build      # reads .env via env_file
 
 | Check | Expected |
 |---|---|
-| `pytest -q` | `119 passed` |
-| `GET /health` | `{"status":"ok","version":"4.10.0","mode":"read-only",...}` |
+| `pytest -q` | `165 passed` |
+| `GET /health` | `{"status":"ok","version":"4.11.0","mode":"read-only",...}` |
 | `GET /api/checkpoint/test` | `{"connected":true,"api_server_version":"...","read_only":true}` |
 | `GET /api/bootstrap` | lists your access layers and policy packages |
 
@@ -144,6 +144,15 @@ reports a confidence level (`exact`, `inferred`, `unknown`).
 **Network Mapping** — topology derived from `show-gateways-and-servers`, with distinct
 gateway and management-server icons and connected-subnet nodes computed from interface
 addresses.
+
+**Feedback layer** — every request drives a top progress bar; blocking work shows a
+translucent blur overlay with elapsed time and named steps, and explains itself once it
+passes 6 s. Failures produce a cause-and-remedy status line, a toast with copyable
+details, and an inline retry panel — never a silent console error. Loading shows
+skeletons, empty views say what to do next, and an incomplete result is labelled
+incomplete rather than presented as complete. The interface is responsive down to
+390px, with an off-canvas nav drawer, sticky table headers, and all motion disabled
+under `prefers-reduced-motion`.
 
 ---
 
@@ -202,7 +211,13 @@ FastAPI (app/main.py)  ── in-memory cache, heavy-request lock
    needs every atom, so the analyzer uses the strict `address_atoms()` /
    `service_atoms()`, which return `None` unless the object is fully modelled.
    Do not make one of them use the other's resolver.
-10. **Real SmartConsole and gateway logs are the oracle.** Validate counts and traffic
+10. **The UI must never present a partial result as a complete one.**
+    `data_quality()` reports failed inline layers and truncated object
+    hydration; the frontend turns that into a visible banner and a toast. The
+    same applies to traffic confidence: `exact`, `inferred` and `UNVERIFIED`
+    get visually different treatment, because flattening them is how a user
+    ends up trusting a guess.
+11. **Real SmartConsole and gateway logs are the oracle.** Validate counts and traffic
    results against the live environment. Never hardcode expected numbers to make output
    look right.
 
@@ -235,7 +250,7 @@ Add `&force=true` to `bootstrap`, `policy-browser`, `package-policy-browser` or
 ## Testing
 
 ```bash
-pytest -q          # 119 tests, no Management Server required
+pytest -q          # 165 tests, no Management Server required
 ```
 
 Tests use fixture payloads shaped like real Management API responses; nothing in the

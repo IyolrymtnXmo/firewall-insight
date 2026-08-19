@@ -16,7 +16,7 @@ from .inline_layers import aggregate_analyses, aggregate_browser, merge_package_
 from .traffic import trace_access, trace_access_tree, correlate_nat, network_map, resolve_service_query
 from .config import settings
 
-APP_VERSION = "4.10.0"
+APP_VERSION = "4.11.0"
 
 app = FastAPI(
     title="Firewall Insight - Check Point Firewall Analysis Platform",
@@ -102,6 +102,32 @@ async def hydrate_rulebase(c, data):
     return data, existing
 
 
+def data_quality(c, tree) -> dict:
+    """
+    Report how trustworthy this result is, so the UI can say so out loud.
+
+    A partially-loaded policy must never be presented as a complete one. The
+    UI turns these into a visible banner rather than leaving the gap for the
+    user to discover from a wrong number.
+    """
+    errors = tree.get("errors", []) or []
+    truncated = bool(getattr(c, "hydration_truncated", False))
+    return {
+        "complete": not errors and not truncated,
+        "failed_inline_layers": len(errors),
+        "inline_layer_errors": errors[:10],
+        "object_hydration_truncated": truncated,
+        "warnings": (
+            ([f"{len(errors)} Inline Layer(s) could not be loaded; "
+              "rules inside them were not analyzed."] if errors else [])
+            + (["Object detail loading stopped early on Management API rate "
+                "limiting. Some objects may be unresolved, which can turn "
+                "matches into Unknown. Retry, or raise "
+                "CHECKPOINT_MIN_REQUEST_INTERVAL."] if truncated else [])
+        ),
+    }
+
+
 async def access_tree(c, layer, hydrate: bool = True):
     key = f"access-tree:{layer}:{'hydrated' if hydrate else 'raw'}"
     cached = cache_get(key)
@@ -171,6 +197,7 @@ async def analyze_package(c, package: str):
     result = aggregate_analyses(tree, analyses)
     result["package"] = package
     result["root_layers"] = tree.get("root_layers", [])
+    result["data_quality"] = data_quality(c, tree)
     cache_set(key, result)
     return result
 
@@ -189,6 +216,7 @@ async def browse_package(c, package: str):
     result = aggregate_browser(tree, browsed)
     result["package"] = package
     result["root_layers"] = tree.get("root_layers", [])
+    result["data_quality"] = data_quality(c, tree)
     cache_set(key, result)
     return result
 
@@ -448,6 +476,7 @@ async def traffic_path(
             "access": access,
             "nat": nat,
             "nat_error": nat_error,
+            "data_quality": data_quality(c, tree),
             "limitations": [
                 "This is a configuration-based Access Control simulation.",
                 "The trace now follows configured Inline Layers and Access Sections.",
@@ -627,9 +656,379 @@ tbody tr:nth-child(even){background:rgba(255,255,255,.015)}tbody tr:hover{backgr
 .alert-count{cursor:pointer}
 .hidden{display:none}.hint{font-size:12px;color:var(--muted)}
 @media(max-width:1100px){.dashboard-grid{grid-template-columns:1fr!important}.app{grid-template-columns:1fr}.sidebar{position:relative;height:auto}.menu{flex-direction:row;overflow:auto}.sidebar-bottom{display:none}.cards{grid-template-columns:repeat(2,1fr)}.main{padding:20px}}
+
+/* ============================================================
+   v4.11 UX layer: progress, blur overlay, toasts, skeletons,
+   empty/error states, responsive shell, motion.
+   ============================================================ */
+
+:root{
+  --ease:cubic-bezier(.22,.61,.36,1);
+  --ease-out:cubic-bezier(.16,1,.3,1);
+  --t-fast:140ms;
+  --t:220ms;
+  --t-slow:380ms;
+  --glass:rgba(14,13,19,.62);
+  --radius:14px;
+}
+.light{
+  --glass:rgba(255,255,255,.62);
+}
+
+*,*::before,*::after{box-sizing:border-box}
+
+/* Respect the OS setting. Motion is decoration, never the only signal. */
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    animation-duration:.001ms!important;
+    animation-iteration-count:1!important;
+    transition-duration:.001ms!important;
+    scroll-behavior:auto!important;
+  }
+}
+
+/* ---------- 1. Top progress bar (global request activity) ---------- */
+#topProgress{
+  position:fixed;top:0;left:0;right:0;height:3px;z-index:9000;
+  background:transparent;pointer-events:none;
+  opacity:0;transition:opacity var(--t) var(--ease);
+}
+#topProgress.on{opacity:1}
+#topProgress .bar{
+  height:100%;width:40%;border-radius:0 3px 3px 0;
+  background:linear-gradient(90deg,transparent,var(--purple2) 25%,var(--purple) 60%,#e9d5ff);
+  box-shadow:0 0 12px rgba(139,92,246,.75);
+  animation:tp 1.15s var(--ease) infinite;
+}
+@keyframes tp{
+  0%{transform:translateX(-100%) scaleX(.6)}
+  55%{transform:translateX(60%) scaleX(1)}
+  100%{transform:translateX(250%) scaleX(.5)}
+}
+
+/* ---------- 2. Blur / glass busy overlay ---------- */
+#busyOverlay{
+  position:fixed;inset:0;z-index:8500;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--glass);
+  -webkit-backdrop-filter:blur(9px) saturate(120%);
+  backdrop-filter:blur(9px) saturate(120%);
+  opacity:0;visibility:hidden;
+  transition:opacity var(--t) var(--ease),visibility var(--t) step-end;
+}
+#busyOverlay.on{opacity:1;visibility:visible;transition:opacity var(--t) var(--ease),visibility 0s}
+#busyOverlay .busy-card{
+  min-width:320px;max-width:min(560px,92vw);
+  padding:26px 28px;border-radius:20px;
+  background:var(--panel);border:1px solid var(--line);
+  box-shadow:0 30px 80px rgba(0,0,0,.45);
+  text-align:center;
+  transform:translateY(10px) scale(.97);
+  transition:transform var(--t-slow) var(--ease-out);
+}
+#busyOverlay.on .busy-card{transform:translateY(0) scale(1)}
+.busy-title{font-weight:750;font-size:16px;margin:14px 0 4px}
+.busy-sub{color:var(--muted);font-size:13px;line-height:1.55}
+.busy-elapsed{font-variant-numeric:tabular-nums;color:var(--purple2);font-weight:700}
+.busy-hint{
+  margin-top:14px;padding:10px 12px;border-radius:10px;font-size:12.5px;
+  background:rgba(246,196,83,.10);border:1px solid rgba(246,196,83,.28);
+  color:var(--text);text-align:left;
+  opacity:0;max-height:0;overflow:hidden;
+  transition:opacity var(--t) var(--ease),max-height var(--t-slow) var(--ease),margin-top var(--t) var(--ease);
+}
+.busy-hint.on{opacity:1;max-height:160px}
+.busy-steps{
+  margin-top:16px;text-align:left;display:flex;flex-direction:column;gap:7px;
+  font-size:12.5px;color:var(--muted);
+}
+.busy-step{display:flex;align-items:center;gap:9px;transition:color var(--t) var(--ease)}
+.busy-step .dot{
+  width:8px;height:8px;border-radius:50%;background:var(--line);flex:0 0 8px;
+  transition:background var(--t) var(--ease),box-shadow var(--t) var(--ease);
+}
+.busy-step.active{color:var(--text);font-weight:650}
+.busy-step.active .dot{background:var(--purple);box-shadow:0 0 0 4px rgba(139,92,246,.20)}
+.busy-step.done .dot{background:var(--good)}
+.busy-step.done{color:var(--muted)}
+
+/* Spinner: one shape reused everywhere */
+.spinner{
+  width:34px;height:34px;border-radius:50%;
+  border:3px solid var(--line);border-top-color:var(--purple);
+  animation:spin .75s linear infinite;margin:0 auto;
+}
+.spinner.sm{width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:-2px;margin:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---------- 3. Toasts ---------- */
+#toasts{
+  position:fixed;right:18px;bottom:18px;z-index:9500;
+  display:flex;flex-direction:column;gap:10px;
+  width:min(400px,calc(100vw - 36px));pointer-events:none;
+}
+.toast{
+  pointer-events:auto;position:relative;overflow:hidden;
+  display:flex;gap:11px;padding:13px 14px;
+  border-radius:13px;border:1px solid var(--line);
+  background:var(--panel2);box-shadow:0 18px 44px rgba(0,0,0,.40);
+  transform:translateX(120%);opacity:0;
+  transition:transform var(--t-slow) var(--ease-out),opacity var(--t) var(--ease),margin var(--t) var(--ease);
+}
+.toast.in{transform:translateX(0);opacity:1}
+.toast.out{transform:translateX(120%);opacity:0;margin-bottom:-58px}
+.toast .ic{flex:0 0 20px;font-size:15px;line-height:1.35;font-weight:800}
+.toast .body{flex:1;min-width:0}
+.toast .t{font-weight:700;font-size:13.5px;margin-bottom:2px}
+.toast .m{font-size:12.5px;color:var(--muted);line-height:1.5;word-break:break-word}
+.toast .x{
+  flex:0 0 auto;background:none;border:0;color:var(--muted);cursor:pointer;
+  font-size:16px;line-height:1;padding:0 2px;border-radius:6px;
+  transition:color var(--t-fast) var(--ease),background var(--t-fast) var(--ease);
+}
+.toast .x:hover{color:var(--text);background:rgba(255,255,255,.07)}
+.toast .life{position:absolute;left:0;bottom:0;height:2px;width:100%;transform-origin:left}
+.toast.success{border-color:rgba(56,217,150,.42)}
+.toast.success .ic{color:var(--good)} .toast.success .life{background:var(--good)}
+.toast.info{border-color:rgba(167,139,250,.42)}
+.toast.info .ic{color:var(--purple2)} .toast.info .life{background:var(--purple2)}
+.toast.warn{border-color:rgba(246,196,83,.48)}
+.toast.warn .ic{color:var(--warn)} .toast.warn .life{background:var(--warn)}
+.toast.error{border-color:rgba(255,113,132,.52)}
+.toast.error .ic{color:var(--bad)} .toast.error .life{background:var(--bad)}
+.toast .act{
+  margin-top:9px;background:rgba(255,255,255,.06);border:1px solid var(--line);
+  color:var(--text);font-size:12px;font-weight:650;padding:5px 11px;border-radius:8px;cursor:pointer;
+  transition:background var(--t-fast) var(--ease),transform var(--t-fast) var(--ease);
+}
+.toast .act:hover{background:rgba(255,255,255,.12)}
+.toast .act:active{transform:translateY(1px)}
+
+/* ---------- 4. Status bar ---------- */
+.statusbar{
+  display:flex;align-items:center;gap:10px;margin-top:12px;
+  padding:11px 13px;border-radius:12px;
+  background:var(--panel2);border:1px solid var(--line);
+  transition:border-color var(--t) var(--ease),background var(--t) var(--ease);
+}
+.statusbar .status-icon{
+  flex:0 0 auto;width:18px;height:18px;display:grid;place-items:center;
+  font-size:12px;font-weight:800;color:var(--muted);
+}
+/* #status keeps its legacy .status class so existing S.textContent calls
+   still work; neutralise its own box so it does not nest inside the bar. */
+.statusbar .status{flex:1;min-width:0;font-size:13px;line-height:1.5;margin:0;padding:0;background:none;border:0;border-radius:0;color:inherit}
+.light .statusbar .status{color:inherit}
+.statusbar .status-time{
+  flex:0 0 auto;font-size:11.5px;color:var(--muted);
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+.statusbar.busy{border-color:rgba(167,139,250,.50);background:rgba(139,92,246,.08)}
+.statusbar.busy .status-icon{color:var(--purple2)}
+.statusbar.success{border-color:rgba(56,217,150,.42)}
+.statusbar.success .status-icon{color:var(--good)}
+.statusbar.warn{border-color:rgba(246,196,83,.46);background:rgba(246,196,83,.07)}
+.statusbar.warn .status-icon{color:var(--warn)}
+.statusbar.error{border-color:rgba(255,113,132,.50);background:rgba(255,113,132,.07)}
+.statusbar.error .status-icon{color:var(--bad)}
+
+/* ---------- 5. Connection badge ---------- */
+.badge.conn{display:inline-flex;align-items:center;gap:8px;transition:all var(--t) var(--ease)}
+.badge.conn .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:0 0 8px}
+.badge.conn.ok .dot{background:var(--good);box-shadow:0 0 0 4px rgba(56,217,150,.18)}
+.badge.conn.bad .dot{background:var(--bad);box-shadow:0 0 0 4px rgba(255,113,132,.18)}
+.badge.conn.testing .dot{background:var(--warn);animation:pulse 1.1s var(--ease) infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.32}}
+
+/* ---------- 6. Skeletons ---------- */
+.skel{
+  position:relative;overflow:hidden;border-radius:8px;
+  background:linear-gradient(90deg,rgba(255,255,255,.045) 0%,rgba(255,255,255,.10) 50%,rgba(255,255,255,.045) 100%);
+  background-size:220% 100%;animation:shimmer 1.35s var(--ease) infinite;
+}
+.light .skel{background:linear-gradient(90deg,rgba(0,0,0,.05) 0%,rgba(0,0,0,.10) 50%,rgba(0,0,0,.05) 100%);background-size:220% 100%}
+@keyframes shimmer{0%{background-position:120% 0}100%{background-position:-120% 0}}
+.skel-line{height:12px;margin:9px 0}
+.skel-row{display:flex;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
+.skel-row>.skel{height:12px;flex:1}
+.skel-card{padding:16px;border:1px solid var(--line);border-radius:var(--radius);background:var(--card)}
+
+/* ---------- 7. Empty & error states ---------- */
+.state{
+  text-align:center;padding:44px 24px;border-radius:var(--radius);
+  border:1px dashed var(--line);background:rgba(255,255,255,.018);
+  animation:fadeUp var(--t-slow) var(--ease-out) both;
+}
+.state .ic{font-size:30px;opacity:.5;margin-bottom:10px}
+.state h4{margin:0 0 6px;font-size:15px}
+.state p{margin:0 auto;max-width:460px;color:var(--muted);font-size:13px;line-height:1.6}
+.state button{margin-top:16px}
+.state.err{border-style:solid;border-color:rgba(255,113,132,.42);background:rgba(255,113,132,.055)}
+.state.err .ic{color:var(--bad);opacity:1}
+.state pre{
+  margin:14px auto 0;max-width:100%;overflow:auto;text-align:left;
+  background:var(--input);border:1px solid var(--line);border-radius:10px;
+  padding:11px 13px;font-size:11.5px;color:var(--muted);white-space:pre-wrap;
+}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ---------- 8. Data-quality banner ---------- */
+.dq{
+  margin:14px 0;padding:13px 15px;border-radius:12px;display:flex;gap:11px;
+  border:1px solid rgba(246,196,83,.34);background:rgba(246,196,83,.075);
+  animation:fadeUp var(--t-slow) var(--ease-out) both;
+}
+.dq .ic{flex:0 0 auto;color:var(--warn);font-weight:800}
+.dq h4{margin:0 0 5px;font-size:13.5px}
+.dq ul{margin:0;padding-left:17px;font-size:12.5px;color:var(--muted);line-height:1.65}
+
+/* ---------- 9. Buttons: busy + press feedback ---------- */
+button{transition:background var(--t-fast) var(--ease),border-color var(--t-fast) var(--ease),
+        transform var(--t-fast) var(--ease),opacity var(--t-fast) var(--ease),box-shadow var(--t-fast) var(--ease)}
+button:not(:disabled):active{transform:translateY(1px)}
+button:disabled{opacity:.55;cursor:not-allowed}
+button[data-busy="1"]{position:relative;color:transparent!important;pointer-events:none}
+button[data-busy="1"]::after{
+  content:"";position:absolute;inset:0;margin:auto;
+  width:15px;height:15px;border-radius:50%;
+  border:2px solid rgba(255,255,255,.35);border-top-color:#fff;
+  animation:spin .7s linear infinite;
+}
+:focus-visible{outline:2px solid var(--purple2);outline-offset:2px;border-radius:8px}
+
+/* ---------- 10. Page transitions ---------- */
+.page{display:none}
+.page.active{display:block;animation:pageIn var(--t-slow) var(--ease-out) both}
+@keyframes pageIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.card,.panel{transition:border-color var(--t) var(--ease),box-shadow var(--t) var(--ease),transform var(--t) var(--ease)}
+.drill-card{cursor:pointer}
+.drill-card:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(0,0,0,.28);border-color:rgba(167,139,250,.45)}
+.menu button{transition:background var(--t-fast) var(--ease),color var(--t-fast) var(--ease),padding-left var(--t-fast) var(--ease)}
+.menu button:hover:not(.active){padding-left:18px}
+tbody tr{transition:background var(--t-fast) var(--ease)}
+
+/* ---------- 11. Tables: sticky header + scroll affordance ---------- */
+.table-wrap{
+  overflow:auto;-webkit-overflow-scrolling:touch;
+  border-radius:12px;border:1px solid var(--line);
+  max-height:min(70vh,720px);
+  scrollbar-width:thin;
+}
+.table-wrap::-webkit-scrollbar{height:9px;width:9px}
+.table-wrap::-webkit-scrollbar-thumb{background:var(--line);border-radius:9px}
+.table-wrap::-webkit-scrollbar-thumb:hover{background:var(--purple)}
+.table-wrap thead th{
+  position:sticky;top:0;z-index:2;
+  background:var(--panel2);
+  box-shadow:inset 0 -1px 0 var(--line);
+  backdrop-filter:blur(6px);
+}
+
+/* ---------- 12. Responsive shell ---------- */
+#navToggle{display:none}
+@media(max-width:900px){
+  #navToggle{
+    display:inline-flex;align-items:center;gap:8px;
+    position:fixed;left:12px;top:11px;z-index:8000;
+    padding:9px 13px;border-radius:11px;font-size:13px;font-weight:700;
+    background:var(--panel);border:1px solid var(--line);color:var(--text);
+    box-shadow:0 8px 22px rgba(0,0,0,.32);cursor:pointer;
+  }
+  .app{grid-template-columns:1fr!important;display:block!important}
+  .sidebar{
+    position:fixed!important;inset:0 auto 0 0;width:266px;height:100%!important;z-index:8200;
+    transform:translateX(-102%);transition:transform var(--t-slow) var(--ease-out);
+    box-shadow:0 0 60px rgba(0,0,0,.5);overflow:auto;
+  }
+  body.nav-open .sidebar{transform:translateX(0)}
+  body.nav-open::after{
+    content:"";position:fixed;inset:0;z-index:8100;
+    background:rgba(0,0,0,.5);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+  }
+  .sidebar .menu{flex-direction:column!important;overflow:visible!important}
+  .sidebar-bottom{display:block!important}
+  .main{padding:62px 14px 26px!important}
+  .header{flex-direction:column;align-items:flex-start;gap:10px}
+  .header h1{font-size:20px;line-height:1.3}
+  .controls{flex-direction:column;align-items:stretch}
+  .controls>*{width:100%}
+  .controls select,.controls button{width:100%}
+  .cards{grid-template-columns:1fr!important}
+  .inline-findings-grid{grid-template-columns:1fr!important}
+  .access-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  #toasts{right:10px;left:10px;bottom:10px;width:auto}
+  .table-wrap{max-height:none}
+  .table-wrap thead th{position:static}
+  #busyOverlay .busy-card{min-width:0;width:calc(100vw - 32px);padding:22px}
+}
+@media(max-width:520px){
+  .access-summary-grid{grid-template-columns:1fr!important}
+  .state{padding:32px 16px}
+}
+
+/* ---------- 12b. Grid shrink fix ----------
+   `1fr` is shorthand for minmax(auto,1fr), and `auto` refuses to shrink below
+   the content's min-width. One table with min-width:650px therefore stretched
+   its grid column to 688px and forced the whole document to scroll sideways on
+   a 390px screen. minmax(0,1fr) plus min-width:0 down the chain lets
+   .table-wrap do the scrolling instead of the page, so wide tables stay
+   readable and the layout still fits. */
+.cards,.dashboard-grid,.inline-findings-grid,.access-summary-grid{min-width:0}
+.cards>*,.dashboard-grid>*,.inline-findings-grid>*,.access-summary-grid>*{min-width:0}
+.panel,.card,.main,.section-title{min-width:0}
+.table-wrap{min-width:0;max-width:100%}
+.section-title{flex-wrap:wrap;gap:8px}
+.flow{flex-wrap:wrap}
+@media(max-width:900px){
+  .dashboard-grid{grid-template-columns:minmax(0,1fr)!important}
+  .cards{grid-template-columns:minmax(0,1fr)!important}
+  .inline-findings-grid{grid-template-columns:minmax(0,1fr)!important}
+  .access-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .flow .arrow{display:none}
+  .flow .step{width:100%}
+}
+
+/* ---------- 13. Offline / stale ---------- */
+#offlineBar{
+  position:fixed;left:50%;top:12px;transform:translate(-50%,-160%);
+  z-index:9600;padding:9px 16px;border-radius:999px;
+  background:rgba(255,113,132,.16);border:1px solid rgba(255,113,132,.5);
+  color:var(--text);font-size:12.5px;font-weight:650;
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  transition:transform var(--t-slow) var(--ease-out);
+}
+#offlineBar.on{transform:translate(-50%,0)}
+.stale{position:relative}
+.stale::after{
+  content:"stale";position:absolute;right:10px;top:10px;
+  font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+  padding:3px 7px;border-radius:6px;color:var(--warn);
+  background:rgba(246,196,83,.14);border:1px solid rgba(246,196,83,.34);
+}
+
+/* Screen-reader-only live region */
+.sr-only{
+  position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;
+}
+
 </style>
 </head>
 <body>
+<div id="topProgress" aria-hidden="true"><div class="bar"></div></div>
+<div id="offlineBar">You are offline — requests will fail until the connection returns</div>
+<div id="toasts" aria-live="polite" aria-relevant="additions"></div>
+<div id="srLive" class="sr-only" role="status" aria-live="polite"></div>
+<button id="navToggle" onclick="toggleNav()" aria-label="Toggle navigation">&#9776; Menu</button>
+<div id="busyOverlay" role="dialog" aria-modal="true" aria-live="assertive">
+  <div class="busy-card">
+    <div class="spinner"></div>
+    <div class="busy-title" id="busyTitle">Working…</div>
+    <div class="busy-sub" id="busySub"></div>
+    <div class="busy-steps" id="busySteps"></div>
+    <div class="busy-hint" id="busyHint"></div>
+  </div>
+</div>
 <div class="app">
   <aside class="sidebar">
     <div class="brand">Firewall <span>Insight</span></div>
@@ -651,17 +1050,17 @@ tbody tr:nth-child(even){background:rgba(255,255,255,.015)}tbody tr:hover{backgr
   <main class="main">
     <div class="header">
       <div><h1>Check Point Firewall Analysis Platform</h1></div>
-      <div id="conn" class="badge">Not tested</div>
+      <div id="conn" class="badge conn"><span class="dot"></span><span>Not tested</span></div>
     </div>
 
     <div class="panel">
       <div class="controls">
-        <button onclick="testConn()">Test Connection</button>
-        <button onclick="loadMetadata(true)">Refresh Metadata</button>
+        <button onclick="testConn(event)">Test Connection</button>
+        <button onclick="loadMetadata(true,event)">Refresh Metadata</button>
         <span id="layerControl"><select id="layer"><option value="">Select Access Layer...</option></select></span>
         <span id="packageControl"><select id="pkg"><option value="">Select Policy Package...</option></select></span>
       </div>
-      <div id="status" class="status">Ready. No API calls are made automatically.</div>
+      <div class="statusbar" id="statusBar"><span class="status-icon" id="statusIcon">•</span><div id="status" class="status">Ready. No API calls are made automatically.</div><span class="status-time" id="statusTime"></span></div>
     </div>
 
     <section id="dashboard" class="page active">
@@ -761,6 +1160,7 @@ tbody tr:nth-child(even){background:rgba(255,255,255,.015)}tbody tr:hover{backgr
         </div>
 
         <div id="browserSummary" class="cards access-summary-grid hidden"></div>
+        <div id="browserDq"></div>
         <div id="browserResults" style="margin-top:18px"></div>
       </div>
     </section>
@@ -778,6 +1178,7 @@ tbody tr:nth-child(even){background:rgba(255,255,255,.015)}tbody tr:hover{backgr
         </div>
 
         <div id="accessCards" class="cards hidden"></div>
+        <div id="accessDq"></div>
         <div id="accessFindings"></div>
       </div>
     </section>
@@ -829,7 +1230,7 @@ tbody tr:nth-child(even){background:rgba(255,255,255,.015)}tbody tr:hover{backgr
 
     <section id="mapping" class="page">
       <div class="panel">
-        <div class="section-title"><h2>Network Mapping</h2><div><button class="primary" onclick="loadMap()">Load Topology</button> <button onclick="mapMode('topology')">Topology</button> <button onclick="mapMode('inventory')">Inventory</button></div></div>
+        <div class="section-title"><h2>Network Mapping</h2><div><button class="primary" onclick="loadMap(event)">Load Topology</button> <button onclick="mapMode('topology')">Topology</button> <button onclick="mapMode('inventory')">Inventory</button></div></div>
         <p class="muted">Logical topology: Gateway → Interface → Connected Subnet. Physical cabling and live routing are not inferred.</p>
         <div id="topology" class="topology"><div class="muted" style="padding:25px">Click Load Topology.</div></div>
         <div id="inventory" class="map hidden"></div>
@@ -845,8 +1246,326 @@ tbody tr:nth-child(even){background:rgba(255,255,255,.015)}tbody tr:hover{backgr
 const S=document.getElementById('status'), L=document.getElementById('layer'), P=document.getElementById('pkg');
 let browserData=null,accessData=null,natData=null,mapData=null;
 
+function renderDataQuality(id,dq){
+  const el=document.getElementById(id);
+  if(el) el.innerHTML=dataQualityBanner(dq);
+}
+
+function primeEmptyStates(){
+  const pkgHint='Pick a Policy Package at the top of the page, then run the analysis. Nothing is fetched until you ask.';
+  const put=(id,html)=>{const el=document.getElementById(id); if(el&&!el.innerHTML.trim()) el.innerHTML=html;};
+  put('browserResults',emptyState('\u25a4','No policy loaded yet',pkgHint,'Load Policy','onclick="loadPolicyBrowser()"'));
+  put('accessFindings',emptyState('\u25c7','No analysis yet',pkgHint,'Run Analysis','onclick="runAccess()"'));
+  put('traceResult',emptyState('\u279c','No trace yet','Enter a source, a destination and a port or service, then run the trace. This is a configuration-based simulation \u2014 it never sends a packet, so the hosts do not need to exist.',null,null));
+}
+
 function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
-async function api(u){const r=await fetch(u),t=await r.text();let d;try{d=JSON.parse(t)}catch{throw new Error('HTTP '+r.status+': '+t.slice(0,300))}if(!r.ok)throw new Error(d.detail||JSON.stringify(d));return d}
+
+/* ============================================================
+   v4.11 UX runtime.
+
+   The problem this replaces: every long call ran silently and the only
+   feedback was one line of text, so "working", "finished" and "crashed"
+   looked identical and you had to open DevTools to tell them apart.
+
+   Design rules:
+     - every request is tracked, so activity is always visible
+     - every failure surfaces in the UI, never only in the console
+     - anything slow reports elapsed time, so it never looks frozen
+     - a partial result is labelled partial, never shown as complete
+   ============================================================ */
+
+const UX_LONG_MS = 6000;      // when to explain that slowness is expected
+const UX_TIMEOUT_MS = 240000; // hard ceiling; hydration on a big policy is slow
+
+/* ---------- status bar ---------- */
+const STATUS_ICONS = {info:'•', busy:'', success:'✓', warn:'!', error:'✕'};
+
+function setStatus(msg, kind='info'){
+  const bar = document.getElementById('statusBar');
+  const icon = document.getElementById('statusIcon');
+  const time = document.getElementById('statusTime');
+  if(S) S.textContent = msg;
+  if(bar) bar.className = 'statusbar' + (kind !== 'info' ? ' ' + kind : '');
+  if(icon) icon.innerHTML = kind === 'busy'
+    ? '<span class="spinner sm"></span>'
+    : (STATUS_ICONS[kind] || '•');
+  if(time) time.textContent = new Date().toLocaleTimeString();
+  const live = document.getElementById('srLive');
+  if(live && kind !== 'busy') live.textContent = msg;
+}
+
+/* ---------- toasts ---------- */
+const TOAST_ICONS = {success:'✓', info:'i', warn:'!', error:'✕'};
+const TOAST_LIFE = {success:4200, info:5200, warn:9000, error:0}; // 0 = sticky
+
+function notify(kind, title, message='', opts={}){
+  const host = document.getElementById('toasts');
+  if(!host) return;
+  const el = document.createElement('div');
+  el.className = 'toast ' + kind;
+  el.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+
+  const life = opts.duration !== undefined ? opts.duration : TOAST_LIFE[kind];
+  el.innerHTML =
+    `<div class="ic">${TOAST_ICONS[kind] || 'i'}</div>` +
+    `<div class="body"><div class="t">${esc(title)}</div>` +
+    (message ? `<div class="m">${esc(message)}</div>` : '') +
+    (opts.actionLabel ? `<button class="act">${esc(opts.actionLabel)}</button>` : '') +
+    `</div><button class="x" aria-label="Dismiss">×</button>` +
+    (life ? `<div class="life"></div>` : '');
+
+  host.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('in'));
+
+  const close = () => {
+    if(el.dataset.closing) return;
+    el.dataset.closing = '1';
+    el.classList.add('out');
+    setTimeout(() => el.remove(), 400);
+  };
+  el.querySelector('.x').onclick = close;
+  const act = el.querySelector('.act');
+  if(act && opts.onAction) act.onclick = () => { close(); opts.onAction(); };
+
+  if(life){
+    const bar = el.querySelector('.life');
+    bar.style.transition = `transform ${life}ms linear`;
+    requestAnimationFrame(() => { bar.style.transform = 'scaleX(0)'; });
+    setTimeout(close, life);
+  }
+  return close;
+}
+
+/* ---------- global request tracking ---------- */
+let uxInFlight = 0;
+
+function uxRequestStart(){
+  uxInFlight++;
+  const p = document.getElementById('topProgress');
+  if(p) p.classList.add('on');
+  document.body.setAttribute('aria-busy', 'true');
+}
+function uxRequestEnd(){
+  uxInFlight = Math.max(0, uxInFlight - 1);
+  if(uxInFlight === 0){
+    const p = document.getElementById('topProgress');
+    if(p) p.classList.remove('on');
+    document.body.removeAttribute('aria-busy');
+  }
+}
+
+/* ---------- blocking overlay ---------- */
+let uxBusyTimer = null, uxBusyStart = 0, uxBusyDepth = 0;
+
+function busyShow(title, sub='', steps=[]){
+  uxBusyDepth++;
+  const ov = document.getElementById('busyOverlay');
+  if(!ov) return;
+  document.getElementById('busyTitle').textContent = title;
+  document.getElementById('busySub').innerHTML =
+    esc(sub) + ' <span class="busy-elapsed" id="busyElapsed">0.0s</span>';
+  const hint = document.getElementById('busyHint');
+  hint.classList.remove('on');
+  const stepBox = document.getElementById('busySteps');
+  stepBox.innerHTML = steps.map((s, i) =>
+    `<div class="busy-step${i === 0 ? ' active' : ''}" data-step="${i}">` +
+    `<span class="dot"></span><span>${esc(s)}</span></div>`).join('');
+
+  ov.classList.add('on');
+  uxBusyStart = Date.now();
+  clearInterval(uxBusyTimer);
+  uxBusyTimer = setInterval(() => {
+    const ms = Date.now() - uxBusyStart;
+    const e = document.getElementById('busyElapsed');
+    if(e) e.textContent = (ms / 1000).toFixed(1) + 's';
+    if(ms > UX_LONG_MS && !hint.classList.contains('on')){
+      hint.classList.add('on');
+      hint.textContent = 'Still working. The first load of a package fetches '
+        + 'full object detail one object at a time, paced to stay under the '
+        + 'Management API rate limit, so 10–20s is normal. Results are '
+        + 'then cached for 5 minutes.';
+    }
+  }, 100);
+}
+
+function busyStep(index){
+  document.querySelectorAll('#busySteps .busy-step').forEach(el => {
+    const i = Number(el.dataset.step);
+    el.classList.toggle('active', i === index);
+    el.classList.toggle('done', i < index);
+  });
+}
+
+function busyHide(){
+  uxBusyDepth = Math.max(0, uxBusyDepth - 1);
+  if(uxBusyDepth > 0) return;
+  clearInterval(uxBusyTimer);
+  const ov = document.getElementById('busyOverlay');
+  if(ov) ov.classList.remove('on');
+}
+
+/* ---------- error normalisation ---------- */
+function describeError(e){
+  const raw = String((e && e.message) || e || 'Unknown error');
+  if(e && e.name === 'AbortError')
+    return {title:'Request timed out', hint:'The Management API did not answer in time. It may be busy loading a large policy — try again, or raise CHECKPOINT_TIMEOUT.'};
+  if(/failed to fetch|networkerror|load failed/i.test(raw))
+    return {title:'Cannot reach Firewall Insight', hint:'The uvicorn server looks like it stopped. Check the terminal running it, then retry.'};
+  if(/^HTTP 429|rate limit|too many requests/i.test(raw))
+    return {title:'Management API rate limit', hint:'Retry/backoff was exhausted. Wait a moment and retry, or raise CHECKPOINT_MIN_REQUEST_INTERVAL in .env.'};
+  if(/^HTTP 502|unable to connect/i.test(raw))
+    return {title:'Management Server unreachable', hint:'Check CHECKPOINT_MGMT in .env, that the server is up, and that the Management API accepts this client.'};
+  if(/^HTTP 400/i.test(raw))
+    return {title:'Request rejected', hint:raw.replace(/^HTTP 400:\s*/i, '')};
+  if(/login|authentication|credential/i.test(raw))
+    return {title:'Authentication failed', hint:'Check CHECKPOINT_USER and CHECKPOINT_PASSWORD in .env.'};
+  return {title:'Request failed', hint:raw};
+}
+
+function fail(e, context=''){
+  const d = describeError(e);
+  const raw = String((e && e.message) || e || '');
+  setStatus((context ? context + ': ' : '') + d.title + ' — ' + d.hint, 'error');
+  notify('error', d.title, d.hint, {
+    actionLabel: 'Copy details',
+    onAction: () => {
+      const text = (context ? context + '\n' : '') + raw;
+      if(navigator.clipboard) navigator.clipboard.writeText(text);
+      notify('info', 'Copied', 'Error details are on your clipboard.');
+    }
+  });
+  console.error('[Firewall Insight]', context, e);
+  return d;
+}
+
+/* ---------- the task wrapper ---------- */
+const uxRunning = new Set();
+
+async function task(key, label, fn, opts={}){
+  if(uxRunning.has(key)){
+    notify('info', 'Already running', label + ' is still in progress.');
+    return;
+  }
+  uxRunning.add(key);
+  const btn = opts.button || null;
+  if(btn){ btn.dataset.busy = '1'; btn.disabled = true; }
+  setStatus(label + '…', 'busy');
+  if(opts.blocking !== false) busyShow(label, opts.sub || 'Elapsed', opts.steps || []);
+
+  try{
+    const out = await fn();
+    if(opts.successMessage !== null){
+      setStatus(opts.successMessage || (label + ' complete.'), 'success');
+      if(opts.toast !== false)
+        notify('success', opts.successTitle || label + ' complete', opts.successMessage || '');
+    }
+    return out;
+  }catch(e){
+    fail(e, label);
+    throw e;
+  }finally{
+    uxRunning.delete(key);
+    if(btn){ delete btn.dataset.busy; btn.disabled = false; }
+    if(opts.blocking !== false) busyHide();
+  }
+}
+
+/* ---------- skeletons / states ---------- */
+function skeletonTable(cols=7, rows=8){
+  return '<div class="table-wrap" style="padding:4px 14px 14px">'
+    + `<div class="skel-row">${'<div class="skel"></div>'.repeat(cols)}</div>`.repeat(rows + 1)
+    + '</div>';
+}
+function skeletonCards(n=5){
+  return `<div class="cards">${
+    '<div class="skel-card"><div class="skel skel-line" style="width:52%"></div>'
+    + '<div class="skel skel-line" style="height:26px;width:38%"></div>'
+    + '<div class="skel skel-line" style="width:72%"></div></div>'}`.repeat(1)
+    + '</div>';
+}
+function emptyState(icon, title, hint, actionLabel, actionAttr){
+  return `<div class="state"><div class="ic">${icon}</div><h4>${esc(title)}</h4>`
+    + `<p>${esc(hint)}</p>`
+    + (actionLabel ? `<button class="primary" ${actionAttr}>${esc(actionLabel)}</button>` : '')
+    + `</div>`;
+}
+function errorState(e, retryAttr){
+  const d = describeError(e);
+  return `<div class="state err"><div class="ic">✕</div><h4>${esc(d.title)}</h4>`
+    + `<p>${esc(d.hint)}</p>`
+    + (retryAttr ? `<button class="primary" ${retryAttr}>Retry</button>` : '')
+    + `<pre>${esc(String((e && e.message) || e || ''))}</pre></div>`;
+}
+
+/* ---------- data-quality banner ---------- */
+function dataQualityBanner(dq){
+  if(!dq || !dq.warnings || !dq.warnings.length) return '';
+  return `<div class="dq"><div class="ic">!</div><div><h4>This result is incomplete</h4>`
+    + `<ul>${dq.warnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul></div></div>`;
+}
+function reportDataQuality(dq, context){
+  if(!dq || dq.complete !== false) return;
+  (dq.warnings || []).forEach(w =>
+    notify('warn', context + ': incomplete result', w, {duration: 12000}));
+}
+
+/* ---------- connection badge ---------- */
+function setConn(state, text){
+  const el = document.getElementById('conn');
+  if(!el) return;
+  el.className = 'badge conn' + (state ? ' ' + state : '');
+  el.innerHTML = `<span class="dot"></span><span>${esc(text)}</span>`;
+}
+
+/* ---------- mobile nav ---------- */
+function toggleNav(force){
+  const open = force !== undefined ? force : !document.body.classList.contains('nav-open');
+  document.body.classList.toggle('nav-open', open);
+}
+
+/* ---------- global safety nets ---------- */
+window.addEventListener('error', ev => {
+  notify('error', 'Unexpected interface error',
+    (ev.message || 'Script error') + (ev.lineno ? ' (line ' + ev.lineno + ')' : ''));
+});
+window.addEventListener('unhandledrejection', ev => {
+  const r = ev.reason;
+  if(r && r.__uxHandled) return;
+  const d = describeError(r);
+  notify('error', d.title, d.hint);
+});
+window.addEventListener('offline', () => {
+  document.getElementById('offlineBar')?.classList.add('on');
+  setStatus('Browser is offline. Requests will fail until the connection returns.', 'error');
+});
+window.addEventListener('online', () => {
+  document.getElementById('offlineBar')?.classList.remove('on');
+  setStatus('Connection restored.', 'success');
+});
+document.addEventListener('keydown', ev => {
+  if(ev.key === 'Escape'){
+    document.querySelectorAll('#toasts .toast .x').forEach(b => b.click());
+    toggleNav(false);
+  }
+});
+
+async function api(u){
+  uxRequestStart();
+  const ctl=new AbortController();
+  const to=setTimeout(()=>ctl.abort(),UX_TIMEOUT_MS);
+  try{
+    const r=await fetch(u,{signal:ctl.signal});
+    const t=await r.text();
+    let d;
+    try{d=JSON.parse(t)}catch{throw new Error('HTTP '+r.status+': '+t.slice(0,300))}
+    if(!r.ok)throw new Error('HTTP '+r.status+': '+(d.detail||JSON.stringify(d)));
+    return d;
+  }finally{
+    clearTimeout(to);
+    uxRequestEnd();
+  }
+}
 
 function showPage(id,b){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
@@ -863,23 +1582,35 @@ function goTo(id){
 }
 async function dashboardRefresh(){
   if(!P.value){
-    S.textContent='Select a Policy Package on the Dashboard first.';
+    setStatus('Select a Policy Package on the Dashboard first.','warn');notify('warn','No Policy Package selected','Pick a package in the selector at the top, then run the analysis again.');
     return;
   }
-  S.textContent='Analyzing selected Access and NAT policies...';
-  try{
+  const btn=document.querySelector('#dashboard button.primary');
+  return task('dashboard','Analyzing selected policies',async()=>{
     const completed=[];
+    busyStep(0);
     await runAccess();
+    busyStep(1);
     await loadPolicyBrowser();
     completed.push('Access');
+    busyStep(2);
     await runNat();
     completed.push('NAT');
+    busyStep(3);
 
     // browserData / accessData / natData remain in the browser session, so
     // opening Access Policy, Analyze or NAT Policy immediately shows results.
     showPage('dashboard',document.querySelector('.menu button[data-page="dashboard"]'));
-    S.textContent=completed.join(' + ')+' analysis complete. Results are available in all related pages, including Access Policy.';
-  }catch(e){S.textContent=e.message}
+    const msg=completed.join(' + ')+' analysis complete. Results are available in all related pages, including Access Policy.';
+    setStatus(msg,'success');
+    notify('success','Analysis complete',msg);
+    return msg;
+  },{
+    button:btn,
+    sub:'Package: '+P.value+' · elapsed',
+    steps:['Analyze Access Control policy','Load configured rulebase','Analyze NAT rulebase','Render dashboard'],
+    successMessage:null
+  }).catch(()=>{});
 }
 
 
@@ -900,11 +1631,45 @@ function drillTo(page,tab=null){
     renderPolicyBrowser(browserData.rules);
   }
 }
+window.addEventListener('DOMContentLoaded',()=>{
+  primeEmptyStates();
+  setStatus('Ready. No API calls are made automatically \u2014 pick a Policy Package and run an analysis.','info');
+  notify('info','Read-only tool',
+    'Firewall Insight only issues show-* Management API calls. It never publishes or installs policy.',
+    {duration:7000});
+});
+
 function toggleTheme(){document.body.classList.toggle('light');localStorage.setItem('fw-theme',document.body.classList.contains('light')?'light':'dark')}
 if(localStorage.getItem('fw-theme')==='light')document.body.classList.add('light');
 
-async function testConn(){S.textContent='Testing Management API...';try{let d=await api('/api/checkpoint/test');conn.textContent='Connected · API '+(d.api_server_version||'?');S.textContent='Connected. Persistent read-only API session is ready.'}catch(e){S.textContent=e.message}}
-async function loadMetadata(force=false){S.textContent='Loading Access Layers and policy packages...';try{let d=await api('/api/bootstrap?force='+(force?'true':'false'));L.innerHTML='<option value="">Select Access Layer...</option>'+d.layers.map(x=>`<option>${esc(x.name)}</option>`).join('');P.innerHTML='<option value="">Select Policy Package...</option>'+d.packages.map(x=>`<option>${esc(x.name)}</option>`).join('');S.textContent=`Loaded ${d.layers.length} Access Layers and ${d.packages.length} packages.`}catch(e){S.textContent=e.message}}
+async function testConn(ev){
+  setConn('testing','Testing…');
+  return task('conn','Testing Management API',async()=>{
+    const d=await api('/api/checkpoint/test');
+    setConn('ok','Connected · API '+(d.api_server_version||'?'));
+    const m='Connected. Persistent read-only API session is ready.';
+    setStatus(m,'success');
+    notify('success','Management API reachable','API '+(d.api_server_version||'?')+' · read-only session established.');
+    return d;
+  },{
+    blocking:false,
+    button:ev&&ev.currentTarget,
+    successMessage:null
+  }).catch(()=>{setConn('bad','Connection failed')});
+}
+async function loadMetadata(force=false,ev){
+  return task('meta','Loading policy metadata',async()=>{
+    const d=await api('/api/bootstrap?force='+(force?'true':'false'));
+    L.innerHTML='<option value="">Select Access Layer...</option>'+d.layers.map(x=>`<option>${esc(x.name)}</option>`).join('');
+    P.innerHTML='<option value="">Select Policy Package...</option>'+d.packages.map(x=>`<option>${esc(x.name)}</option>`).join('');
+    const m=`Loaded ${d.layers.length} Access Layers and ${d.packages.length} packages`+(d.cached?' (from cache)':'')+'.';
+    setStatus(m,'success');
+    if(!d.layers.length||!d.packages.length)
+      notify('warn','Nothing to select','The Management API returned no '+(!d.packages.length?'policy packages':'access layers')+'. Check that this API user has read permission.');
+    else notify('success','Metadata loaded',m);
+    return d;
+  },{blocking:false,button:ev&&ev.currentTarget,successMessage:null}).catch(()=>{});
+}
 
 function isAlertMetric(label){
   return [
@@ -933,10 +1698,11 @@ function metricCards(el,items){
 
 
 async function loadPolicyBrowser(){
-  if(!P.value)return S.textContent='Select a Policy Package first.';
+  if(!P.value){setStatus('Select a Policy Package first.','warn');notify('warn','No Policy Package selected','Choose a package from the selector at the top of the page.');return}
   browserBtn.disabled=true;
-  browserBtn.textContent='Loading...';
-  S.textContent='Loading configured Access Policy without optimizer analysis...';
+  browserBtn.dataset.busy='1';
+  setStatus('Loading configured Access Policy without optimizer analysis…','busy');
+  browserResults.innerHTML=skeletonTable(13,10);
 
   try{
     browserData=await api('/api/package-policy-browser?package='+encodeURIComponent(P.value));
@@ -950,12 +1716,20 @@ async function loadPolicyBrowser(){
       ['Policy Package',P.value]
     ]);
     renderPolicyBrowser(browserData.rules);
-    S.textContent='Policy Browser loaded. No optimizer analysis was performed.';
+    renderDataQuality('browserDq',browserData.data_quality);
+    reportDataQuality(browserData.data_quality,'Access Policy');
+    if(!browserData.total_rules)
+      browserResults.innerHTML=emptyState('▤','No rules returned',
+        'The package resolved, but its Access layer contained no rules. Confirm in SmartConsole that this package has a policy.',
+        'Reload','onclick="loadPolicyBrowser()"');
+    setStatus('Policy Browser loaded — '+browserData.total_rules+' top-level + '+browserData.inline_rules+' inline rule(s). No optimizer analysis was performed.','success');
   }catch(e){
-    S.textContent=e.message;
+    browserResults.innerHTML=errorState(e,'onclick="loadPolicyBrowser()"');
+    fail(e,'Access Policy');
+    throw e;
   }finally{
     browserBtn.disabled=false;
-    browserBtn.textContent='Load Policy';
+    delete browserBtn.dataset.busy;
   }
 }
 
@@ -1087,14 +1861,15 @@ function filterPolicyBrowser(){
 }
 
 function exportRawPolicy(){
-  if(!P.value)return S.textContent='Select a Policy Package first.';
+  if(!P.value){setStatus('Select a Policy Package first.','warn');notify('warn','No Policy Package selected','Choose a package from the selector at the top of the page.');return}
   S.textContent='Package-level CSV export will be added after package/inline validation. The on-screen Access Policy view contains the complete package context.';
 }
 
 
 async function runAccess(){
- if(!P.value)return S.textContent='Select a Policy Package first.';
- S.textContent='Analyzing Access Policy Package...';
+ if(!P.value){setStatus('Select a Policy Package first.','warn');notify('warn','No Policy Package selected','Choose a package from the selector at the top of the page.');return}
+ setStatus('Analyzing Access Policy Package…','busy');
+ if(typeof accessCards!=='undefined'&&accessCards&&!accessData) accessCards.innerHTML=skeletonCards(8);
  try{
    accessData=await api('/api/package-analyze?package='+encodeURIComponent(P.value));let s=accessData.summary;
    metricCards(accessCards,[['Access Rules',s.total_rules],['Inline Rules Analyzed',s.inline_rules],['Inline Layers',s.inline_layers],['Total Rules Inspected',s.analyzed_rules],['Shadow / Redundant',s.potential_shadowed_or_redundant],['Duplicate Groups',s.duplicate_groups],['Any / Any / Any',s.any_any_any_rules],['Optimizer Score',s.optimization_score+'%']]);
@@ -1106,8 +1881,21 @@ async function runAccess(){
      <tr class="drill-row" onclick="drillTo('access','any')" title="Open Any / Any / Any findings"><td>Any / Any / Any</td><td>${s.any_any_any_rules?`<span class="alert-count">${esc(s.any_any_any_rules)}</span>`:esc(s.any_any_any_rules)}</td><td>${esc(s.top_level_any_any_any_rules||0)} top-level + ${esc(s.inline_any_any_any_rules||0)} inline rule(s).</td></tr>
      <tr><td>Optimizer Score</td><td>${esc(s.optimization_score)}%</td><td>Heuristic score from this analyzer, not Check Point Security Score.</td></tr>
    </tbody></table>`;
-   renderAccess(pendingAnalysisTab||'shadow');pendingAnalysisTab=null;S.textContent='Access Policy analysis complete.';
- }catch(e){S.textContent=e.message}
+   renderAccess(pendingAnalysisTab||'shadow');pendingAnalysisTab=null;
+   renderDataQuality('accessDq',accessData.data_quality);
+   reportDataQuality(accessData.data_quality,'Analyze');
+   const findings=(s.potential_shadowed_or_redundant||0)+(s.duplicate_groups||0)+(s.any_any_any_rules||0);
+   setStatus('Access Policy analysis complete — '+s.analyzed_rules+' rule(s) inspected, '+findings+' finding(s), score '+s.optimization_score+'%.','success');
+   if(findings) notify('warn',findings+' optimization finding(s)',
+     (s.potential_shadowed_or_redundant||0)+' shadow/redundant · '+(s.duplicate_groups||0)+' duplicate group(s) · '+(s.any_any_any_rules||0)+' Any/Any/Any. Click a dashboard count to drill in.',
+     {duration:10000});
+   if(s.cleanup_rules) notify('info','Cleanup rules excluded',
+     s.cleanup_rules+' trailing Any/Any/Any deny rule(s) were counted as cleanup rules, not findings.');
+ }catch(e){
+   if(typeof accessFindings!=='undefined'&&accessFindings) accessFindings.innerHTML=errorState(e,'onclick="runAccess()"');
+   fail(e,'Analyze');
+   throw e;
+ }
 }
 function accessTabs(kind){let d=accessData;return `<div class="tabs"><button class="${kind==='shadow'?'active':''}" onclick="renderAccess('shadow')">Shadow / Redundant</button><button class="${kind==='duplicates'?'active':''}" onclick="renderAccess('duplicates')">Duplicate Rules (${d.findings.duplicates.length})</button><button class="${kind==='any'?'active':''}" onclick="renderAccess('any')">Any Rules (${(d.findings.any_any_any_rules||[]).length})</button></div>`}
 function renderAccess(kind){
@@ -1136,13 +1924,21 @@ function cleanupNote(d){
 function friendly(v){v=String(v||'');return esc(v.replace('Exact object/group UID coverage','Exact Match').replace('Subnet/range coverage','Network Contains').replace('Protocol/port coverage','Port / Service Contains').replace(/^Any$/,'Covered by Any'))}
 
 async function runNat(){
- if(!P.value)return S.textContent='Select a Policy Package first.';
- S.textContent='Loading and analyzing NAT rulebase (hit count disabled for API compatibility)...';
+ if(!P.value){setStatus('Select a Policy Package first.','warn');notify('warn','No Policy Package selected','Choose a package from the selector at the top of the page.');return}
+ setStatus('Loading and analyzing NAT rulebase…','busy');
  try{
    natData=await api('/api/nat-analyze?package='+encodeURIComponent(P.value)); renderNatSpecialViews(natData);let s=natData.summary;
    metricCards(natCards,[['Total NAT Rules',s.total_nat_rules],['Duplicate NAT',s.duplicate_nat_groups],['Broad Any/Any/Any',s.broad_original_any_any_any],['Disabled NAT',s.disabled_nat_rules],['Possible No-Translation',s.possible_no_translation_rules]]);
-   setDashboardMetric(dNat,s.total_nat_rules,false);setDashboardMetric(dNatDup,s.duplicate_nat_groups,true);dashPackage.textContent=P.value||'Not selected';natTabs.style.display='flex';renderNat(pendingNatTab||'rulebase');pendingNatTab=null;S.textContent='NAT Policy analysis complete. NAT hit count is not requested on this API.';
- }catch(e){S.textContent=e.message}
+   setDashboardMetric(dNat,s.total_nat_rules,false);setDashboardMetric(dNatDup,s.duplicate_nat_groups,true);dashPackage.textContent=P.value||'Not selected';natTabs.style.display='flex';renderNat(pendingNatTab||'rulebase');pendingNatTab=null;
+   const hits=s.nat_hits_available;
+   setStatus('NAT analysis complete — '+s.total_nat_rules+' rule(s). Hit counts '+(hits?'available':'not supported by this Management API build')+'.',hits?'success':'warn');
+   if(!hits) notify('info','NAT hit counts unavailable',
+     'This Management API build rejected show-hits on show-nat-rulebase, so the Hits column stays empty. Access hit counts are unaffected.',
+     {duration:9000});
+ }catch(e){
+   fail(e,'NAT Policy');
+   throw e;
+ }
 }
 function renderNat(kind,b){
  document.querySelectorAll('#natTabs button').forEach(x=>x.classList.remove('active'));if(b)b.classList.add('active');
@@ -1161,10 +1957,15 @@ function renderNat(kind,b){
 function natTable(rs){return `<div class="table-wrap"><table><thead><tr><th>Rule</th><th>Name</th><th>Original Source</th><th>Original Destination</th><th>Original Service</th><th>Translated Source</th><th>Translated Destination</th><th>Translated Service</th><th>Install On</th><th>Method</th><th>Hits</th></tr></thead><tbody>${rs.map(r=>`<tr><td><span class="rule-no">Rule ${esc(r.display_rule||r.rule)}</span></td><td>${esc(r.name)}</td><td>${esc(r.original_source)}</td><td>${esc(r.original_destination)}</td><td>${esc(r.original_service)}</td><td>${esc(r.translated_source)}</td><td>${esc(r.translated_destination)}</td><td>${esc(r.translated_service)}</td><td>${esc(r.install_on)}</td><td>${esc(r.method)}</td><td>${esc(r.hits??'N/A')}</td></tr>`).join('')}</tbody></table></div>`}
 
 async function trace(){
- if(!L.value)return S.textContent='Select an Access Layer first.';
- if(!src.value||!dst.value||port.value.trim()==='')return S.textContent='Enter Source IP/Domain, Destination IP/Domain and Port/Service.';
+ if(!L.value){setStatus('Select an Access Layer first.','warn');notify('warn','No Access Layer selected','Traffic Path needs an Access Layer so it knows which rulebase to start from.');return}
+ if(!src.value||!dst.value||port.value.trim()===''){setStatus('Enter Source, Destination and Port/Service.','warn');notify('warn','Missing input','Traffic Path needs a source, a destination and a port or service name. Source and destination accept an IP or an FQDN.');return}
  let q=new URLSearchParams({layer:L.value,src:src.value.trim(),dst:dst.value.trim(),protocol:proto.value,service:port.value.trim()});if(P.value)q.set('package',P.value);
- S.textContent='Analyzing traffic path through Access and Inline Layers...';
+ const traceBtn=document.querySelector('#traffic button.primary');
+ if(traceBtn){traceBtn.dataset.busy='1';traceBtn.disabled=true}
+ setStatus('Analyzing traffic path through Access and Inline Layers…','busy');
+ busyShow('Tracing traffic path',
+   src.value.trim()+' \u2192 '+dst.value.trim()+' \u00b7 elapsed',
+   ['Load package / inline layer tree','Resolve objects and service','Walk the ordered rulebase','Correlate NAT']);
  try{
    let d=await api('/api/traffic-path?'+q),w=d.access.winner,n=d.nat||[],path=d.access.path||[],possible=d.access.possible_winner;
    const confidence=d.access.confidence||'none';
@@ -1209,15 +2010,56 @@ async function trace(){
    </table></div>
    ${pathHtml}
    <div class="hint" style="margin-top:12px">${(d.limitations||[]).map(esc).join(' · ')}</div>`;
-   S.textContent=d.access.matched
-     ? `Traffic path matched configured policy path (${confidence}).`
-     : (confidence==='unknown'
-        ? 'Traffic path is unverified because an earlier rule requires gateway context.'
-        : 'Traffic path analysis complete: no final matching rule found.');
- }catch(e){S.textContent=e.message}
+   reportDataQuality(d.data_quality,'Traffic Path');
+   if(d.nat_error) notify('warn','NAT correlation failed',d.nat_error+' The Access result above is unaffected.');
+   if(d.access.matched){
+     const msg=`Traffic path matched configured policy path (${confidence}).`;
+     setStatus(msg,confidence==='exact'?'success':'warn');
+     if(confidence==='exact')
+       notify('success','Matched: '+String(w.action||''),
+         'Rule '+(w.display_rule||w.rule)+' in '+(w.layer||'')+' \u2014 every condition was verified against the configuration.');
+     else
+       notify('warn','Matched, but inferred',
+         'Rule '+(w.display_rule||w.rule)+' matched, however an earlier rule contains conditions this static simulator cannot evaluate. Treat the gateway log as authoritative.',
+         {duration:12000});
+   }else if(confidence==='unknown'){
+     setStatus('Traffic path is unverified because an earlier rule requires gateway context.','warn');
+     notify('warn','UNVERIFIED \u2014 deliberately not guessing',
+       (d.access.reason||'An earlier rule could not be evaluated statically.')+' Reporting a confident answer here would risk being confidently wrong.',
+       {duration:0});
+   }else{
+     setStatus('Traffic path analysis complete: no final matching rule found.','info');
+     notify('info','No matching rule','No rule in the selected layer matched this flow.');
+   }
+ }catch(e){
+   traceResult.innerHTML=errorState(e,'onclick="trace()"');
+   fail(e,'Traffic Path');
+ }finally{
+   busyHide();
+   if(traceBtn){delete traceBtn.dataset.busy;traceBtn.disabled=false}
+ }
 }
 
-async function loadMap(){S.textContent='Loading gateway topology...';try{mapData=await api('/api/network-map?force=true');inventory.innerHTML=mapData.nodes.map(n=>`<div class="node"><b>${esc(n.name)}</b><br><span class="muted">${esc(n.role||n.type)}</span><br>${esc(n.cidr||(n.ips||[]).join(', '))}</div>`).join('');renderTopology(mapData);mapNote.textContent=(mapData.limitations||[]).join(' · ');mapMode('topology');S.textContent=`Loaded ${mapData.count} nodes and ${mapData.edges.length} relationships.`}catch(e){S.textContent=e.message}}
+async function loadMap(ev){
+  return task('map','Loading gateway topology',async()=>{
+    mapData=await api('/api/network-map?force=true');
+    inventory.innerHTML=mapData.nodes.map(n=>`<div class="node"><b>${esc(n.name)}</b><br><span class="muted">${esc(n.role||n.type)}</span><br>${esc(n.cidr||(n.ips||[]).join(', '))}</div>`).join('');
+    renderTopology(mapData);
+    mapNote.textContent=(mapData.limitations||[]).join(' · ');
+    mapMode('topology');
+    const m=`Loaded ${mapData.count} nodes and ${mapData.edges.length} relationships.`;
+    setStatus(m,'success');
+    if(!mapData.count) notify('warn','No topology objects',
+      'show-gateways-and-servers returned nothing. Check that this API user can read gateway objects.');
+    else notify('success','Topology loaded',m);
+    return mapData;
+  },{
+    button:ev&&ev.currentTarget,
+    sub:'Reading gateways and servers · elapsed',
+    steps:['Fetch gateways and servers','Derive interfaces and subnets','Render graph'],
+    successMessage:null
+  }).catch(()=>{});
+}
 function mapMode(v){topology.classList.toggle('hidden',v!=='topology');inventory.classList.toggle('hidden',v!=='inventory')}
 
 function topoIcon(role){
@@ -1250,7 +2092,7 @@ function renderTopology(d){
  topology.innerHTML=`<svg viewBox="0 0 ${W} ${H}" id="topoSvg"><g id="world">${edge}${nodes}</g></svg>`;panZoom();
 }
 function panZoom(){let svg=topoSvg,w=world,scale=1,tx=0,ty=0,drag=false,lx=0,ly=0;function a(){w.setAttribute('transform',`translate(${tx} ${ty}) scale(${scale})`)}svg.addEventListener('wheel',e=>{e.preventDefault();scale=Math.max(.45,Math.min(2.7,scale*(e.deltaY<0?1.1:.9)));a()},{passive:false});svg.addEventListener('mousedown',e=>{drag=true;lx=e.clientX;ly=e.clientY});window.addEventListener('mouseup',()=>drag=false);svg.addEventListener('mousemove',e=>{if(!drag)return;tx+=(e.clientX-lx)/scale;ty+=(e.clientY-ly)/scale;lx=e.clientX;ly=e.clientY;a()})}
-function exportAccess(){if(!L.value)return S.textContent='Select a layer first.';location.href='/api/export.csv?layer='+encodeURIComponent(L.value)}
+function exportAccess(){if(!L.value){notify('warn','No Access Layer selected','Pick an Access Layer before exporting.');return}location.href='/api/export.csv?layer='+encodeURIComponent(L.value)}
 
 function showAccessTab(tab,btn){
   ['all','shadow','duplicates','any'].forEach(x=>{
