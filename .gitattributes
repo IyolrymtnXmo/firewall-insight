@@ -1,0 +1,29 @@
+# Keep line endings out of the diff.
+#
+# Files that reach this repo through a browser download or a copy-paste on
+# Windows arrive with CRLF, while everything committed so far is LF. Git then
+# reports every line of an otherwise untouched file as changed, which buries
+# the real diff. `text=auto` normalises to LF in the repository and lets Git
+# check out whatever the platform wants.
+*               text=auto
+
+*.py            text eol=lf
+*.js            text eol=lf
+*.css           text eol=lf
+*.html          text eol=lf
+*.md            text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.json          text eol=lf
+*.ini           text eol=lf
+*.txt           text eol=lf
+Dockerfile      text eol=lf
+.env.example    text eol=lf
+
+*.ps1           text eol=crlf
+*.bat           text eol=crlf
+
+*.png           binary
+*.jpg           binary
+*.ico           binary
+*.pdf           binary

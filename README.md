@@ -63,7 +63,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass   # Windows PowerShel
 pip install -r requirements.txt
 
 copy .env.example .env      # then edit .env with your Management details
-pytest -q                   # expect: 249 passed
+pytest -q                   # expect: 352 passed
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -89,8 +89,8 @@ docker compose up --build      # reads .env via env_file
 
 | Check | Expected |
 |---|---|
-| `pytest -q` | `249 passed` |
-| `GET /health` | `{"status":"ok","version":"4.14.0","mode":"read-only",...}` |
+| `pytest -q` | `352 passed` |
+| `GET /health` | `{"status":"ok","version":"4.16.1","mode":"read-only",...}` |
 | `GET /api/checkpoint/test` | `{"connected":true,"api_server_version":"...","read_only":true}` |
 | `GET /api/bootstrap` | lists your access layers and policy packages |
 
@@ -144,15 +144,33 @@ service name (`https`, `ssh`, `smtp`, `ntp`, `domain`) or an exact Check Point s
 object name. Follows Parent Rule → Inline Layer → child rule → terminal action, and
 reports a confidence level (`exact`, `inferred`, `unknown`).
 
-**Network Mapping** — topology derived from `show-gateways-and-servers`, drawn as two
-columns: devices on the left, connected subnets on the right. Interfaces are rows
-*inside* the device card, not separate nodes, so a four-gateway lab is 11 nodes rather
-than 22. Click a device to open its interface rows (edges then leave the specific port
-and are labelled with it); click a subnet to dim everything not attached to it; filter
-by name or address; expand/collapse all, zoom, scroll-to-zoom and drag-to-pan. Cards are
-keyboard reachable and report `aria-expanded`. The map is logical only — physical
-cabling, switching and live routing are not inferred, and an interface with no CIDR
-shows `—` rather than a guess.
+**Network Mapping** — topology derived from `show-gateways-and-servers`, in two layouts.
+
+*Graph* (default) is a Fruchterman-Reingold force layout: gateways become hubs and the
+subnets behind them orbit as leaves, so the shape of the estate is visible at a glance.
+Drag any node to place it and **Save Map** to keep the arrangement (positions are keyed
+to a hash of the node set, so they are never reapplied to a different estate);
+**Auto Merge** gives subnets reached through the same devices one node; **Collapse all**
+hides single-homed subnets and leaves the backbone; search steps through matches with
+▲ ▼; export to PNG or CSV. Pan/zoom pad bottom-right, plus scroll-to-zoom and
+drag-to-pan. The layout is seeded deterministically, so the same topology always looks
+the same.
+
+*Cards* is the two-column view: interfaces are rows inside the device card, which
+answers "which port reaches which subnet" better than the graph does. A four-gateway lab
+is 11 nodes in either layout, not the 22 the pre-4.14 view drew.
+
+A ClusterXL cluster is drawn as one enforcement point with its members attached by a
+dashed membership link (from the cluster object's `cluster-member-names`), and a
+Management HA pair is joined by a dashed HA link (from `management-blades.secondary`).
+Subnets a gateway reports as internet-facing are marked, as are subnets only one
+cluster's own members reach.
+
+Both layouts are logical only — physical cabling, switching, routing protocols and live
+routes are not discovered, and an interface with no CIDR shows `—` rather than a guess.
+Membership is never inferred from addressing: if the API does not name the members, none
+are drawn. Management HA is reported as *configured*; whether the peers are currently
+synchronised is not exposed by the object model and is never implied.
 
 **Feedback layer** — every request drives a top progress bar; blocking work shows a
 translucent blur overlay with elapsed time and named steps, and explains itself once it
@@ -190,7 +208,8 @@ app/
   analyzer.py           Access findings
   nat_analyzer.py       NAT findings
   policy_browser.py     raw rulebase → table rows
-  traffic.py            tri-state matcher, path trace, NAT correlation, topology
+  traffic.py            tri-state matcher, path trace, NAT correlation
+  topology_map.py       gateways/servers -> nodes and edges, cluster and HA links
   templates/index.html
   static/css/app.css
   static/js/app.js
@@ -276,7 +295,7 @@ Add `&force=true` to `bootstrap`, `policy-browser`, `package-policy-browser` or
 ## Testing
 
 ```bash
-pytest -q          # 249 tests, no Management Server required
+pytest -q          # 352 tests, no Management Server required
 ```
 
 Tests use fixture payloads shaped like real Management API responses; nothing in the

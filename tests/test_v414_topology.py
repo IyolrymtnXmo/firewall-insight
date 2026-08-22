@@ -49,8 +49,11 @@ class TestModel:
         assert "function topoLayout(" in self.SRC
 
     def test_devices_and_networks_are_the_only_node_kinds(self):
+        # v4.16 split gateways into gateway / cluster / cluster-member; the
+        # point of this test is that interfaces are not among them.
         assert "n.role === 'network'" in self.SRC
-        assert "['gateway','management','device'].includes(n.role)" in self.SRC
+        assert "'gateway','management','device'" in self.SRC
+        assert "'interface'" not in self.SRC.split("const devices = nodes.filter")[1][:200]
 
     def test_interfaces_are_folded_into_their_parent_device(self):
         """The whole point of the redesign: no interface column."""
@@ -110,7 +113,7 @@ class TestInteraction:
 
     def test_a_drag_is_not_treated_as_a_click(self):
         """Panning across a card must not toggle it."""
-        assert "if(moved > 4) return;" in self.SRC
+        assert "if(DRAG.moved > 4) return;" in self.SRC
         assert "a drag is not a click" in self.SRC
 
     def test_search_dims_instead_of_deleting(self):
@@ -120,7 +123,7 @@ class TestInteraction:
         assert "cls.push('hit')" in self.SRC
 
     def test_zoom_is_clamped(self):
-        assert "Math.max(.4, Math.min(2.6," in self.SRC
+        assert "Math.max(.3, Math.min(3," in self.SRC
 
     def test_reset_returns_to_a_known_view(self):
         assert "TOPO.view = {scale: 1, tx: 0, ty: 0}" in self.SRC
@@ -149,7 +152,7 @@ class TestHonesty:
             assert f">{role}<" in src or role in src
 
     def test_the_toolbar_tells_the_user_what_is_clickable(self):
-        assert "Click a gateway to show its interfaces" in ui_source()
+        assert "Click a device to expand or collapse it" in ui_source()
 
 
 # --------------------------------------------------------------------------

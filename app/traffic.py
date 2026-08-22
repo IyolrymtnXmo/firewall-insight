@@ -617,35 +617,7 @@ def correlate_nat(payload:dict[str,Any],src:str,dst:str,res_extra:dict[str,dict]
         break
     return findings
 
-def network_map(objects:list[dict[str,Any]])->dict[str,Any]:
-    nodes=[]; edges=[]; subnet_nodes={}
-    for o in objects:
-        uid=o.get("uid"); name=o.get("name") or uid; typ=o.get("type","")
-        if not uid: continue
-        ips=[]
-        for k in ("ipv4-address","ip-address"):
-            if o.get(k): ips.append(str(o[k]))
-        role="gateway" if typ in ("simple-gateway","cluster-member","CpmiGatewayCluster") or "gateway" in typ.lower() else "management" if typ in ("checkpoint-host",) or "management" in name.lower() or "mgmt" in name.lower() else "device"
-        nodes.append({"id":uid,"name":name,"type":typ,"role":role,"ips":ips})
-        ifaces=o.get("interfaces") if isinstance(o.get("interfaces"),list) else []
-        for i,iface in enumerate(ifaces):
-            if not isinstance(iface,dict): continue
-            ip=iface.get("ipv4-address") or iface.get("ip-address")
-            mask=iface.get("ipv4-mask-length") or iface.get("mask-length4") or iface.get("mask-length")
-            if not ip or str(ip)=="0.0.0.0": continue
-            iname=iface.get("name") or f"interface {i+1}"
-            nid=f"{uid}:if:{i}"
-            cidr=f"{ip}/{mask}" if mask is not None else str(ip)
-            nodes.append({"id":nid,"name":iname,"type":"interface","role":"interface","ips":[str(ip)],"cidr":cidr,"parent":uid})
-            edges.append({"from":uid,"to":nid,"label":"interface"})
-            if mask is not None:
-                try:
-                    net=str(ip_network(cidr,strict=False))
-                    sid=f"net:{net}"
-                    if sid not in subnet_nodes:
-                        subnet_nodes[sid]={"id":sid,"name":net,"type":"network","role":"network","ips":[net]}
-                    edges.append({"from":nid,"to":sid,"label":"connected subnet"})
-                except ValueError:
-                    pass
-    nodes.extend(subnet_nodes.values())
-    return {"nodes":nodes,"edges":edges,"count":len(nodes),"topology":True,"limitations":["Connected subnets are calculated from configured interface IPv4 address and mask.","Links show configured logical relationships only; physical cabling, switches and live routing are not inferred."]}
+
+# network_map moved to app/topology_map.py in v4.16 (see its docstring).
+# Re-exported so `from app.traffic import network_map` keeps working.
+from .topology_map import network_map  # noqa: E402,F401

@@ -43,7 +43,7 @@ tbody tr:nth-child(even){background:rgba(255,255,255,.015)}tbody tr:hover{backgr
 .section-title{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:20px}.section-title h2,.section-title h3{margin:0}
 .flow{display:flex;gap:9px;align-items:stretch;flex-wrap:wrap;margin-top:16px}.step{flex:1;min-width:190px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:15px}.arrow{align-self:center;color:var(--purple2);font-size:23px}
 .map{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.node{border:1px solid var(--line);border-radius:12px;background:var(--panel2);padding:14px}
-.topology{height:590px;border:1px solid var(--line);border-radius:14px;background:radial-gradient(circle at 50% 20%,rgba(139,92,246,.13),transparent 55%),var(--input);overflow:hidden}
+.topology{height:clamp(460px,64vh,780px);border:1px solid var(--line);border-radius:14px;background:radial-gradient(circle at 50% 20%,rgba(139,92,246,.13),transparent 55%),var(--input);overflow:hidden}
 .topology svg{width:100%;height:100%;cursor:grab}.topology svg:active{cursor:grabbing}.edge{stroke:#8061c6;stroke-width:2;fill:none}.edge-label{fill:var(--muted);font-size:11px}
 .toponode rect{stroke-width:1.5}.toponode text{fill:var(--text);font-weight:750;font-size:12px}.toponode .sub{fill:var(--muted);font-size:10px;font-weight:400}
 .gateway rect{fill:#281c49;stroke:#9b7cf8}.management rect{fill:#15382c;stroke:#46d89a}.interface rect{fill:#342341;stroke:#cf83ff}.network rect{fill:#45370f;stroke:#f2bd4e}.device rect{fill:#23202d;stroke:#7d748d}
@@ -739,6 +739,13 @@ input:focus,select:focus{box-shadow:0 0 0 4px rgba(139,92,246,.16)}
 .topo-node.hit .card{stroke:var(--warn);stroke-width:2.5}
 
 .gateway .card{fill:#281c49;stroke:#9b7cf8}
+/* v4.16 split "gateway" into gateway / cluster / cluster-member. Cards mode
+   styles by role, so the two new roles rendered with no fill and no stroke
+   until they were given rules of their own. */
+.cluster .card{fill:#2f1c56;stroke:#b79bff;stroke-width:2.2}
+.cluster-member .card{fill:#231a3c;stroke:#7d6bc4}
+.light .cluster .card{fill:#e9dfff}
+.light .cluster-member .card{fill:#f4f1fc}
 .management .card{fill:#15382c;stroke:#46d89a}
 .network .card{fill:#45370f;stroke:#f2bd4e}
 .device .card{fill:#23202d;stroke:#7d748d}
@@ -766,3 +773,170 @@ input:focus,select:focus{box-shadow:0 0 0 4px rgba(139,92,246,.16)}
   #topoCount{margin-left:0;width:100%}
   .topology{min-height:420px}
 }
+
+/* ============================================================
+   Network Mapping v3 - graph mode
+
+   The AlgoSec "Discover and Map" shape: gateways as hubs, subnets orbiting
+   as leaves, arranged by a physics layout rather than a fixed grid. Nodes are
+   small and labelled underneath so a hundred of them still fit on a screen;
+   the card layout stays available for reading interface detail.
+   ============================================================ */
+
+.topo-seg{display:inline-flex;border:1px solid var(--line);border-radius:11px;overflow:hidden}
+.topo-seg button{border:0;border-radius:0;padding:9px 15px;font-size:12.5px;
+  background:var(--panel2);color:var(--muted);font-weight:700}
+.topo-seg button + button{border-left:1px solid var(--line)}
+.topo-seg button.on{background:var(--purple);color:#fff}
+.topo-bar-group button.on{background:var(--purple);color:#fff;border-color:var(--purple)}
+
+.topo-find{display:flex;align-items:center;gap:6px;flex:1 1 260px;min-width:0}
+.topo-find input[type=search]{flex:1 1 auto;min-width:0}
+#topoHits{white-space:nowrap;font-variant-numeric:tabular-nums}
+
+.topo-legend .sw.merged{background:#45370f;border:1.5px solid #f2bd4e;
+  box-shadow:2px -2px 0 -0.5px var(--panel),3px -3px 0 -0.5px #f2bd4e}
+.light .topo-legend .sw.merged{background:#fff6da}
+
+/* stage + floating pan/zoom pad */
+.topo-stage{position:relative}
+.topo-pad{
+  position:absolute;right:14px;bottom:14px;z-index:5;
+  display:flex;flex-direction:column;gap:7px;padding:8px;
+  border:1px solid var(--line);border-radius:14px;
+  background:color-mix(in srgb,var(--panel) 78%,transparent);
+  backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
+  box-shadow:var(--shadow);
+}
+.topo-pad button{
+  width:30px;height:26px;padding:0;font-size:11px;line-height:1;
+  display:inline-flex;align-items:center;justify-content:center;
+  border:1px solid var(--line);border-radius:8px;
+  background:var(--panel2);color:var(--muted);
+}
+.topo-pad button:hover{color:var(--text);border-color:var(--purple2)}
+.topo-pad .ico{width:15px;height:15px}
+/* icon buttons in the toolbar draw line art, not emoji: emoji render at the
+   font's own colour and weight and looked pasted on next to the SVG set. */
+.icon-btn.sq{display:inline-flex;align-items:center;justify-content:center}
+.icon-btn.sq .ico{width:17px;height:17px;fill:none;stroke:currentColor;
+  stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.pad-dir{display:grid;grid-template-columns:repeat(3,30px);gap:4px;justify-content:center}
+.pad-dir button:nth-child(1){grid-column:2}
+.pad-dir button:nth-child(2){grid-column:1;grid-row:2}
+.pad-dir button:nth-child(3){grid-column:2;grid-row:2}
+.pad-dir button:nth-child(4){grid-column:3;grid-row:2}
+.pad-dir button:nth-child(5){grid-column:2;grid-row:3}
+.pad-zoom{display:flex;align-items:center;gap:6px}
+.pad-zoom input[type=range]{width:74px;accent-color:var(--purple)}
+
+/* graph edges */
+.topo-g-edge line{stroke:var(--purple);stroke-width:1.6;opacity:.42}
+/* paint-order puts the outline UNDER the glyph, so the label stays readable
+   wherever the layout drops it - over a link, or beside another label. */
+.topo-g-edge text{fill:var(--muted);font-size:11px;font-family:var(--font-mono);
+  paint-order:stroke;stroke:var(--input);stroke-width:3.5px;stroke-linejoin:round}
+.topo-g-edge.dim{opacity:.10}
+.topo-g-edge.dim text{opacity:0}
+
+/* graph nodes */
+.topo-g-node{cursor:pointer;transition:opacity var(--t) var(--ease)}
+.topo-g-node .halo{fill:transparent}
+.topo-g-node:hover .halo{fill:var(--purple);opacity:.16}
+.topo-g-node:focus-visible .halo{fill:var(--purple);opacity:.28}
+.topo-g-node .chip{stroke-width:1.5}
+.topo-g-node .glyph rect{fill:none;stroke-width:1.4}
+.topo-g-node .glyph path{stroke-width:1.1;fill:none}
+.topo-g-node .lbl{fill:var(--text);font-size:12.5px;font-weight:750}
+.topo-g-node .sub{fill:var(--muted);font-size:10.5px;font-family:var(--font-mono)}
+.topo-g-node.dim{opacity:.16}
+.topo-g-node.hit .chip{stroke:var(--warn);stroke-width:2.6}
+/* Save Map pins every node at once, and underlining ten labels made them all
+   look like links. A small dot in the corner says the same thing quietly. */
+.topo-g-node.pinned .pin{fill:var(--muted);opacity:.85}
+.topo-g-node .pin{display:none}
+.topo-g-node.pinned .pin{display:block}
+
+.topo-g-node.gateway .chip{fill:#281c49;stroke:#9b7cf8}
+.topo-g-node.gateway .glyph rect,.topo-g-node.gateway .glyph path{stroke:#d8c6ff}
+.topo-g-node.management .chip{fill:#15382c;stroke:#46d89a}
+.topo-g-node.management .glyph rect,.topo-g-node.management .glyph path{stroke:#9df0c9}
+.topo-g-node.device .chip{fill:#23202d;stroke:#7d748d}
+.topo-g-node.device .glyph rect,.topo-g-node.device .glyph path{stroke:#c3bcd0}
+.topo-g-node.net .chip,.topo-g-node.merged .chip{fill:#45370f;stroke:#f2bd4e}
+.topo-g-node.merged .chip.stack{fill:#3a2e0c;opacity:.85}
+.light .topo-g-node.gateway .chip{fill:#efe9ff}
+.light .topo-g-node.management .chip{fill:#e7f8ef}
+.light .topo-g-node.device .chip{fill:#f4f1f8}
+.light .topo-g-node.net .chip,.light .topo-g-node.merged .chip{fill:#fff6da}
+.light .topo-g-node.gateway .glyph rect,.light .topo-g-node.gateway .glyph path{stroke:#6d43d6}
+.light .topo-g-node.management .glyph rect,.light .topo-g-node.management .glyph path{stroke:#127a4f}
+.light .topo-g-node.device .glyph rect,.light .topo-g-node.device .glyph path{stroke:#6b6379}
+
+/* "+N hidden behind me" stub on a collapsed device */
+.topo-g-node .stub circle{fill:var(--purple);stroke:var(--panel);stroke-width:1.5}
+.topo-g-node .stub text{fill:#fff;font-size:9.5px;font-weight:800}
+
+/* the search step highlight */
+.flash .halo{fill:var(--warn);opacity:.5;animation:topoFlash 1.1s var(--ease-out) 2}
+@keyframes topoFlash{0%{opacity:.62}60%{opacity:.10}100%{opacity:.62}}
+
+@media(prefers-reduced-motion:reduce){
+  .flash .halo{animation:none;opacity:.5}
+}
+@media(max-width:900px){
+  .topo-pad{right:8px;bottom:8px;padding:6px}
+  .pad-zoom input[type=range]{width:52px}
+}
+
+/* ============================================================
+   Cluster membership and management HA (v4.16)
+
+   These relationships come from API fields - the cluster object's
+   cluster-member-names, and management-blades.secondary - not from reading
+   the addresses. They are drawn dashed and in their own colour because they
+   are NOT traffic paths: drawing them like a subnet link would invite reading
+   a data path between two management servers that does not exist.
+   ============================================================ */
+
+/* a cluster is one enforcement point built from several boxes */
+.topo-g-node.cluster .chip{fill:#2f1c56;stroke:#b79bff}
+.topo-g-node.cluster .chip.plate{fill:#241546;stroke:#8b6fe0;opacity:.9}
+.topo-g-node.cluster .glyph rect,.topo-g-node.cluster .glyph path{stroke:#e2d5ff}
+.topo-g-node.cluster .lbl{fill:var(--text)}
+.topo-g-node.cluster-member .chip{fill:#231a3c;stroke:#7d6bc4}
+.topo-g-node.cluster-member .glyph rect,
+.topo-g-node.cluster-member .glyph path{stroke:#bdb0e6}
+.light .topo-g-node.cluster .chip{fill:#e9dfff}
+.light .topo-g-node.cluster .chip.plate{fill:#dccdff;stroke:#7a56d8}
+.light .topo-g-node.cluster-member .chip{fill:#f4f1fc}
+.light .topo-g-node.cluster .glyph rect,.light .topo-g-node.cluster .glyph path,
+.light .topo-g-node.cluster-member .glyph rect,
+.light .topo-g-node.cluster-member .glyph path{stroke:#5b34c4}
+
+/* relationship edges */
+.topo-g-edge.membership line{stroke:#b79bff;stroke-dasharray:5 4;opacity:.62}
+.topo-g-edge.membership text{fill:#b79bff}
+.topo-g-edge.mgmt-ha line{stroke:#38d996;stroke-dasharray:2 5;stroke-width:2;
+  stroke-linecap:round;opacity:.72}
+.topo-g-edge.mgmt-ha text{fill:#38d996}
+.light .topo-g-edge.mgmt-ha line{stroke:#12855a}
+.light .topo-g-edge.mgmt-ha text{fill:#12855a}
+.light .topo-g-edge.membership line,.light .topo-g-edge.membership text{stroke:#6d43d6;fill:#6d43d6}
+.light .topo-g-edge.membership line{fill:none}
+
+/* a subnet only a cluster's own members touch; and one a gateway says faces
+   the internet (topology.leads-to-internet) */
+.topo-g-node.internal .chip{stroke-dasharray:3 2.5}
+.topo-g-node.internal .lbl{font-style:italic}
+.topo-g-node.external .chip{fill:#4a2a12;stroke:#ff9f5a}
+.light .topo-g-node.external .chip{fill:#ffeede}
+
+.topo-legend .sw.cluster{background:#2f1c56;border:1.5px solid #b79bff;
+  box-shadow:-2px -2px 0 -0.5px var(--panel),-3px -3px 0 -0.5px #8b6fe0}
+.topo-legend .sw.ha{background:transparent;border:0;width:16px;height:2px;
+  border-radius:1px;background-image:linear-gradient(90deg,#38d996 45%,transparent 0);
+  background-size:5px 2px}
+.light .topo-legend .sw.cluster{background:#e9dfff}
+.topo-legend .sw.external{background:#4a2a12;border:1.5px solid #ff9f5a}
+.light .topo-legend .sw.external{background:#ffeede}

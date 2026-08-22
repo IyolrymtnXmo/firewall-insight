@@ -4,6 +4,290 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.16.1 — five defects the live lab showed
+
+### Fixed — cluster cards rendered as empty rectangles
+
+v4.16 split the `gateway` role into `gateway` / `cluster` / `cluster-member`.
+Cards mode styles by role, so the two new roles had no rule at all and drew
+unfilled, unstroked boxes — External-Cluster, External-GW01 and External-GW02
+all appeared as black rectangles while Internal-GW01 stayed purple. Both roles
+now have card fills in light and dark, and a test asserts every role the map
+emits is styled **in both modes**, so the next role split cannot repeat this.
+
+### Fixed — the map used half the panel
+
+Component packing guessed one shelf width, and on a panel twice as wide as it
+was tall that put the management pair *below* the firewall estate. The tall
+result then had to be scaled down to fit: the lab rendered at **0.6×**. Instead
+of tuning the constant, it now lays the shelves out at six widths and keeps
+whichever renders largest — which is what "best" means here. Same lab, same
+panel: **1.26×**, and the HA pair sits beside the estate.
+
+Components are also padded by their own nodes' radii rather than a constant.
+A radius already tracks label width, so a fixed pad let `192.168.20.0/24` in
+one component print over `CP-MGMT-01`'s address in the next. Measured on the
+lab at 1920px and at 1500px: **0 overlapping labels** in every state.
+
+### Fixed — a merged subnet was a dead end
+
+Auto Merge answers "how many subnets sit behind these devices". There was no
+way to ask "which ones" — the node was not clickable. A merged node is now
+expandable: clicking it opens that one group back into its members without
+turning merging off everywhere else.
+
+### Fixed — a node added later started in the middle of the map
+
+Unmerging a group creates a node in an arrangement that already exists. It was
+seeded on the golden-angle spiral, i.e. in the centre of everything, and
+dragged its links across the picture. A node that is new to an existing layout
+now starts at the centroid of the neighbours it connects to.
+
+### Fixed — Save Map underlined every label, one interaction late
+
+Save pins all nodes, and the "placed" marker was a dotted underline, so after
+saving all eleven names looked like links. It is now a small dot in the node's
+corner. Save also re-renders, so the markers appear when you press it rather
+than on the next unrelated click.
+
+---
+
+## v4.16.0 — clusters are one firewall, and Management HA is on the map
+
+Two questions from the lab: *should External-Cluster, External-GW01 and
+External-GW02 be merged?* and *how are CP-MGMT-01 and CP-MGMT-02 linked?*
+`tools/diag_topology.py` (new, read-only) answered both against the live R82.
+
+### Added — cluster membership, from the cluster's own member list
+
+```
+External-Cluster  [CpmiGatewayCluster]
+  cluster-member-names: ['External-GW01', 'External-GW02']
+External-GW01  cluster-member  back-reference: NONE
+```
+
+`show-gateways-and-servers` returns the cluster **and** its members as
+top-level objects, and the members carry no pointer back, which is why the map
+drew three peers. It is now one cluster node with a second plate behind it, its
+members attached by a dashed membership link, and Collapse folds the members
+into it. Roles split: `cluster`, `cluster-member`, `gateway`, `management`.
+
+**Membership is never inferred from addresses.** A /30 with .1 and .2 looks
+like sync, and a third address on a member's subnet looks like a VIP — those
+readings are right most of the time, and a map that is "usually right" about
+which boxes are one firewall is worse than one that says it does not know.
+Strip `cluster-member-names` from the payload and the app draws no membership
+at all; if a named member is missing from the response, it says so in
+`limitations` rather than quietly showing a smaller cluster.
+
+What *is* read off the graph: a subnet no cluster interface touches, reached
+only through members of one cluster, is internal to it. `10.99.99.0/30` is
+marked accordingly, and the tooltip gives the evidence before the conclusion —
+"No interface of External-Cluster is on this network, only its members are. On
+a ClusterXL deployment that is the sync network."
+
+### Added — Management HA
+
+I was wrong when I said the API does not expose this. It does, in a field I had
+not checked:
+
+```
+CP-MGMT-01  management-blades: [logging-and-status, network-policy-management]
+CP-MGMT-02  management-blades: [logging-and-status, network-policy-management,
+                                secondary]
+```
+
+`management-blades.secondary` marks the standby, and a domain has exactly one
+primary — so primary + secondary *is* the pair, by definition rather than by
+inference. Both are labelled with their role and joined by a green dashed HA
+link. Two primaries, or a log-only server, draws nothing and says why.
+
+The map says HA is **configured**. It never says it is healthy: whether the
+peers are currently synchronised is not in the object model, and that caveat
+is in `limitations` and in the node tooltip.
+
+### Added — internet-facing subnets
+
+Cluster interface 2 reports `topology.leads-to-internet: true`, so
+`172.23.34.0/24` is marked as facing outside. Only that flag marks it; nothing
+is guessed from address ranges.
+
+### Changed — traffic.py split
+
+`traffic.py` held four concerns and this work pushed it past the 700-line guard
+that `test_v413_structure.py` enforces — the split flagged as deferred in
+v4.13. The graph builder moved to `app/topology_map.py` (182 lines);
+`traffic.py` re-exports `network_map` so existing imports keep working.
+
+### Fixed — layout, for the shape this created
+
+- The HA pair has no interface to the estate, so it is a second connected
+  component. Fruchterman-Reingold assumes one graph: gravity pulled both to the
+  middle while repulsion shoved them apart, compressing one and flinging the
+  other. Components are now laid out together and then shelf-packed as rigid
+  bodies — deterministic, and skipped entirely once the user has placed a node
+  by hand.
+- A member link is pulled to 0.78× a subnet link, so members sit with their
+  cluster.
+- Spacing now clears the widest label (`max(panel-derived k, widest × 1.35)`);
+  a panel-derived k could come out smaller than the labels it had to separate.
+- Collapsing a cluster used to strand `10.99.99.0/30` with no links at all.
+- `topoDeclutter()`: geometry keeps an edge label clear of its own two
+  endpoints, but nothing cheap predicts it landing on a *third* node's label.
+  After the layout settles, measure what rendered and drop the few that
+  collide — the interface label gives way, never the node name. Measured on
+  the lab: **8 overlapping labels → 0**.
+
+### Tests
+
+`tests/test_v416_cluster_ha.py` (28). 340 total.
+
+---
+
+## v4.15.1 — graph view polish, after seeing it against the live lab
+
+Rendering the real 7-firewall lab (22 objects → 11 nodes, 11 links) exposed
+five things the synthetic fixture did not.
+
+### Fixed — the map used a third of the panel
+
+The SVG had a fixed `1600×1000` viewBox with `preserveAspectRatio`, so on a
+1540×600 panel the whole graph was letterboxed into a centred 1.6:1 box with
+empty panel either side. The viewBox is now the container's own pixel size —
+one world unit is one CSS pixel — and it is re-set on resize (trailing edge
+only; a resize fires continuously and the layout must not thrash).
+
+### Fixed — a bigger screen bought you smaller labels
+
+Edge length was a constant 150 units, which laid 11 nodes out over ~1300×850.
+That had to be fitted into the panel at **67%**, so 12.5px labels rendered at
+8.4px. Spacing now scales to the panel (`√(area/n) × 0.45`, clamped to 90–170)
+and gravity is anisotropic — pulling harder on one axis compresses it, so a
+`√aspect` split makes the settled cloud roughly the panel's shape rather than a
+tall column. Same lab now fits at **~0.9–1.1×**. A dense estate still overflows
+and is explored by zooming, which is correct.
+
+### Fixed — labels printed on top of each other
+
+`3 connections` and `if2` landed in the same place in the lab: an edge label
+sat exactly on the midpoint, which is also where a short edge passes under a
+node's sub-label. Labels now sit 9px off to the side of the line, are dropped
+entirely on edges shorter than half the ideal length, and are painted with a
+background-coloured outline (`paint-order: stroke`) so they stay readable
+wherever they land. Node repulsion radius now follows the *label* width, not
+the chip — two 14-character subnet names need more room than two 18px boxes.
+Measured: **0 overlaps** between edge labels and node sub-labels.
+
+### Fixed — a node could settle behind the pan/zoom pad
+
+`CP-MGMT-01` did. The pad floats over the canvas, so fit now treats its
+footprint as unusable space. Measured: **0 nodes intersecting the pad**.
+
+### Fixed — clicking some devices did nothing
+
+Every device was marked expandable, but a management server has no subnets
+behind it and a gateway whose subnets are all shared has no leaves either — so
+the click toggled an empty set. Only a device with something to hide is
+expandable now; the rest isolate on a single click. **Double-click isolates
+anything** (on an expandable device the two single clicks toggle it there and
+back first, so the net effect is just the focus).
+
+### Changed — no more emoji in the chrome
+
+The Export buttons were 📷 and 📄, which render at the font's own colour and
+weight and looked pasted on next to the app's SVG icon set. Export, the search
+step arrows, and the pad's five controls are now inline SVG line art that
+inherits the button colour. Only `−` and `+` remain as text, where a glyph is
+the right answer.
+
+### Tests
+
+`tests/test_v415_graph_map.py` grows to 63. 312 total.
+
+---
+
+## v4.15.0 — Network Mapping gets a graph view
+
+### Added — a physics layout, the way AlgoSec's Discover and Map reads
+
+v4.14's two-column layout answers "which port on this gateway reaches which
+subnet" well, and answers "what does this network actually look like" badly:
+the shape of an estate is not visible in a bundle of parallel edges. Network
+Mapping now has **two layouts**, switched in the toolbar:
+
+| | Graph (default) | Cards |
+|---|---|---|
+| Shape | gateways as hubs, subnets orbiting | two columns |
+| Best for | what sits between A and B | which interface reaches which subnet |
+| Interfaces | edge labels (`if1`, `if2`) | rows inside the device card |
+
+The graph runs a **Fruchterman-Reingold** simulation in plain JavaScript — no
+library, no build step, works offline. It is seeded on a golden-angle spiral
+rather than `Math.random()`, so the same topology lays out identically every
+time; without that a saved arrangement would be meaningless. Repulsion is
+`k²/d` plus a hard shove that only applies while two nodes actually overlap,
+which is what keeps labels off each other. Unlinked nodes (a management server
+with no modelled interfaces) get gravity 3.2 instead of 0.9, so they sit
+beside the estate instead of defining its bounding box.
+
+### Added — the controls that make a big map usable
+
+- **Save Map / Reset Map** — drag any node to place it, then save. Positions
+  are keyed to a hash of the node set, so one topology's coordinates are never
+  reapplied to a different estate. Reset clears them and re-runs the physics.
+- **Auto Merge** — subnets reached through exactly the same set of devices
+  share one node. It is a presentation grouping: nothing is dropped, the count
+  is shown, hovering lists the members, and clicking it again undoes it. On a
+  40-gateway estate this took the map from 241 nodes to 81.
+- **Collapse all** — hides the subnets that hang off exactly one device, which
+  leaves the backbone. A subnet reached by two gateways is never hidden: it is
+  part of the path between them, so hiding it would change what the map says.
+  A collapsed device carries a `+N` badge for what is behind it.
+- **Search IP / Subnet / Name** with ▲ ▼ to step through matches — each hit is
+  centred and flashed; non-matches dim rather than disappear.
+- **Show / Hide Legend**, and **Export** to PNG and CSV. The PNG re-attaches
+  the topology CSS rules and resolves their custom properties into the
+  serialised SVG, because a detached SVG leaves the page stylesheet behind and
+  would otherwise export as black shapes on a transparent field.
+- **Pan/zoom pad** bottom-right: D-pad, −/+, fit-to-screen and a slider, plus
+  scroll-to-zoom and drag-to-pan on the canvas itself.
+
+### Fixed
+
+- `topoBindEvents()` runs on every render, and it registered a `window` mouseup
+  listener each time without removing the old one — one leaked handler per
+  render for the life of the session. Drag state moved onto a module-level
+  object and the listener is now registered once.
+- A re-render (filter, focus, collapse) re-ran the whole simulation and threw
+  away the user's arrangement and zoom. Positions now persist across renders;
+  only genuinely new nodes trigger physics.
+
+### Verified in headless Chromium
+
+Against a fixture reproducing the lab (20 objects) and a synthetic 40-gateway
+estate (481 objects):
+
+```
+lab      : 11 nodes / 9 links, min node separation 180 units, 0 overlaps
+           layout identical across two independent runs
+collapse : 8 nodes, 3 hidden      merge: 10 nodes, 2 subnets merged
+focus    : 6 dimmed               search "192.168": 2 hits, 9 dimmed
+step     : hit centred to (0,0) offset, flash applied
+drag     : node pinned, status reads "1 placed"
+save     : 11 positions stored -> reload -> all nodes fixed -> reset clears
+export   : 7.9 KB of style inlined, 7,366 non-background pixels rasterised
+40 GW    : 481 objects -> 241 nodes / 240 links, 0 overlaps, 6.2 s to settle
+           Auto Merge -> 81 nodes (200 merged); Collapse all -> 41 nodes
+390 px   : no horizontal overflow, pad reachable
+0 page errors in any state
+```
+
+### Tests
+
+`tests/test_v415_graph_map.py` (46 tests). 295 total.
+
+---
+
 ## v4.14.0 — Network Mapping redesign
 
 ### Changed — interfaces are no longer nodes

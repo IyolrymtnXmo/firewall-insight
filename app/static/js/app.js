@@ -910,6 +910,7 @@ async function loadMap(ev){
   return task('map','Loading gateway topology',async()=>{
     mapData=await api('/api/network-map?force=true');
     inventory.innerHTML=mapData.nodes.map(n=>`<div class="node"><b>${esc(n.name)}</b><br><span class="muted">${esc(n.role||n.type)}</span><br>${esc(n.cidr||(n.ips||[]).join(', '))}</div>`).join('');
+    topoLoadSaved(mapData);
     renderTopology(mapData);
     mapNote.textContent=(mapData.limitations||[]).join(' · ');
     mapMode('topology');
@@ -950,31 +951,75 @@ function topoIcon(role){
 /* ============================================================
    Network Mapping.
 
-   The first version drew interfaces as first-class nodes in a middle column,
-   so a lab with 4 gateways became 22 nodes in 3 columns and every subnet edge
-   had to cross the interface column. An interface is a property of a gateway,
-   not its peer, so it is now a ROW INSIDE the gateway card. Two columns, no
-   crossing column, and the node count drops to devices + networks.
+   Two ways to read the same data, because they answer different questions.
 
-   Collapsed, a gateway shows one edge per distinct subnet. Expanded, each
-   interface row anchors its own edge, so you can see which port reaches which
-   network without reading a label soup.
+   GRAPH (default) - the AlgoSec "Discover and Map" shape: a physics layout
+   where gateways become hubs and the subnets behind them orbit as leaves.
+   Answers "what does this network look like, and what sits between A and B".
+   Nodes can be dragged, the arrangement saved, and near-identical subnets
+   merged so a large estate stays readable.
+
+   CARDS - two columns, interfaces as rows inside the device card. Answers
+   "which port on this gateway reaches which subnet", which the graph
+   deliberately hides to stay legible.
+
+   What neither view does is invent facts. Everything drawn comes from
+   show-gateways-and-servers: configured interface addresses and the subnets
+   implied by their masks. Physical cabling, switching, routing protocols and
+   live routes are NOT discovered, so this is a logical map, not a survey.
    ============================================================ */
 
 const TOPO = {
-  expanded: new Set(),
+  mode: 'graph',        // 'graph' | 'cards'
+  expanded: new Set(),  // cards mode: device cards showing interface rows
+  collapsed: new Set(), // graph mode: devices whose leaf subnets are hidden
   focus: null,
   query: '',
+  hits: [], hitIdx: -1,
+  merge: false,
+  unmerged: new Set(),  // merge groups the user opened back up
+  legend: true,
+  graph: null,
+  pinned: new Map(),    // id -> [x,y] the user placed by hand and saved
+  at: new Map(),        // id -> [x,y] where the layout last put it
   view: {scale: 1, tx: 0, ty: 0},
+  vb: {w: 1600, h: 1000},
+  anim: 0,
 };
 
 const TOPO_W = 320, TOPO_NET_W = 250, TOPO_COL_GAP = 300;
 const TOPO_HEAD = 62, TOPO_ROW = 30, TOPO_GAP = 20;
 
+/* The SVG's coordinate space is set to the container's own pixel size, so one
+   world unit is one CSS pixel and `preserveAspectRatio` never letterboxes. A
+   fixed 1600x1000 viewBox looked fine on a 3:2 panel and wasted a third of the
+   width on a wide one: the graph was pinned inside a centred 1.6:1 box while
+   the panel around it sat empty. */
+const VB_FALLBACK = {w: 1600, h: 1000};
+function topoVB(){
+  const r = topology && topology.getBoundingClientRect
+    ? topology.getBoundingClientRect() : null;
+  if(!r || r.width < 80 || r.height < 80) return VB_FALLBACK;
+  return {w: Math.round(r.width), h: Math.round(r.height)};
+}
+/* Ideal edge length. It has to follow the panel: a fixed value laid 11 nodes
+   out over ~1300x850, which then had to be fitted into a 1140x590 panel at 67%
+   - so a bigger screen bought you smaller labels, which is backwards. Scale
+   the spacing to the space available, and clamp so a dense estate still
+   overflows and is explored by zooming rather than squeezed into the frame. */
+function topoK(n, vb){
+  const ideal = Math.sqrt(Math.max(vb.w * vb.h, 240000) / Math.max(n, 2)) * 0.45;
+  return Math.max(90, Math.min(170, ideal));
+}
+
+// --------------------------------------------------------------------------
+// shared model
+// --------------------------------------------------------------------------
 function buildTopoModel(d){
   const nodes = d.nodes || [], edges = d.edges || [];
   const byId = new Map(nodes.map(n => [n.id, n]));
-  const devices = nodes.filter(n => ['gateway','management','device'].includes(n.role));
+  const devices = nodes.filter(n =>
+    ['gateway','management','device','cluster','cluster-member'].includes(n.role));
   const nets = nodes.filter(n => n.role === 'network');
   const ifaces = new Map();
 
@@ -998,6 +1043,601 @@ function topoMatches(text){
   return String(text || '').toLowerCase().includes(TOPO.query.toLowerCase());
 }
 
+function topoShortIf(name){ return String(name || '').replace(/^interface\s*/i, 'if'); }
+
+/* A stable hash of the node set. A saved arrangement belongs to the topology
+   it was drawn for; if the estate changes, the old coordinates are not
+   silently reapplied to different objects. */
+function topoKey(d){
+  const ids = (d.nodes || []).map(n => n.id).sort().join('|');
+  let h = 5381;
+  for(let i = 0; i < ids.length; i++) h = ((h * 33) ^ ids.charCodeAt(i)) >>> 0;
+  return 'fw-map-' + h.toString(36);
+}
+
+// --------------------------------------------------------------------------
+// graph model: devices + subnets, with optional merge and collapse
+// --------------------------------------------------------------------------
+function buildTopoGraph(d){
+  const m = buildTopoModel(d);
+  const raw = d.edges || [];
+  // Relationship edges the backend derived from API fields, not from
+  // interfaces: cluster membership (from the cluster's cluster-member-names)
+  // and management HA (from management-blades.secondary).
+  const rel = raw.filter(e => e.kind === 'membership' || e.kind === 'mgmt-ha');
+  const memberOf = new Map();                 // memberId -> clusterId
+  rel.filter(e => e.kind === 'membership').forEach(e => memberOf.set(e.to, e.from));
+
+  // who connects to each subnet, and through which interfaces
+  const users = new Map();                      // netId -> Map(devId -> [ifName])
+  for(const dv of m.devices){
+    for(const f of (m.ifaces.get(dv.id) || [])){
+      if(!f.subnet) continue;
+      const per = users.get(f.subnet) || new Map();
+      per.set(dv.id, (per.get(dv.id) || []).concat(topoShortIf(f.name)));
+      users.set(f.subnet, per);
+    }
+  }
+
+  // Auto Merge: subnets reached through exactly the same set of devices are
+  // interchangeable on a topology map, so they can share one node. This is a
+  // presentation grouping - no subnet is dropped and the count is shown.
+  let cells = m.nets.map(n => ({kind: 'net', members: [n], id: n.id, name: n.name,
+                                external: !!n.external,
+                                users: users.get(n.id) || new Map()}));
+  let mergedFrom = 0;
+  if(TOPO.merge){
+    const groups = new Map();
+    for(const c of cells){
+      const sig = [...c.users.keys()].sort().join('|') || '(none)';
+      if(!groups.has(sig)) groups.set(sig, []);
+      groups.get(sig).push(c);
+    }
+    cells = [];
+    for(const [sig, group] of groups){
+      // A merged node answers "how many subnets sit behind these devices"; a
+      // click has to be able to ask "which ones", or the answer is a dead end.
+      if(group.length < 2 || TOPO.unmerged.has('merged:' + sig)){
+        cells.push(...group); continue;
+      }
+      mergedFrom += group.length;
+      const merged = new Map();
+      for(const c of group) for(const [dev, names] of c.users)
+        merged.set(dev, (merged.get(dev) || []).concat(names));
+      cells.push({kind: 'merged', members: group.flatMap(c => c.members),
+                  id: 'merged:' + sig, name: `${group.length} subnets`,
+                  external: group.some(c => c.external), users: merged});
+    }
+  }
+
+  // A cluster's members are hidden while it is collapsed: the cluster is one
+  // enforcement point, and its members are how it is built, not peers of it.
+  const clusterHidden = new Set();
+  for(const [mem, cl] of memberOf) if(TOPO.collapsed.has(cl)) clusterHidden.add(mem);
+
+  // Collapse hides the subnets that hang off exactly one device - they add
+  // nothing to a path between two gateways, which is what a map is read for.
+  const hidden = new Set();
+  for(const c of cells){
+    const only = c.users.size === 1 ? [...c.users.keys()][0] : null;
+    if(only && TOPO.collapsed.has(only)){ hidden.add(c.id); continue; }
+    // A network only a collapsed cluster's members touch folds away with
+    // them; leaving it behind would strand it with no links at all.
+    if(c.users.size && [...c.users.keys()].every(u => clusterHidden.has(u))) hidden.add(c.id);
+  }
+
+  const nodes = [], links = [], byId = new Map();
+  const push = n => { nodes.push(n); byId.set(n.id, n); return n; };
+
+  for(const dv of m.devices){
+    if(clusterHidden.has(dv.id)) continue;
+    const list = m.ifaces.get(dv.id) || [];
+    const leaves = cells.filter(c => c.users.size === 1 && c.users.has(dv.id));
+    const kids = dv.role === 'cluster'
+      ? (dv.member_ids || []).filter(id => m.byId.has(id)).length : 0;
+    push({id: dv.id, kind: 'device', role: dv.role || 'device', name: dv.name,
+          sub: dv.mgmt_role ? `${(dv.ips || [])[0] || ''} · ${dv.mgmt_role}`
+                            : ((dv.ips || [])[0] || dv.type || ''),
+          ports: list.length, members: kids, mgmt: dv.mgmt_role || '',
+          cluster: memberOf.get(dv.id) || null,
+          leaves: leaves.length + kids, collapsed: TOPO.collapsed.has(dv.id),
+          // The label sits under the chip and is usually wider than it, so a
+          // radius based on the chip alone let two names overlap while the
+          // shapes were still comfortably apart.
+          r: Math.max(52, String(dv.name || '').length * 4.2),
+          w: 1.7, node: dv});
+  }
+  for(const c of cells){
+    if(hidden.has(c.id)) continue;
+    push({id: c.id, kind: c.kind, role: 'network', name: c.name,
+          sub: c.kind === 'merged'
+            ? c.members.slice(0, 2).map(n => n.name).join(', ') + (c.members.length > 2 ? ' …' : '')
+            : `${c.users.size} connection${c.users.size === 1 ? '' : 's'}`,
+          members: c.members, external: !!c.external,
+          r: Math.max(c.kind === 'merged' ? 46 : 38, String(c.name || '').length * 4),
+          w: c.kind === 'merged' ? 1.25 : 1});
+  }
+  for(const c of cells){
+    if(hidden.has(c.id)) continue;
+    for(const [dev, names] of c.users){
+      const a = byId.get(dev), b = byId.get(c.id);
+      if(a && b) links.push({a, b, from: dev, to: c.id, kind: 'subnet',
+                             label: [...new Set(names)].join(', ')});
+    }
+  }
+  // Relationship links are drawn differently on purpose: "is a member of" and
+  // "is the HA peer of" are not traffic paths, and a map that draws them the
+  // same way as a subnet invites reading a data path that does not exist.
+  for(const e of rel){
+    const a = byId.get(e.from), b = byId.get(e.to);
+    // A member belongs to its cluster, so its link is pulled shorter than a
+    // subnet link. HA keeps the normal length - the pair is a relationship
+    // between equals, not a containment.
+    if(a && b) links.push({a, b, from: e.from, to: e.to, kind: e.kind,
+                           len: e.kind === 'membership' ? 0.78 : 1,
+                           // The dashed line into a cluster plate already says
+                           // "member"; the word only added a label to collide
+                           // with. "HA" earns its place - two plain boxes with
+                           // a line between them say nothing on their own.
+                           label: e.kind === 'mgmt-ha' ? 'HA' : ''});
+  }
+
+  // A subnet no cluster interface touches, reached only through members of one
+  // cluster, is internal to that cluster - on a real deployment, the sync
+  // network. This is read off the graph, not off the addresses.
+  for(const nd of nodes){
+    if(nd.role !== 'network') continue;
+    const cell = cells.find(c => c.id === nd.id);
+    if(!cell || !cell.users.size) continue;
+    const owners = [...cell.users.keys()];
+    const cl = [...new Set(owners.map(o => memberOf.get(o)))];
+    if(cl.length === 1 && cl[0] && owners.every(o => memberOf.has(o))){
+      nd.internal = byId.get(cl[0]) ? byId.get(cl[0]).name : '';
+    }
+  }
+
+  for(const nd of nodes) nd.deg = 0;
+  for(const l of links){ l.a.deg++; l.b.deg++; }
+
+  // The layout box takes the panel's aspect, so a wide panel gets a wide map
+  // instead of a tall one that has to be scaled down to fit.
+  const n = Math.max(nodes.length, 1);
+  // Spacing has to clear the widest node, whose radius follows its label -
+  // otherwise a panel-derived k can end up smaller than the labels it has to
+  // keep apart, and no amount of settling separates them.
+  const widest = nodes.reduce((mx, nd) => Math.max(mx, nd.r), 0);
+  const k = Math.max(topoK(n, TOPO.vb), widest * 1.35);
+  const side = Math.max(900, 1.4 * k * Math.sqrt(n));
+  const aspect = Math.max(0.6, Math.min(2.6, TOPO.vb.w / TOPO.vb.h));
+  return {nodes, links, byId, k, aspect,
+          box: {w: side * Math.sqrt(aspect), h: side / Math.sqrt(aspect)},
+          totalCells: cells.length, hidden: hidden.size, mergedFrom,
+          totalNets: m.nets.length};
+}
+
+// --------------------------------------------------------------------------
+// layout: Fruchterman-Reingold, seeded deterministically
+// --------------------------------------------------------------------------
+function topoSeed(g){
+  const cx = g.box.w / 2, cy = g.box.h / 2;
+  const R = Math.min(cx, cy) * 0.85;
+  const GA = Math.PI * (3 - Math.sqrt(5));   // golden angle
+  let fresh = 0;
+  g.nodes.forEach((nd, i) => {
+    const pin = TOPO.pinned.get(nd.id);
+    const was = TOPO.at.get(nd.id);
+    nd.fixed = !!pin;
+    if(pin){ nd.x = pin[0]; nd.y = pin[1]; }
+    else if(was){ nd.x = was[0]; nd.y = was[1]; }   // survives a re-render
+    else{
+      // No Math.random: the same topology must lay out the same way every
+      // time, or a saved arrangement would be meaningless and two runs of
+      // the same lab would never look alike.
+      fresh++;
+      const t = (i + 0.5) / g.nodes.length;
+      const r = R * Math.sqrt(t);
+      nd.x = cx + r * Math.cos(i * GA);
+      nd.y = cy + r * Math.sin(i * GA);
+      nd.seeded = true;
+    }
+  });
+  // A node that appears in an arrangement that already exists - unmerging a
+  // group, say - starts on the spiral in the middle of everything and drags
+  // its links across the map. Start it where its neighbours already are.
+  if(fresh && fresh < g.nodes.length){
+    for(const nd of g.nodes){
+      if(!nd.seeded) continue;
+      const near = g.links
+        .map(l => l.a === nd ? l.b : l.b === nd ? l.a : null)
+        .filter(o => o && !o.seeded);
+      if(!near.length) continue;
+      nd.x = near.reduce((t, o) => t + o.x, 0) / near.length + 24;
+      nd.y = near.reduce((t, o) => t + o.y, 0) / near.length + 24;
+    }
+  }
+  return fresh;
+}
+
+function topoRemember(g){
+  g.nodes.forEach(nd => TOPO.at.set(nd.id, [nd.x, nd.y]));
+}
+
+function topoRelax(g, iters, from, total){
+  const n = g.nodes.length;
+  if(n < 2) return;
+  const K = g.k || 150;
+  const cx = g.box.w / 2, cy = g.box.h / 2;
+  // Anisotropic gravity: pulling harder on one axis compresses it, so a
+  // sqrt(aspect) split makes the settled cloud roughly the panel's shape.
+  const ax = 1 / Math.sqrt(g.aspect || 1), ay = Math.sqrt(g.aspect || 1);
+  for(let it = 0; it < iters; it++){
+    const prog = Math.min(1, (from + it) / Math.max(total, 1));
+    const temp = 120 * Math.pow(1 - prog, 1.6) + 0.6;
+    for(const nd of g.nodes){ nd.dx = 0; nd.dy = 0; }
+
+    for(let i = 0; i < n; i++){
+      const a = g.nodes[i];
+      for(let j = i + 1; j < n; j++){
+        const b = g.nodes[j];
+        let dx = a.x - b.x, dy = a.y - b.y;
+        let d = Math.sqrt(dx*dx + dy*dy);
+        if(d < 0.01){ dx = ((i*7)%11)/11 - 0.5; dy = ((j*13)%17)/17 - 0.5; d = 0.6; }
+        const gap = a.r + b.r;
+        // k^2/d is the standard repulsion; the second term is a hard shove
+        // that only applies while two nodes physically overlap, which is what
+        // stops labels being drawn on top of each other.
+        const f = (K * K / d) * a.w * b.w + (d < gap ? (gap - d) * 8 : 0);
+        const ux = dx/d, uy = dy/d;
+        a.dx += ux*f; a.dy += uy*f;
+        b.dx -= ux*f; b.dy -= uy*f;
+      }
+    }
+    for(const l of g.links){
+      const a = l.a, b = l.b;
+      let dx = a.x - b.x, dy = a.y - b.y;
+      const d = Math.sqrt(dx*dx + dy*dy) || 0.01;
+      const f = d * d / (K * (l.len || 1));
+      const ux = dx/d, uy = dy/d;
+      a.dx -= ux*f; a.dy -= uy*f;
+      b.dx += ux*f; b.dy += uy*f;
+    }
+    for(const nd of g.nodes){
+      if(nd.fixed) continue;
+      // A node with no links feels only repulsion, so plain gravity lets it
+      // drift to the far edge and stretch the whole map around nothing. Pull
+      // those in harder - an unmanaged host should sit beside the estate, not
+      // define its bounding box.
+      const grav = nd.deg ? 0.9 : 1.7;
+      nd.dx += (cx - nd.x) * grav * ax;
+      nd.dy += (cy - nd.y) * grav * ay;
+      const disp = Math.sqrt(nd.dx*nd.dx + nd.dy*nd.dy) || 1;
+      const lim = Math.min(disp, temp);
+      nd.x += nd.dx / disp * lim;
+      nd.y += nd.dy / disp * lim;
+    }
+  }
+}
+
+/* Fruchterman-Reingold assumes one connected graph. Give it two - a firewall
+   estate plus a management HA pair with no interface between them - and
+   gravity pulls both toward the middle while repulsion shoves them apart, so
+   one component ends up compressed and the other flung to the edge.
+
+   Lay them out together, then move each component as a rigid body into a
+   shelf packing. Deterministic: components are ordered by area, and JS sort
+   is stable, so the same graph packs the same way every time. */
+function topoComponents(g){
+  const adj = new Map(g.nodes.map(n => [n.id, []]));
+  for(const l of g.links){
+    if(adj.has(l.a.id)) adj.get(l.a.id).push(l.b.id);
+    if(adj.has(l.b.id)) adj.get(l.b.id).push(l.a.id);
+  }
+  const seen = new Set(), comps = [];
+  for(const n of g.nodes){
+    if(seen.has(n.id)) continue;
+    seen.add(n.id);
+    const stack = [n.id], comp = [];
+    while(stack.length){
+      const id = stack.pop();
+      comp.push(g.byId.get(id));
+      for(const nb of adj.get(id) || []) if(!seen.has(nb)){ seen.add(nb); stack.push(nb); }
+    }
+    comps.push(comp.filter(Boolean));
+  }
+  return comps;
+}
+
+function topoPack(g){
+  // Once the user has placed anything by hand they own the arrangement;
+  // shifting whole components under them would undo that silently.
+  if([...TOPO.pinned.keys()].some(id => g.byId.has(id))) return;
+  const comps = topoComponents(g);
+  if(comps.length < 2) return;
+  // Pad each component by its own nodes' radii, not a constant: a radius
+  // already tracks the label width, and a fixed pad let a long subnet name in
+  // one component print over a management server's name in the next.
+  const gap = 46;
+  const boxes = comps.map(c => {
+    const x0 = Math.min(...c.map(nd => nd.x - nd.r * 0.85)) - 12;
+    const y0 = Math.min(...c.map(nd => nd.y - nd.r * 0.55)) - 12;
+    const x1 = Math.max(...c.map(nd => nd.x + nd.r * 0.85)) + 12;
+    const y1 = Math.max(...c.map(nd => nd.y + nd.r * 0.55)) + 12;
+    return {c, x0, y0, w: x1 - x0, h: y1 - y0};
+  }).sort((a, b) => b.w * b.h - a.w * a.h);
+
+  /* A single guessed shelf width put the lab's management pair BELOW the
+     firewall estate on a panel twice as wide as it was tall, so fit had to
+     shrink everything to make the extra height work. Rather than tune a
+     constant, lay the shelves out at a few widths and keep the one that
+     renders biggest - which is exactly what "best" means here. */
+  const base = Math.sqrt(boxes.reduce((t, b) => t + b.w * b.h, 0) * (g.aspect || 1.6));
+  const shelf = (target) => {
+    const place = [];
+    let x = 0, y = 0, rowH = 0, W = 0, H = 0;
+    for(const b of boxes){
+      if(x > 0 && x + b.w > target){ x = 0; y += rowH + gap; rowH = 0; }
+      place.push({b, x, y});
+      x += b.w + gap;
+      rowH = Math.max(rowH, b.h);
+      W = Math.max(W, x - gap); H = Math.max(H, y + b.h);
+    }
+    return {place, scale: Math.min(TOPO.vb.w / Math.max(W, 1), TOPO.vb.h / Math.max(H, 1))};
+  };
+  let best = null;
+  for(const k of [0.7, 1, 1.3, 1.7, 2.2, 1e9]){
+    const got = shelf(base * k);
+    if(!best || got.scale > best.scale + 1e-6) best = got;   // ties keep the first
+  }
+  for(const {b, x, y} of best.place){
+    const dx = x - b.x0, dy = y - b.y0;
+    for(const nd of b.c){ nd.x += dx; nd.y += dy; }
+  }
+}
+
+function topoIterations(n){
+  return n > 400 ? 120 : n > 150 ? 220 : 400;
+}
+
+// --------------------------------------------------------------------------
+// graph painting
+// --------------------------------------------------------------------------
+function topoNodeSvg(nd){
+  const cls = ['topo-g-node', nd.kind === 'device' ? nd.role : nd.kind];
+  const hit = topoMatches(nd.name) || topoMatches(nd.sub);
+  if(TOPO.query){ cls.push(hit ? 'hit' : 'dim'); }
+  if(TOPO.focus && !topoNear(nd.id)) cls.push('dim');
+  if(nd.fixed) cls.push('pinned');
+
+  const canExpand = (nd.kind === 'device' && nd.leaves > 0) || nd.kind === 'merged';
+  let shape, label;
+  if(nd.kind === 'device'){
+    if(canExpand) cls.push('expandable');
+    // A cluster gets a second plate behind it: it is one enforcement point
+    // made of several boxes, and that has to be visible without reading the
+    // label, or it looks like just another gateway.
+    shape = (nd.role === 'cluster'
+              ? `<rect class="chip plate" x="-25" y="-21" width="42" height="34" rx="8"/>` : '')
+      + `<rect class="chip" x="-21" y="-17" width="42" height="34" rx="8"/>`
+      + topoGlyph(nd.role)
+      + (nd.leaves && nd.collapsed
+          ? `<g class="stub"><circle cx="20" cy="-15" r="9"/>`
+            + `<text x="20" y="-11.5" text-anchor="middle">${nd.leaves}</text></g>`
+          : '');
+    label = `<text class="lbl" y="32" text-anchor="middle">${esc(nd.name)}</text>`
+      + `<text class="sub" y="45" text-anchor="middle">${esc(nd.sub)}</text>`;
+  }else{
+    const w = nd.kind === 'merged' ? 26 : 18;
+    if(nd.internal) cls.push('internal');
+    if(nd.external) cls.push('external');
+    if(nd.kind === 'merged') cls.push('expandable');
+    shape = `<rect class="chip" x="${-w/2}" y="-7" width="${w}" height="14" rx="4"/>`
+      + (nd.kind === 'merged' ? `<rect class="chip stack" x="${-w/2+3}" y="-11" width="${w}" height="14" rx="4"/>` : '');
+    label = `<text class="lbl" y="24" text-anchor="middle">${esc(nd.name)}</text>`
+      + `<text class="sub" y="37" text-anchor="middle">${esc(nd.sub)}</text>`;
+  }
+  const title = nd.kind === 'merged'
+    ? nd.members.map(n => n.name).join('\n')
+    : nd.internal
+      ? `${nd.name}\nNo interface of ${nd.internal} is on this network - only its members are.`
+        + `\nOn a ClusterXL deployment that is the sync network.`
+    : nd.role === 'cluster'
+      ? `${nd.name}\n${nd.members} member(s), from the cluster object's own member list`
+    : nd.mgmt
+      ? `${nd.name}\nManagement server, ${nd.mgmt} (from management-blades)`
+        + `\nHA is shown as configured; live sync state is not exposed by the API.`
+    : `${nd.name}${nd.sub ? ' · ' + nd.sub : ''}`;
+  // A device with nothing behind it has nothing to collapse, so clicking it
+  // does the other useful thing instead: isolates its neighbourhood. Without
+  // this, clicking a management server with no modelled subnets did nothing.
+  return `<g class="${cls.join(' ')}" data-id="${esc(nd.id)}"`
+    + `${canExpand ? ' data-expandable="1"' : ''}`
+    + `${nd.kind === 'merged' ? ` aria-expanded="false"` : ''}`
+    + ` transform="translate(${nd.x.toFixed(1)},${nd.y.toFixed(1)})"`
+    + ` role="button" tabindex="0" aria-label="${esc(nd.name)}"`
+    + `${canExpand ? ` aria-expanded="${!nd.collapsed}"` : ''}>`
+    + `<title>${esc(title)}</title><circle class="halo" r="${nd.kind === 'device' ? 26 : 13}"/>`
+    + shape
+    + `<circle class="pin" cx="${nd.kind === 'device' ? 22 : 13}" `
+    + `cy="${nd.kind === 'device' ? 16 : 6}" r="2.6"/>`
+    + label + `</g>`;
+}
+
+function topoGlyph(role){
+  if(role === 'cluster' || role === 'cluster-member' || role === 'gateway'){
+    return `<g class="glyph"><rect x="-13" y="-9" width="26" height="18" rx="2"/>`
+      + `<path d="M-13 -3h26M-13 3h26M-5 -9v6M4 -9v6M-9 3v6M0 3v6M8 3v6"/></g>`;
+  }
+  if(role === 'management'){
+    return `<g class="glyph"><rect x="-12" y="-9" width="24" height="18" rx="2"/>`
+      + `<path d="M-8 -4h12M-8 1h12M-8 6h7"/></g>`;
+  }
+  return `<g class="glyph"><rect x="-13" y="-9" width="26" height="18" rx="2"/>`
+    + `<path d="M-13 -3h26M-13 3h26M-5 -9v6M4 -9v6M-9 3v6M0 3v6M8 3v6"/></g>`;
+}
+
+function topoNear(id){
+  if(!TOPO.focus) return true;
+  if(TOPO.focus === id) return true;
+  return (TOPO.graph.links || []).some(l =>
+    (l.from === TOPO.focus && l.to === id) || (l.to === TOPO.focus && l.from === id));
+}
+
+/* An edge label sat exactly on the midpoint, which is also where a short edge
+   passes under a node's sub-label - "3 connections" and "if2" printed on top of
+   each other in the lab. Labels now sit off to one side of the line, are
+   skipped entirely on edges too short to hold one, and are painted with a
+   background-coloured outline so they stay readable wherever they land. */
+function topoLabelAt(l){
+  const dx = l.b.x - l.a.x, dy = l.b.y - l.a.y;
+  const len = Math.sqrt(dx*dx + dy*dy);
+  if(len < ((TOPO.graph && TOPO.graph.k) || 150) * 0.5) return null;
+  // The midpoint of a short edge between two long-named nodes lands inside one
+  // of their labels. Each node's radius already tracks its label width, so
+  // requiring the edge to be longer than the two radii together keeps the
+  // midpoint clear of both. An interface name is worth less than a readable
+  // node name, so this drops the interface label rather than crowding.
+  if(len < (l.a.r + l.b.r) * 0.62) return null;
+  const off = 11;
+  return {x: (l.a.x + l.b.x) / 2 - dy / len * off,
+          y: (l.a.y + l.b.y) / 2 + dx / len * off + 3.5};
+}
+
+function topoLinkSvg(l, showLabel){
+  const on = !TOPO.focus || l.from === TOPO.focus || l.to === TOPO.focus;
+  const kind = l.kind && l.kind !== 'subnet' ? ' ' + l.kind : '';
+  // Every labelled link gets its <text> even when it is currently too short to
+  // show one: nodes move while the simulation runs, so emitting conditionally
+  // would slide the DOM index away from the link it belongs to.
+  const at = showLabel && l.label ? topoLabelAt(l) : null;
+  return `<g class="topo-g-edge${kind}${on ? '' : ' dim'}">`
+    + `<line x1="${l.a.x.toFixed(1)}" y1="${l.a.y.toFixed(1)}"`
+    + ` x2="${l.b.x.toFixed(1)}" y2="${l.b.y.toFixed(1)}"/>`
+    + (showLabel && l.label
+        ? `<text x="${(at ? at.x : 0).toFixed(1)}" y="${(at ? at.y : 0).toFixed(1)}"`
+          + ` text-anchor="middle"${at ? '' : ' display="none"'}>${esc(l.label)}</text>`
+        : '')
+    + `</g>`;
+}
+
+function renderTopoGraph(d){
+  TOPO.vb = topoVB();
+  const g = buildTopoGraph(d);
+  TOPO.graph = g;
+  const fresh = topoSeed(g);
+
+  // Labels are the first thing to make a big map unreadable, so they appear
+  // only when there are few enough to read, or when a focus has narrowed the
+  // picture to one node's neighbourhood.
+  const showLabels = g.links.length <= 26 || !!TOPO.focus;
+
+  const paint = () => {
+    topology.innerHTML =
+      `<svg id="topoSvg" viewBox="0 0 ${TOPO.vb.w} ${TOPO.vb.h}" preserveAspectRatio="xMidYMid meet">`
+      + `<g id="world">`
+      + `<g id="topoEdges">${g.links.map(l => topoLinkSvg(l, showLabels)).join('')}</g>`
+      + `<g id="topoNodes">${g.nodes.map(topoNodeSvg).join('')}</g>`
+      + `</g></svg>`;
+    TOPO.dom = {
+      lines: [...topology.querySelectorAll('#topoEdges line')],
+      texts: [...topology.querySelectorAll('#topoEdges text')],
+      nodes: [...topology.querySelectorAll('#topoNodes .topo-g-node')],
+    };
+    topoBindEvents();
+  };
+
+  const move = () => {
+    const {lines, nodes} = TOPO.dom;
+    g.links.forEach((l, i) => {
+      const ln = lines[i]; if(!ln) return;
+      ln.setAttribute('x1', l.a.x.toFixed(1)); ln.setAttribute('y1', l.a.y.toFixed(1));
+      ln.setAttribute('x2', l.b.x.toFixed(1)); ln.setAttribute('y2', l.b.y.toFixed(1));
+    });
+    g.nodes.forEach((nd, i) => {
+      const el = nodes[i]; if(!el) return;
+      el.setAttribute('transform', `translate(${nd.x.toFixed(1)},${nd.y.toFixed(1)})`);
+    });
+    topoLabels(showLabels);
+  };
+
+  const total = topoIterations(g.nodes.length);
+  const still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Only a genuinely new node needs the physics. Toggling a focus or a filter
+  // re-renders the same map, and re-settling it there would throw the user's
+  // arrangement and zoom away for no reason.
+  if(!fresh){
+    paint(); topoDeclutter(); topoRemember(g); topoApplyView();
+  }else if(still || g.nodes.length > 220){
+    topoRelax(g, total, 0, total);
+    topoPack(g);
+    paint(); topoDeclutter(); topoRemember(g); topoFit();
+  }else{
+    // Run the simulation on screen so the map visibly settles. It also shows
+    // honestly that the layout is computed, not authored.
+    topoRelax(g, 40, 0, total);
+    paint();
+    const token = ++TOPO.anim;
+    let done = 40;
+    const step = () => {
+      if(token !== TOPO.anim) return;             // a re-render superseded us
+      topoRelax(g, 14, done, total);
+      done += 14;
+      move();
+      if(done < total) requestAnimationFrame(step);
+      else { topoPack(g); move(); topoDeclutter(); topoRemember(g); topoFit(); }
+    };
+    requestAnimationFrame(step);
+  }
+  topoStatus(g);
+}
+
+function topoLabels(show){
+  if(!show || !TOPO.dom) return;
+  const labelled = TOPO.graph.links.filter(l => l.label);
+  TOPO.dom.texts.forEach((t, i) => {
+    const l = labelled[i]; if(!l) return;
+    const at = topoLabelAt(l);
+    if(!at){ t.setAttribute('display', 'none'); return; }
+    t.removeAttribute('display');
+    t.setAttribute('x', at.x.toFixed(1));
+    t.setAttribute('y', at.y.toFixed(1));
+  });
+}
+
+/* Geometry gets an edge label clear of its own two endpoints, but it can still
+   land on a THIRD node's label, and no cheap formula predicts that. So once the
+   layout has settled, measure what actually rendered and hide the few labels
+   that collide. A node name is worth more than an interface name, so the edge
+   label is the one that gives way.
+
+   One forced reflow on a few dozen boxes, once per settle - not per frame. */
+function topoDeclutter(){
+  if(!TOPO.dom) return;
+  const texts = TOPO.dom.texts.filter(t => !t.getAttribute('display'));
+  if(!texts.length || texts.length > 200) return;
+  const labels = [...topology.querySelectorAll('.topo-g-node .lbl, .topo-g-node .sub')]
+    .map(e => e.getBoundingClientRect());
+  const hits = (a, b) => a.right > b.left + 1 && a.left < b.right - 1
+                      && a.bottom > b.top + 1 && a.top < b.bottom - 1;
+  const boxes = texts.map(t => t.getBoundingClientRect());
+  texts.forEach((t, i) => {
+    if(labels.some(l => hits(boxes[i], l))) t.setAttribute('display', 'none');
+  });
+}
+
+function topoStatus(g){
+  const el = document.getElementById('topoCount');
+  if(!el) return;
+  const bits = [`${g.nodes.length} node(s)`, `${g.links.length} link(s)`];
+  if(g.hidden) bits.push(`${g.hidden} hidden`);
+  if(g.mergedFrom) bits.push(`${g.mergedFrom} subnets merged`);
+  if(TOPO.pinned.size) bits.push(`${TOPO.pinned.size} placed`);
+  el.textContent = bits.join(' · ');
+}
+
+// --------------------------------------------------------------------------
+// cards mode (unchanged behaviour, now one of two layouts)
+// --------------------------------------------------------------------------
 function topoLayout(m){
   const pos = new Map();
   let y = 30;
@@ -1044,17 +1684,10 @@ function topoAnchor(pos, dv, m, ifaceIdx){
   return {x: p.x + TOPO_W, y: p.y + TOPO_HEAD / 2};
 }
 
-function renderTopology(d){
-  if(!d || !(d.nodes || []).length){
-    topology.innerHTML = emptyState('⌘','No topology objects',
-      'show-gateways-and-servers returned nothing. Check that this API user can read gateway objects.',
-      'Reload','onclick="loadMap(event)"');
-    return;
-  }
+function renderTopoCards(d){
   const m = buildTopoModel(d);
   const {pos, height, width} = topoLayout(m);
 
-  // ---- edges -------------------------------------------------------------
   const edges = [];
   for(const dv of m.devices){
     const p = pos.get(dv.id);
@@ -1070,7 +1703,7 @@ function renderTopology(d){
       list.forEach(f => {
         if(!f.subnet || !pos.get(f.subnet)) return;
         const names = seen.get(f.subnet) || [];
-        names.push(f.name.replace(/^interface\s*/i, 'if'));
+        names.push(topoShortIf(f.name));
         seen.set(f.subnet, names);
       });
       for(const [subnet, names] of seen){
@@ -1094,7 +1727,6 @@ function renderTopology(d){
       + `</g>`;
   }).join('');
 
-  // ---- device cards ------------------------------------------------------
   const deviceSvg = m.devices.map(dv => {
     const p = pos.get(dv.id);
     const list = p.ifaces;
@@ -1106,7 +1738,6 @@ function renderTopology(d){
     if(TOPO.query && hit) cls.push('hit');
 
     const rows = p.open ? list.map((f, idx) => {
-      const net = f.subnet ? m.byId.get(f.subnet) : null;
       return `<g class="topo-if" transform="translate(0,${TOPO_HEAD + idx * TOPO_ROW})">`
         + `<line x1="14" y1="15" x2="${TOPO_W - 12}" y2="15" class="if-rule"/>`
         + `<text class="if-name" x="20" y="19">${esc(f.name)}</text>`
@@ -1114,10 +1745,10 @@ function renderTopology(d){
         + `</g>`;
     }).join('') : '';
 
+    // The pill holds text AND a chevron, so it is sized for the widest
+    // label ("12 ports") with the chevron parked clear of it. A tighter
+    // box clipped the trailing "s" at some zoom levels.
     const badge = list.length
-      // The pill holds text AND a chevron, so it is sized for the widest
-      // label ("12 ports") with the chevron parked clear of it. A tighter
-      // box clipped the trailing "s" at some zoom levels.
       ? `<g class="topo-badge" transform="translate(${TOPO_W - 86},14)">`
         + `<rect width="72" height="22" rx="11"/>`
         + `<text x="28" y="15" text-anchor="middle">${list.length} port${list.length > 1 ? 's' : ''}</text>`
@@ -1134,7 +1765,6 @@ function renderTopology(d){
       + badge + rows + `</g>`;
   }).join('');
 
-  // ---- network cards -----------------------------------------------------
   const netSvg = m.nets.map(net => {
     const p = pos.get(net.id);
     if(!p) return '';
@@ -1155,6 +1785,7 @@ function renderTopology(d){
   topology.innerHTML =
     `<svg id="topoSvg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMin meet">`
     + `<g id="world">${edgeSvg}${deviceSvg}${netSvg}</g></svg>`;
+  TOPO.dom = null;
   topoBindEvents();
   topoApplyView();
   const total = m.devices.length + m.nets.length;
@@ -1163,56 +1794,368 @@ function renderTopology(d){
     + (TOPO.expanded.size ? ` · ${TOPO.expanded.size} expanded` : '');
 }
 
-function topoToggle(id){
-  if(TOPO.expanded.has(id)) TOPO.expanded.delete(id); else TOPO.expanded.add(id);
+// --------------------------------------------------------------------------
+// dispatcher and controls
+// --------------------------------------------------------------------------
+function renderTopology(d){
+  if(!d || !(d.nodes || []).length){
+    topology.innerHTML = emptyState('⌘','No topology objects',
+      'show-gateways-and-servers returned nothing. Check that this API user can read gateway objects.',
+      'Reload','onclick="loadMap(event)"');
+    return;
+  }
+  document.body.classList.toggle('topo-graph', TOPO.mode === 'graph');
+  if(TOPO.mode === 'graph') renderTopoGraph(d); else renderTopoCards(d);
+  topoSyncControls();
+}
+
+function topoSetMode(mode){
+  if(TOPO.mode === mode) return;
+  TOPO.mode = mode;
+  TOPO.at = new Map();
+  TOPO.focus = null;
+  TOPO.view = {scale: 1, tx: 0, ty: 0};
+  try{ localStorage.setItem('fw-topo-mode', mode); }catch(e){}
   renderTopology(mapData);
 }
+
+function topoSyncControls(){
+  const graph = TOPO.mode === 'graph';
+  document.querySelectorAll('[data-topo-mode]').forEach(b =>
+    b.classList.toggle('on', b.dataset.topoMode === TOPO.mode));
+  document.querySelectorAll('[data-graph-only]').forEach(b => b.classList.toggle('hidden', !graph));
+  const mg = document.getElementById('topoMerge');
+  if(mg) mg.classList.toggle('on', TOPO.merge);
+  const lg = document.querySelector('.topo-legend');
+  if(lg) lg.classList.toggle('hidden', !TOPO.legend);
+  const lb = document.getElementById('topoLegendBtn');
+  if(lb) lb.textContent = TOPO.legend ? 'Hide Legend' : 'Show Legend';
+}
+
+function topoToggle(id){
+  if(TOPO.mode === 'graph'){
+    if(String(id).startsWith('merged:')){
+      if(TOPO.unmerged.has(id)) TOPO.unmerged.delete(id); else TOPO.unmerged.add(id);
+      TOPO.at.delete(id);
+      renderTopology(mapData);
+      return;
+    }
+    if(TOPO.collapsed.has(id)) TOPO.collapsed.delete(id); else TOPO.collapsed.add(id);
+    TOPO.at.delete(id);         // let its freed leaves find a new home
+  }else{
+    if(TOPO.expanded.has(id)) TOPO.expanded.delete(id); else TOPO.expanded.add(id);
+  }
+  renderTopology(mapData);
+}
+
 function topoExpandAll(open){
-  TOPO.expanded.clear();
-  if(open){
-    const m = buildTopoModel(mapData);            // build once, not per device
-    m.devices.forEach(d => {
+  const m = buildTopoModel(mapData);            // build once, not per device
+  if(TOPO.mode === 'graph'){
+    TOPO.collapsed.clear();
+    if(!open) m.devices.forEach(d => TOPO.collapsed.add(d.id));
+  }else{
+    TOPO.expanded.clear();
+    if(open) m.devices.forEach(d => {
       if((m.ifaces.get(d.id) || []).length) TOPO.expanded.add(d.id);
     });
   }
   renderTopology(mapData);
 }
-function topoSearch(v){ TOPO.query = v || ''; renderTopology(mapData); }
-function topoFit(){ TOPO.view = {scale: 1, tx: 0, ty: 0}; topoApplyView(); }
-function topoZoom(f){
-  TOPO.view.scale = Math.max(.4, Math.min(2.6, TOPO.view.scale * f));
-  topoApplyView();
+
+function topoAutoMerge(){
+  TOPO.merge = !TOPO.merge;
+  TOPO.unmerged.clear();
+  TOPO.at = new Map();          // merging changes which nodes exist
+  renderTopology(mapData);
+  const g = TOPO.graph;
+  if(TOPO.merge){
+    if(g && g.mergedFrom) notify('info','Auto Merge on',
+      `${g.mergedFrom} subnets that are reached through exactly the same devices now share a node. No subnet was dropped - open a merged node's tooltip to see its members.`);
+    else notify('info','Nothing to merge',
+      'Every subnet here is reached through a different set of devices, so merging would not simplify the map.');
+  }
 }
+
+function topoToggleLegend(){
+  TOPO.legend = !TOPO.legend;
+  try{ localStorage.setItem('fw-topo-legend', TOPO.legend ? '1' : '0'); }catch(e){}
+  topoSyncControls();
+}
+
+// ---- search --------------------------------------------------------------
+function topoSearch(v){
+  TOPO.query = v || '';
+  TOPO.hitIdx = -1;
+  renderTopology(mapData);
+  TOPO.hits = [...topology.querySelectorAll('.hit')].map(el => el.dataset.id);
+  const el = document.getElementById('topoHits');
+  if(el) el.textContent = TOPO.query ? `${TOPO.hits.length} match${TOPO.hits.length === 1 ? '' : 'es'}` : '';
+}
+
+function topoStepHit(dir){
+  if(!TOPO.hits.length){
+    notify('info','Nothing to step through','Type an address or a name in the filter box first.');
+    return;
+  }
+  TOPO.hitIdx = (TOPO.hitIdx + dir + TOPO.hits.length) % TOPO.hits.length;
+  const id = TOPO.hits[TOPO.hitIdx];
+  topoCentre(id);
+  const el = document.getElementById('topoHits');
+  if(el) el.textContent = `${TOPO.hitIdx + 1} of ${TOPO.hits.length}`;
+}
+
+function topoCentre(id){
+  const g = TOPO.graph;
+  let x, y;
+  if(TOPO.mode === 'graph' && g){
+    const nd = g.byId.get(id); if(!nd) return;
+    x = nd.x; y = nd.y;
+  }else{
+    const el = topology.querySelector(`.topo-node[data-id="${CSS.escape(id)}"]`);
+    if(!el) return;
+    const b = el.getBBox();
+    const t = el.getAttribute('transform') || '';
+    const mth = /translate\(([-\d.]+),\s*([-\d.]+)\)/.exec(t) || [0,0,0];
+    x = Number(mth[1]) + b.width / 2; y = Number(mth[2]) + b.height / 2;
+  }
+  TOPO.view.scale = Math.max(TOPO.view.scale, 1.2);
+  TOPO.view.tx = TOPO.vb.w / 2 - TOPO.view.scale * x;
+  TOPO.view.ty = TOPO.vb.h / 2 - TOPO.view.scale * y;
+  topoApplyView();
+  topology.querySelectorAll('.flash').forEach(e => e.classList.remove('flash'));
+  const node = topology.querySelector(`[data-id="${CSS.escape(id)}"]`);
+  if(node) node.classList.add('flash');
+}
+
+// ---- saved arrangements --------------------------------------------------
+function topoSaveMap(){
+  if(TOPO.mode !== 'graph' || !TOPO.graph){
+    notify('warn','Nothing to save','Switch to the Graph view to arrange and save a map.');
+    return;
+  }
+  const pos = {};
+  TOPO.graph.nodes.forEach(n => { pos[n.id] = [Math.round(n.x), Math.round(n.y)]; });
+  try{
+    localStorage.setItem(topoKey(mapData), JSON.stringify(pos));
+    TOPO.pinned = new Map(Object.entries(pos));
+    renderTopology(mapData);      // so the placed markers appear straight away
+    topoStatus(TOPO.graph);
+    notify('ok','Map saved',
+      `${Object.keys(pos).length} node positions stored in this browser. They are reapplied only to this exact set of objects - if the estate changes, the map is laid out fresh.`);
+  }catch(e){
+    notify('warn','Could not save the map',
+      'Browser storage refused the write. Private-mode windows and some group policies block it.');
+  }
+}
+
+function topoLoadSaved(d){
+  TOPO.pinned = new Map();
+  TOPO.at = new Map();
+  try{
+    const raw = localStorage.getItem(topoKey(d));
+    if(raw) TOPO.pinned = new Map(Object.entries(JSON.parse(raw)));
+  }catch(e){ TOPO.pinned = new Map(); }
+}
+
+function topoResetMap(){
+  TOPO.pinned = new Map();
+  TOPO.at = new Map();
+  TOPO.collapsed.clear();
+  TOPO.expanded.clear();
+  TOPO.focus = null;
+  TOPO.merge = false;
+  TOPO.view = {scale: 1, tx: 0, ty: 0};
+  try{ localStorage.removeItem(topoKey(mapData)); }catch(e){}
+  renderTopology(mapData);
+  notify('ok','Map reset','Saved positions cleared and the layout recomputed from scratch.');
+}
+
+// ---- view ----------------------------------------------------------------
 function topoApplyView(){
   const w = document.getElementById('world');
   if(w) w.setAttribute('transform',
-    `translate(${TOPO.view.tx} ${TOPO.view.ty}) scale(${TOPO.view.scale})`);
+    `translate(${TOPO.view.tx.toFixed(1)} ${TOPO.view.ty.toFixed(1)}) scale(${TOPO.view.scale.toFixed(3)})`);
+  const s = document.getElementById('topoZoomRange');
+  if(s) s.value = String(Math.round(TOPO.view.scale * 100));
 }
+
+function topoZoom(f){
+  TOPO.view.scale = Math.max(.3, Math.min(3, TOPO.view.scale * f));
+  topoApplyView();
+}
+function topoZoomTo(pct){
+  TOPO.view.scale = Math.max(.3, Math.min(3, Number(pct) / 100));
+  topoApplyView();
+}
+function topoPan(dx, dy){
+  TOPO.view.tx += dx; TOPO.view.ty += dy;
+  topoApplyView();
+}
+
+function topoFit(){
+  const world = document.getElementById('world');
+  if(!world){ TOPO.view = {scale: 1, tx: 0, ty: 0}; topoApplyView(); return; }
+  TOPO.view = {scale: 1, tx: 0, ty: 0};
+  topoApplyView();
+  let b;
+  try{ b = world.getBBox(); }catch(e){ b = null; }
+  if(!b || !b.width || !b.height){ topoApplyView(); return; }
+  // The pan/zoom pad floats over the canvas, so the fit has to treat its
+  // footprint as unusable - otherwise the node nearest the bottom-right
+  // corner ends up sitting behind it, which is how CP-MGMT-01 disappeared.
+  const vb = TOPO.vb;
+  const pad = document.querySelector('.topo-pad');
+  const pr = pad ? pad.getBoundingClientRect() : null;
+  const usableW = Math.max(240, vb.w - (pr ? pr.width + 26 : 0));
+  const usableH = Math.max(200, vb.h - (pr ? pr.height + 26 : 0));
+  const s = Math.max(.3, Math.min(2.4, Math.min(usableW / b.width, usableH / b.height) * 0.95));
+  TOPO.view = {scale: s,
+               tx: usableW / 2 - s * (b.x + b.width / 2),
+               ty: usableH / 2 - s * (b.y + b.height / 2)};
+  topoApplyView();
+}
+
+// ---- export --------------------------------------------------------------
+/* The SVG is styled by the page stylesheet, which does not travel with a
+   serialised copy. So export re-attaches the topology rules and resolves the
+   custom properties they reference - otherwise the exported image is a set of
+   black-on-transparent shapes. */
+function topoStyleBlock(){
+  const wanted = [];
+  for(const sheet of document.styleSheets){
+    let rules;
+    try{ rules = sheet.cssRules; }catch(e){ continue; }
+    for(const r of rules || []){
+      if(r.selectorText && /\.topo|#world|#topo/.test(r.selectorText)) wanted.push(r.cssText);
+    }
+  }
+  const css = wanted.join('\n');
+  const vars = [...new Set([...css.matchAll(/var\((--[a-z0-9-]+)/gi)].map(m => m[1]))];
+  const cs = getComputedStyle(document.body);
+  const decl = vars.map(v => `${v}:${cs.getPropertyValue(v).trim() || '#888'}`).join(';');
+  return `<style>svg{${decl}}\n${css}</style>`;
+}
+
+function topoExportPng(){
+  const svg = document.getElementById('topoSvg');
+  if(!svg){ notify('warn','Nothing to export','Load the topology first.'); return; }
+  const clone = svg.cloneNode(true);
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  clone.setAttribute('width', TOPO.vb.w); clone.setAttribute('height', TOPO.vb.h);
+  const bg = getComputedStyle(document.body).getPropertyValue('--panel').trim() || '#ffffff';
+  clone.insertAdjacentHTML('afterbegin',
+    topoStyleBlock() + `<rect width="100%" height="100%" fill="${bg}"/>`);
+  const blob = new Blob([new XMLSerializer().serializeToString(clone)], {type: 'image/svg+xml'});
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement('canvas');
+    c.width = TOPO.vb.w * 2; c.height = TOPO.vb.h * 2;   // 2x so text stays crisp
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    URL.revokeObjectURL(url);
+    c.toBlob(b => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(b);
+      a.download = 'network-map.png';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      notify('ok','Image exported','network-map.png saved to your downloads.');
+    }, 'image/png');
+  };
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    notify('warn','Image export failed',
+      'The browser refused to rasterise the map. Use the CSV export, or take a screenshot.');
+  };
+  img.src = url;
+}
+
+function topoExportCsv(){
+  if(!mapData){ notify('warn','Nothing to export','Load the topology first.'); return; }
+  const q = s => `"${String(s == null ? '' : s).replace(/"/g,'""')}"`;
+  const byId = new Map((mapData.nodes || []).map(n => [n.id, n]));
+  const rows = [['Kind','Name','Role','Type','Addresses','Connects to'].map(q).join(',')];
+  for(const n of mapData.nodes || []){
+    const out = (mapData.edges || []).filter(e => e.from === n.id)
+      .map(e => (byId.get(e.to) || {}).name || e.to);
+    rows.push([ 'node', n.name, n.role || '', n.type || '',
+                (n.cidr ? [n.cidr] : (n.ips || [])).join(' '), out.join(' ') ].map(q).join(','));
+  }
+  const blob = new Blob([rows.join('\r\n')], {type: 'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'network-map.csv';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+// ---- events --------------------------------------------------------------
+/* Drag state lives on TOPO, not in a closure, because the SVG is rebuilt on
+   every render: a per-render `window` listener would be added again each time
+   and never removed, so a long session would accumulate hundreds of them. */
+const DRAG = {panning: false, node: null, moved: 0, lx: 0, ly: 0};
+
+window.addEventListener('mouseup', () => {
+  if(DRAG.node && DRAG.moved > 4){
+    // A node the user placed stays where they put it, and the rest of the
+    // map re-settles around it rather than snapping back.
+    DRAG.node.fixed = true;
+    TOPO.pinned.set(DRAG.node.id, [Math.round(DRAG.node.x), Math.round(DRAG.node.y)]);
+    TOPO.at.set(DRAG.node.id, [DRAG.node.x, DRAG.node.y]);
+    if(TOPO.graph) topoStatus(TOPO.graph);
+  }
+  DRAG.node = null; DRAG.panning = false;
+});
 
 function topoBindEvents(){
   const svg = document.getElementById('topoSvg');
   if(!svg) return;
-  let drag = false, moved = 0, lx = 0, ly = 0;
+
+  // One world unit is one CSS pixel (see topoVB), so the only factor left
+  // between a mouse delta and a world delta is the zoom.
+  const unit = () => 1 / TOPO.view.scale;
 
   svg.addEventListener('wheel', e => {
     e.preventDefault();
     topoZoom(e.deltaY < 0 ? 1.12 : 0.89);
   }, {passive: false});
 
-  svg.addEventListener('mousedown', e => { drag = true; moved = 0; lx = e.clientX; ly = e.clientY; });
-  window.addEventListener('mouseup', () => { drag = false; });
+  svg.addEventListener('mousedown', e => {
+    DRAG.moved = 0; DRAG.lx = e.clientX; DRAG.ly = e.clientY;
+    const g = e.target.closest('.topo-g-node');
+    if(g && TOPO.mode === 'graph' && TOPO.graph){
+      DRAG.node = TOPO.graph.byId.get(g.dataset.id) || null;
+      if(DRAG.node) DRAG.node.el = g;
+    }else DRAG.panning = true;
+  });
   svg.addEventListener('mousemove', e => {
-    if(!drag) return;
-    moved += Math.abs(e.clientX - lx) + Math.abs(e.clientY - ly);
-    TOPO.view.tx += (e.clientX - lx) / TOPO.view.scale;
-    TOPO.view.ty += (e.clientY - ly) / TOPO.view.scale;
-    lx = e.clientX; ly = e.clientY;
-    topoApplyView();
+    if(!DRAG.panning && !DRAG.node) return;
+    DRAG.moved += Math.abs(e.clientX - DRAG.lx) + Math.abs(e.clientY - DRAG.ly);
+    const k = unit();
+    const dx = (e.clientX - DRAG.lx) * k, dy = (e.clientY - DRAG.ly) * k;
+    DRAG.lx = e.clientX; DRAG.ly = e.clientY;
+    if(DRAG.node){
+      const nd = DRAG.node;
+      nd.x += dx; nd.y += dy;
+      nd.el.setAttribute('transform', `translate(${nd.x.toFixed(1)},${nd.y.toFixed(1)})`);
+      TOPO.graph.links.forEach((l, i) => {
+        if(l.a !== nd && l.b !== nd) return;
+        const ln = TOPO.dom && TOPO.dom.lines[i]; if(!ln) return;
+        ln.setAttribute('x1', l.a.x.toFixed(1)); ln.setAttribute('y1', l.a.y.toFixed(1));
+        ln.setAttribute('x2', l.b.x.toFixed(1)); ln.setAttribute('y2', l.b.y.toFixed(1));
+      });
+      topoLabels(true);
+    }else{
+      TOPO.view.tx += dx * TOPO.view.scale; TOPO.view.ty += dy * TOPO.view.scale;
+      topoApplyView();
+    }
   });
 
   svg.addEventListener('click', e => {
-    if(moved > 4) return;                       // a drag is not a click
-    const g = e.target.closest('.topo-node');
+    if(DRAG.moved > 4) return;                  // a drag is not a click
+    const g = e.target.closest('.topo-node, .topo-g-node');
     if(!g){ TOPO.focus = null; renderTopology(mapData); return; }
     const id = g.dataset.id;
     if(g.dataset.expandable){ topoToggle(id); return; }
@@ -1220,15 +2163,45 @@ function topoBindEvents(){
     renderTopology(mapData);
   });
 
+  // Double click always isolates. On an expandable device the two single
+  // clicks toggle it there and back first, so the net effect is just a focus.
+  svg.addEventListener('dblclick', e => {
+    const g = e.target.closest('.topo-node, .topo-g-node');
+    if(!g) return;
+    TOPO.focus = (TOPO.focus === g.dataset.id) ? null : g.dataset.id;
+    renderTopology(mapData);
+  });
+
   svg.addEventListener('keydown', e => {
     if(e.key !== 'Enter' && e.key !== ' ') return;
-    const g = e.target.closest('.topo-node');
+    const g = e.target.closest('.topo-node, .topo-g-node');
     if(!g) return;
     e.preventDefault();
     if(g.dataset.expandable) topoToggle(g.dataset.id);
     else { TOPO.focus = (TOPO.focus === g.dataset.id) ? null : g.dataset.id; renderTopology(mapData); }
   });
 }
+
+/* The viewBox is the container's pixel size, so a window resize (or opening
+   the sidebar rail) changes it. Repaint on a trailing edge only - a resize
+   fires continuously and the simulation must not restart per frame. */
+let topoResizeTimer = null;
+window.addEventListener('resize', () => {
+  if(TOPO.mode !== 'graph' || !TOPO.graph || !mapData) return;
+  clearTimeout(topoResizeTimer);
+  topoResizeTimer = setTimeout(() => {
+    const svg = document.getElementById('topoSvg');
+    if(!svg) return;
+    TOPO.vb = topoVB();
+    svg.setAttribute('viewBox', `0 0 ${TOPO.vb.w} ${TOPO.vb.h}`);
+    topoFit();
+  }, 180);
+});
+
+try{
+  if(localStorage.getItem('fw-topo-mode') === 'cards') TOPO.mode = 'cards';
+  if(localStorage.getItem('fw-topo-legend') === '0') TOPO.legend = false;
+}catch(e){}
 
 function exportAccess(){if(!L.value){notify('warn','No Access Layer selected','Pick an Access Layer before exporting.');return}location.href='/api/export.csv?layer='+encodeURIComponent(L.value)}
 
