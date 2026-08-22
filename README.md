@@ -63,7 +63,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass   # Windows PowerShel
 pip install -r requirements.txt
 
 copy .env.example .env      # then edit .env with your Management details
-pytest -q                   # expect: 204 passed
+pytest -q                   # expect: 249 passed
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -89,8 +89,8 @@ docker compose up --build      # reads .env via env_file
 
 | Check | Expected |
 |---|---|
-| `pytest -q` | `204 passed` |
-| `GET /health` | `{"status":"ok","version":"4.13.0","mode":"read-only",...}` |
+| `pytest -q` | `249 passed` |
+| `GET /health` | `{"status":"ok","version":"4.14.0","mode":"read-only",...}` |
 | `GET /api/checkpoint/test` | `{"connected":true,"api_server_version":"...","read_only":true}` |
 | `GET /api/bootstrap` | lists your access layers and policy packages |
 
@@ -127,9 +127,12 @@ render as clickable alert badges that drill into the matching result view.
 with no optimizer analysis applied. Inline Layer rules render indented directly beneath
 their parent rule and keep layer, layer-path and parent-rule context. CSV export.
 
-**Analyze** — optimizer findings: shadowed/redundant rules, exact duplicate groups,
-Any/Any/Any rules, disabled rules, zero-hit rules. Analysis is isolated per layer so
-rules in different Inline Layers are never compared as siblings.
+**Analyze** — optimizer findings across four tabs: shadowed/redundant rules, exact
+duplicate groups, Any/Any/Any rules, and **Unused Rules** (zero-hit plus disabled,
+with hit counts and last-hit dates). Unused is reported as a review candidate, not a
+delete instruction: hit counters reset on policy install and on gateway restart.
+Analysis is isolated per layer, so rules in different Inline Layers are never compared
+as siblings.
 
 **NAT Policy** — NAT rulebase, duplicate NAT detection, broad NAT rules, disabled NAT
 and possible no-translation drill-downs. NAT hit counts are shown when the Management
@@ -141,9 +144,15 @@ service name (`https`, `ssh`, `smtp`, `ntp`, `domain`) or an exact Check Point s
 object name. Follows Parent Rule → Inline Layer → child rule → terminal action, and
 reports a confidence level (`exact`, `inferred`, `unknown`).
 
-**Network Mapping** — topology derived from `show-gateways-and-servers`, with distinct
-gateway and management-server icons and connected-subnet nodes computed from interface
-addresses.
+**Network Mapping** — topology derived from `show-gateways-and-servers`, drawn as two
+columns: devices on the left, connected subnets on the right. Interfaces are rows
+*inside* the device card, not separate nodes, so a four-gateway lab is 11 nodes rather
+than 22. Click a device to open its interface rows (edges then leave the specific port
+and are labelled with it); click a subnet to dim everything not attached to it; filter
+by name or address; expand/collapse all, zoom, scroll-to-zoom and drag-to-pan. Cards are
+keyboard reachable and report `aria-expanded`. The map is logical only — physical
+cabling, switching and live routing are not inferred, and an interface with no CIDR
+shows `—` rather than a guess.
 
 **Feedback layer** — every request drives a top progress bar; blocking work shows a
 translucent blur overlay with elapsed time and named steps, and explains itself once it
@@ -160,7 +169,7 @@ under `prefers-reduced-motion`.
 
 ```
 app/
-  main.py               app factory + router include (42 lines)
+  main.py               app factory + lifespan + router include (~45 lines)
   version.py            APP_VERSION, single source of truth
   config.py             .env settings
   runtime.py            Management client, response cache, HTTP error mapping
@@ -257,6 +266,7 @@ anywhere in the source. The read-only guarantee is structural, not a promise.
 | GET | `/api/policy-browser?layer=` | Legacy layer-first raw rulebase |
 | GET | `/api/export.csv?layer=` | Analysis CSV |
 | GET | `/api/policy-browser.csv?layer=` | Raw policy CSV |
+| GET | `/api/package-policy-browser.csv?package=` | Raw policy CSV for a whole package, inline rules included |
 
 Add `&force=true` to `bootstrap`, `policy-browser`, `package-policy-browser` or
 `network-map` to bypass the cache.
@@ -266,7 +276,7 @@ Add `&force=true` to `bootstrap`, `policy-browser`, `package-policy-browser` or
 ## Testing
 
 ```bash
-pytest -q          # 204 tests, no Management Server required
+pytest -q          # 249 tests, no Management Server required
 ```
 
 Tests use fixture payloads shaped like real Management API responses; nothing in the

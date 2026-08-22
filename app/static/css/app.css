@@ -543,13 +543,29 @@ body.rail .app{grid-template-columns:74px 1fr!important}
 /* The rail tooltip escapes the sidebar, so the sidebar must sit above
    .main or the tooltip renders behind the panels. */
 body.rail .sidebar{padding-left:8px;padding-right:8px;overflow:visible;position:relative;z-index:200}
-body.rail .brand{font-size:0;justify-content:center;padding:14px 0}
+body.rail .brand{
+  font-size:0;display:flex;justify-content:center;align-items:center;
+  margin:2px 0 22px;padding:0;
+}
 body.rail .brand:before{
-  content:"FI";font-size:17px;font-weight:800;color:var(--purple2);letter-spacing:-.02em;
+  content:"FI";
+  display:flex;align-items:center;justify-content:center;
+  width:38px;height:38px;border-radius:11px;
+  font-size:14px;font-weight:800;letter-spacing:-.02em;color:#fff;
+  background:linear-gradient(140deg,var(--purple2),var(--purple));
+  box-shadow:0 6px 16px rgba(139,92,246,.35);
 }
+body.rail .menu{gap:4px}
 body.rail .menu button{
-  padding:13px 0;text-align:center;font-size:0;position:relative;
+  /* .menu button sets justify-content:flex-start for the expanded layout;
+     without overriding it the icon hugs the left edge of the rail. */
+  padding:0;height:44px;width:44px;margin:0 auto;border-radius:12px;
+  text-align:center;font-size:0;position:relative;
+  justify-content:center;align-items:center;
 }
+/* The 3px inset bar is an edge marker for a full-width row; on a centred
+   44px square it reads as a stray line, so the rail fills the pill instead. */
+body.rail .menu button.active{box-shadow:none}
 /* ::first-letter does not apply to buttons, so the glyph comes from an
    explicit data-icon attribute instead of the label's first character. */
 body.rail .menu button:before{
@@ -563,18 +579,53 @@ body.rail .menu button:hover:after{
   background:var(--panel2);border:1px solid var(--line);color:var(--text);
   box-shadow:0 10px 26px rgba(0,0,0,.4);
 }
-body.rail .sidebar-bottom .theme-row span:first-child,
-body.rail .sidebar-bottom .hint{display:none}
-body.rail .sidebar-bottom{text-align:center}
-#railToggle{
-  display:inline-flex;align-items:center;justify-content:center;gap:7px;
-  width:100%;margin-top:10px;padding:9px 10px;border-radius:10px;
-  background:rgba(255,255,255,.04);border:1px solid var(--line);
-  color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;
+body.rail .sidebar-bottom{text-align:center;padding-top:12px}
+/* ---------- Sidebar footer ----------
+   Glyph icons (☀ ☾) render differently in every font stack and looked wrong
+   in the fallback face, so these are inline SVG: crisp at any size, and they
+   take their colour from currentColor like text does. */
+.side-note{
+  padding:0 10px 10px;font-size:11px;line-height:1.5;
+  color:var(--muted);opacity:.7;
 }
-#railToggle:hover{color:var(--text);background:rgba(255,255,255,.09)}
-body.rail #railToggle span{display:none}
-@media(max-width:900px){#railToggle{display:none}body.rail .app{grid-template-columns:1fr!important}}
+.side-actions{display:flex;gap:6px;padding:0 6px 4px}
+.icon-btn{
+  flex:1 1 0;display:inline-flex;align-items:center;justify-content:center;
+  height:36px;padding:0;border-radius:10px;cursor:pointer;
+  background:transparent;border:1px solid transparent;color:var(--muted);
+  transition:color var(--t-fast) var(--ease),background var(--t-fast) var(--ease),
+             border-color var(--t-fast) var(--ease);
+}
+.icon-btn:hover{color:var(--text);background:rgba(255,255,255,.06);border-color:var(--line)}
+.light .icon-btn:hover{background:rgba(0,0,0,.045)}
+.icon-btn:active{transform:translateY(1px)}
+.icon-btn .ico{
+  width:17px;height:17px;
+  fill:none;stroke:currentColor;stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round;
+}
+/* The moon is a filled crescent; the sun is a stroked disc with rays. */
+.ico-moon{fill:currentColor;stroke:none}
+
+/* Show the theme you will switch TO, so the icon reads as an instruction
+   rather than as a status light. */
+.icon-btn .ico-sun{display:block}
+.icon-btn .ico-moon{display:none}
+.light .icon-btn .ico-sun{display:none}
+.light .icon-btn .ico-moon{display:block}
+#themeToggle:hover{color:var(--warn)}
+.light #themeToggle:hover{color:var(--purple)}
+
+/* Collapsed: stack, drop the caption, mirror the arrow. */
+body.rail .side-actions{flex-direction:column;align-items:center;gap:4px;padding:0 6px 4px}
+body.rail .icon-btn{flex:0 0 auto;width:44px;height:38px}
+body.rail .side-note{display:none}
+body.rail #railToggle .ico-rail{transform:scaleX(-1)}
+
+@media(max-width:900px){
+  #railToggle{display:none}
+  body.rail .app{grid-template-columns:1fr!important}
+}
 
 /* ---------- 12e. Extra polish ---------- */
 .busy-detail{
@@ -634,4 +685,84 @@ input:focus,select:focus{box-shadow:0 0 0 4px rgba(139,92,246,.16)}
 .sr-only{
   position:absolute;width:1px;height:1px;padding:0;margin:-1px;
   overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;
+}
+
+
+/* ============================================================
+   Network Mapping v2
+
+   Interfaces are rows inside their gateway card, not nodes in a middle
+   column, so the graph is two columns and edges have nothing to cross.
+   ============================================================ */
+.topo-bar{
+  display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:14px 0 10px;
+}
+.topo-bar input[type=search]{flex:1 1 240px;min-width:0}
+.topo-bar-group{display:flex;gap:6px}
+.topo-bar-group button{padding:9px 13px;font-size:12.5px}
+.icon-btn.sq{flex:0 0 auto;width:36px;height:36px;font-size:16px;font-weight:700;
+  border-color:var(--line);background:var(--panel2)}
+#topoCount{margin-left:auto;font-variant-numeric:tabular-nums}
+
+.topo-legend{
+  display:flex;flex-wrap:wrap;align-items:center;gap:16px;
+  margin-bottom:12px;font-size:12px;color:var(--muted);
+}
+.topo-legend span{display:inline-flex;align-items:center;gap:7px}
+.topo-legend .sw{width:11px;height:11px;border-radius:4px;display:inline-block}
+.topo-legend .sw.management{background:#15382c;border:1.5px solid #46d89a}
+.topo-legend .sw.gateway{background:#281c49;border:1.5px solid #9b7cf8}
+.topo-legend .sw.network{background:#45370f;border:1.5px solid #f2bd4e}
+.light .topo-legend .sw.management{background:#e7f8ef}
+.light .topo-legend .sw.gateway{background:#efe9ff}
+.light .topo-legend .sw.network{background:#fff6da}
+
+.topology{min-height:520px;border-radius:14px;overflow:hidden}
+.topology svg{width:100%;height:100%;cursor:grab;display:block}
+.topology svg:active{cursor:grabbing}
+
+/* edges */
+.topo-edge path{fill:none;stroke:var(--purple);stroke-width:1.8;opacity:.55}
+.topo-edge text{fill:var(--muted);font-size:10.5px}
+.topo-edge.dim{opacity:.12}
+.topo-edge.dim text{opacity:0}
+
+/* cards */
+.topo-node{cursor:pointer;transition:opacity var(--t) var(--ease)}
+.topo-node .card{stroke-width:1.5;transition:filter var(--t) var(--ease)}
+.topo-node:hover .card{filter:brightness(1.18)}
+.topo-node:focus-visible .card{stroke:var(--purple2);stroke-width:2.5}
+.topo-node .n-name{fill:var(--text);font-weight:750;font-size:13px}
+.topo-node .n-sub{fill:var(--muted);font-size:11px;font-family:var(--font-mono)}
+.topo-node[data-expandable] .n-name{text-decoration:none}
+.topo-node.dim{opacity:.22}
+.topo-node.hit .card{stroke:var(--warn);stroke-width:2.5}
+
+.gateway .card{fill:#281c49;stroke:#9b7cf8}
+.management .card{fill:#15382c;stroke:#46d89a}
+.network .card{fill:#45370f;stroke:#f2bd4e}
+.device .card{fill:#23202d;stroke:#7d748d}
+.light .gateway .card{fill:#efe9ff}
+.light .management .card{fill:#e7f8ef}
+.light .network .card{fill:#fff6da}
+.light .device .card{fill:#f4f1f8}
+
+/* interface rows */
+.topo-if .if-rule{stroke:var(--line);stroke-width:1;opacity:.55}
+.topo-if .if-name{fill:var(--text);font-size:11.5px;font-weight:600}
+.topo-if .if-cidr{fill:var(--muted);font-size:11px;font-family:var(--font-mono)}
+
+/* port-count pill */
+.topo-badge rect{fill:rgba(255,255,255,.10);stroke:var(--line);stroke-width:1}
+.light .topo-badge rect{fill:rgba(0,0,0,.06)}
+.topo-badge text{fill:var(--muted);font-size:10.5px;font-weight:700}
+.topo-badge .chev{fill:none;stroke:var(--muted);stroke-width:1.6;
+  stroke-linecap:round;stroke-linejoin:round}
+.topo-node:hover .topo-badge text,
+.topo-node:hover .topo-badge .chev{stroke:var(--text);fill:var(--text)}
+.topo-node:hover .topo-badge .chev{fill:none}
+
+@media(max-width:900px){
+  #topoCount{margin-left:0;width:100%}
+  .topology{min-height:420px}
 }

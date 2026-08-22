@@ -4,6 +4,67 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.14.0 — Network Mapping redesign
+
+### Changed — interfaces are no longer nodes
+
+The old view drew every interface as its own node in a middle column. In the
+lab that is 4 gateways + 2 management hosts + 5 subnets = 11 real things, but
+the view rendered **22 nodes across 3 columns**, and every subnet edge had to
+cross the interface column. The result was a hairball that told you less than
+the raw JSON did.
+
+An interface is not a peer of a gateway — it is a *part* of one. So it is now
+a row inside the gateway card:
+
+```
+before                                  after
+  [GW01] ── [interface 1] ── [10.99.99.0/30]     [GW01        2 ports ›] ── [10.99.99.0/30]
+        └── [interface 2] ── [172.23.31.0/24]      interface 1  10.99.99.1/30
+                                                   interface 2  172.23.31.177/24
+  22 nodes, 3 columns                            11 nodes, 2 columns
+```
+
+- **Click a gateway** to open or close its interface rows. Collapsed, edges
+  leave the card edge; expanded, each edge leaves the row it belongs to and is
+  labelled with the interface, so you can see *which* port reaches a subnet.
+- **Click a network** to isolate it — everything not connected to it dims,
+  rather than disappearing, because the context is what makes the hit useful.
+- **Filter box** dims non-matching nodes by name or address.
+- **Expand all / Collapse all / zoom / Reset**, plus scroll-to-zoom and
+  drag-to-pan. A drag of more than 4px is not treated as a click, so panning
+  across a card no longer toggles it.
+- Networks are ordered by the mean Y of what connects to them, which removes
+  most edge crossings without a full layout solver.
+- Cards are keyboard reachable (`Tab`, then `Enter`/`Space`) and report
+  `aria-expanded`.
+
+Honesty is unchanged: the banner still says the topology is logical only, and
+an interface with no CIDR renders as `—` rather than a guess.
+
+### Fixed
+
+- The port-count pill clipped the trailing "s" of "ports" at some zoom levels;
+  it is now sized for the widest label with the chevron parked clear.
+- `topoExpandAll()` rebuilt the entire topology model once *per device*.
+- `@app.on_event("shutdown")` is deprecated in FastAPI; the Management API
+  logout now runs from a `lifespan` context manager.
+
+### Tests
+
+`tests/test_v414_topology.py` (26 tests) pins the contract of the redesign —
+interfaces never emitted as nodes, expand/focus/search reachable, drag is not
+a click, every emitted CSS class actually has a rule. Three test files pinned
+the version as a literal string, so every release edited unrelated files; they
+now assert what they meant (`version.py` defines it exactly once, the UI
+reports the same version the app declares, the version never goes backwards).
+
+Verified in headless Chromium against a fixture reproducing the lab exactly:
+11 nodes / 9 links collapsed, 9 interface rows when fully expanded, 6 nodes
+dimmed on network focus, 9 on a filter, no page errors.
+
+---
+
 ## v4.13.0 — project structure, and UI fixes from the lab
 
 ### Changed — main.py was 2,473 lines, 83% of it an embedded frontend
@@ -70,9 +131,72 @@ rail between 900px and 1100px. Reduced to the card reflow it was actually for.
 click into each one to learn which was source, destination or service. They now
 have visible labels, and the panel states up front that no packet is sent.
 
+### Fixed — the collapsed rail, and two features that were built but unreachable
+
+**The rail was still wrong after collapsing.** `.menu button` sets
+`justify-content:flex-start` for the expanded layout and the rail rules never
+overrode it, so every icon hugged the left edge of the 74px column. All six now
+centre at offset 0.0px, verified in Chromium.
+
+**Static assets had no cache-busting — a bug the refactor itself created.**
+While the CSS and JS were inline in the HTML, every reload picked up the newest
+version automatically. As separate files under `/static/` the browser caches
+them, so upgrading left new markup running against stale styles: the theme
+button rendered **both** the sun and the moon, and the collapse button still
+said "Collapse". That looks like a broken UI, not a stale cache, which is the
+worst kind of failure to hand a user. Asset URLs now carry
+`?v={APP_VERSION}-{newest static mtime}` — the version makes an upgrade visible
+to every existing user, the mtime makes an edit visible on the next reload
+under `--reload`.
+
+**The sidebar footer was louder than the navigation.** A full-width "Collapse"
+pill and a "Light Mode" label with a toggle switch drew more attention than the
+menu above them. Both are now quiet icon buttons: a sun/moon that shows the
+theme you will switch *to*, and a collapse arrow that flips direction. `Ctrl+B`
+collapses, `Ctrl+J` switches theme.
+
+The icons are **inline SVG, not font glyphs**. `☀` and `☾` render differently in
+every font stack and looked wrong in the fallback face; SVG is crisp at any size
+and inherits `currentColor` like text does.
+
+Two defects in that footer were caught by measuring it in Chromium rather than
+looking at it:
+
+- `.icon-btn .ico` is specificity (0,2,0) and silently beat a bare
+  `.ico-moon{display:none}` at (0,1,0), so **both** icons rendered in dark mode.
+  The show/hide pair now matches that weight.
+- `flex:1 1 0` sizes the *main* axis, so stacking the row into a column in the
+  rail made flex-basis apply to height and the buttons collapsed from 36px to
+  19px. The rail gives them an explicit 44×38.
+
+The rail also drops the 3px inset active bar: it is an edge marker for a
+full-width row, and on a centred 44px square it read as a stray line. The brand
+becomes a gradient badge rather than two letters floating in a gap.
+
+**"Export Raw CSV" exported nothing.** It printed *"Package-level CSV export
+will be added after package/inline validation"* — a stub left behind when the
+UI became package-first in v4.2 while the CSV endpoint stayed layer-first. New
+`GET /api/package-policy-browser.csv?package=` exports the whole package with
+`Display Rule` and `Layer Path`, so an inline row reads `7.1` under
+`Network → InternetLayer` rather than an ambiguous `1`. The package name is
+sanitised before it reaches `Content-Disposition`.
+
+**Zero-hit and disabled rules were computed and never shown.** `analyzer.py`
+has produced `zero_hit_rules` and `disabled_rules` since v4.0 — with layer,
+display rule and hit counts — and no view rendered them. The lab had **9 of
+them invisible**. Analyze now has an **Unused Rules** tab merging both
+(disabled wins the label, so a rule is never listed twice), with the Dashboard
+linking to it.
+
+It carries an explicit caveat rather than a recommendation: hit counters reset
+on policy install and on gateway restart, and a rule can protect a path that is
+simply idle. "Unused" is a review candidate, never a delete instruction — the
+same reason Traffic Path says `UNVERIFIED` instead of guessing.
+
 ### Tests
 
-191 → 204. New: `tests/test_v413_structure.py`. Two assertions were rewritten
+191 → 223. New: `tests/test_v413_structure.py`, `tests/test_v413_ui_polish.py`.
+Two assertions were rewritten
 to test intent rather than an exact string, for the same reason as in v4.12:
 `test_v44_source` pinned four placeholder strings that moved into labels.
 

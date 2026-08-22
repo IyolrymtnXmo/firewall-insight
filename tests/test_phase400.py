@@ -5,7 +5,10 @@ def test_final_access_summary_uses_four_equal_columns():
     assert 'access-summary-grid' in src
     assert 'grid-template-columns:repeat(4,minmax(0,1fr))' in src
 
-def test_final_version_label():
+def test_the_ui_reports_the_same_version_the_app_declares():
+    """Was a pinned literal; the real requirement is that they agree."""
+    from app.version import APP_VERSION
+
     src = app_source()
-    assert 'APP_VERSION = "4.13.0"' in src
+    assert f'APP_VERSION = "{APP_VERSION}"' in src
     assert "version=APP_VERSION" in src

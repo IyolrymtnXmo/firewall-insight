@@ -67,7 +67,11 @@ class TestModuleBoundaries:
                 assert f"from .{sibling}" not in text, f"{py.name} -> {sibling}"
 
     def test_version_has_one_home(self):
-        assert 'APP_VERSION = "4.13.0"' in (APP / "version.py").read_text(encoding="utf-8")
+        # The point of this test is "defined once", not "equals 4.13.0" -
+        # pinning the number turned every release into an edit here.
+        import re
+        src = (APP / "version.py").read_text(encoding="utf-8")
+        assert re.search(r'^APP_VERSION = "\d+\.\d+\.\d+"$', src, re.M), src
         others = [p.name for p in APP.rglob("*.py")
                   if p.name != "version.py"
                   and "APP_VERSION =" in p.read_text(encoding="utf-8")]

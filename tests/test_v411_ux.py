@@ -235,5 +235,14 @@ def test_read_only_promise_is_stated_on_load():
     assert "never publishes or installs policy" in SRC
 
 
-def test_version_is_bumped():
-    assert 'APP_VERSION = "4.13.0"' in SRC
+def test_version_is_at_least_the_release_that_added_these_features():
+    """Pinning the exact string made every release edit unrelated test files.
+
+    What actually matters is that the version never goes backwards past the
+    release these assertions describe, and that it stays parseable.
+    """
+    from app.version import APP_VERSION
+
+    parts = tuple(int(n) for n in APP_VERSION.split("."))
+    assert len(parts) == 3, APP_VERSION
+    assert parts >= (4, 11, 0), APP_VERSION

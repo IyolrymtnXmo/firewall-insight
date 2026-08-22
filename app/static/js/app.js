@@ -317,7 +317,11 @@ function toggleRail(force){
   document.body.classList.toggle('rail', on);
   try{ localStorage.setItem('fw-rail', on ? '1' : '0'); }catch(_){}
   const b = document.getElementById('railToggle');
-  if(b) b.innerHTML = on ? '&#8677;' : '&#8676; <span>Collapse</span>';
+  if(b){
+    // The arrow is mirrored in CSS, so only the wording changes here.
+    b.title = on ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)';
+    b.setAttribute('aria-label', b.title);
+  }
 }
 
 function toggleNav(force){
@@ -348,6 +352,10 @@ document.addEventListener('keydown', ev => {
   if((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'b'){
     ev.preventDefault();
     toggleRail();
+  }
+  if((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'j'){
+    ev.preventDefault();
+    toggleTheme();
   }
   if(ev.key === 'Escape'){
     document.querySelectorAll('#toasts .toast .x').forEach(b => b.click());
@@ -674,7 +682,9 @@ function filterPolicyBrowser(){
 
 function exportRawPolicy(){
   if(!P.value){setStatus('Select a Policy Package first.','warn');notify('warn','No Policy Package selected','Choose a package from the selector at the top of the page.');return}
-  S.textContent='Package-level CSV export will be added after package/inline validation. The on-screen Access Policy view contains the complete package context.';
+  location.href='/api/package-policy-browser.csv?package='+encodeURIComponent(P.value);
+  setStatus('Exporting the configured rulebase for '+P.value+' (top-level + inline).','success');
+  notify('success','CSV export started','Inline rules are included, each with its display rule (7.1) and layer path.');
 }
 
 
@@ -694,6 +704,7 @@ async function runAccess(){
      <tr class="drill-row" onclick="drillTo('access','shadow')" title="Open Shadow / Redundant findings"><td>Shadow / Redundant</td><td>${s.potential_shadowed_or_redundant?`<span class="alert-count">${esc(s.potential_shadowed_or_redundant)}</span>`:esc(s.potential_shadowed_or_redundant)}</td><td>${esc(s.top_level_shadow_findings||0)} top-level + ${esc(s.inline_shadow_findings||0)} inline finding(s).</td></tr>
      <tr class="drill-row" onclick="drillTo('access','duplicates')" title="Open Duplicate Access findings"><td>Duplicate Access</td><td>${s.duplicate_groups?`<span class="alert-count">${esc(s.duplicate_groups)}</span>`:esc(s.duplicate_groups)}</td><td>${esc(s.top_level_duplicate_groups||0)} top-level + ${esc(s.inline_duplicate_groups||0)} inline group(s).</td></tr>
      <tr class="drill-row" onclick="drillTo('access','any')" title="Open Any / Any / Any findings"><td>Any / Any / Any</td><td>${s.any_any_any_rules?`<span class="alert-count">${esc(s.any_any_any_rules)}</span>`:esc(s.any_any_any_rules)}</td><td>${esc(s.top_level_any_any_any_rules||0)} top-level + ${esc(s.inline_any_any_any_rules||0)} inline rule(s).</td></tr>
+     <tr class="drill-row" onclick="drillTo('access','unused')" title="Open zero-hit and disabled rules"><td>Unused Rules</td><td>${deadRules(accessData).length?`<span class="alert-count">${esc(deadRules(accessData).length)}</span>`:0}</td><td>${esc(s.zero_hit_rules||0)} zero-hit + ${esc(s.disabled_rules||0)} disabled rule(s).</td></tr>
      <tr><td>Optimizer Score</td><td>${esc(s.optimization_score)}%</td><td>Heuristic score from this analyzer, not Check Point Security Score.</td></tr>
    </tbody></table>`;
    renderAccess(pendingAnalysisTab||'shadow');pendingAnalysisTab=null;
@@ -712,7 +723,24 @@ async function runAccess(){
    throw e;
  }
 }
-function accessTabs(kind){let d=accessData;return `<div class="tabs"><button class="${kind==='shadow'?'active':''}" onclick="renderAccess('shadow')">Shadow / Redundant</button><button class="${kind==='duplicates'?'active':''}" onclick="renderAccess('duplicates')">Duplicate Rules (${d.findings.duplicates.length})</button><button class="${kind==='any'?'active':''}" onclick="renderAccess('any')">Any Rules (${(d.findings.any_any_any_rules||[]).length})</button></div>`}
+function accessTabs(kind){let d=accessData;return `<div class="tabs"><button class="${kind==='shadow'?'active':''}" onclick="renderAccess('shadow')">Shadow / Redundant</button><button class="${kind==='duplicates'?'active':''}" onclick="renderAccess('duplicates')">Duplicate Rules (${d.findings.duplicates.length})</button><button class="${kind==='any'?'active':''}" onclick="renderAccess('any')">Any Rules (${(d.findings.any_any_any_rules||[]).length})</button><button class="${kind==='unused'?'active':''}" onclick="renderAccess('unused')">Unused Rules (${deadRules(d).length})</button></div>`}
+
+/* Zero-hit and disabled rules have been computed since v4.0 - with layer,
+   display rule and hit counts - and were never rendered anywhere. They are the
+   finding a policy review is usually commissioned to produce, because a rule
+   that has not matched in months is the one an auditor asks about. */
+function deadRules(d){
+  if(!d||!d.findings)return [];
+  const zero=(d.findings.zero_hit_rules||[]).map(x=>({...x,reason:'Zero hits'}));
+  const off=(d.findings.disabled_rules||[]).map(x=>({...x,reason:'Disabled'}));
+  const seen=new Set(),out=[];
+  for(const r of [...off,...zero]){                 // disabled wins the label
+    const key=(r.layer||'')+'::'+(r.rule??'');
+    if(seen.has(key))continue;
+    seen.add(key);out.push(r);
+  }
+  return out;
+}
 function renderAccess(kind){
  if(!accessData)return;let d=accessData,t=accessTabs(kind);
  if(kind==='shadow'){
@@ -724,6 +752,26 @@ function renderAccess(kind){
  }else if(kind==='duplicates'){
    let gs=d.findings.duplicates||[];
    accessFindings.innerHTML=t+'<h3>Duplicate Rules</h3>'+(gs.length?gs.map(g=>`<div class="card" style="margin:12px 0"><div class="section-title"><b>Duplicate Group ${esc(g.group)} <span class="pill purple">Exact Duplicate</span></b><span class="hint">${esc(g.recommendation)}</span></div><div class="table-wrap"><table><tr><th>Layer</th><th>Rule</th><th>Name</th><th>Source</th><th>Destination</th><th>Service</th><th>Action</th></tr>${g.members.map(m=>`<tr><td><span class="pill purple">${esc(m.layer||g.layer||'')}</span></td><td><span class="rule-no">Rule ${esc(m.display_rule||m.rule)}</span></td><td>${esc(m.name)}</td><td>${esc(m.source)}</td><td>${esc(m.destination)}</td><td>${esc(m.service)}</td><td>${esc(m.action)}</td></tr>`).join('')}</table></div></div>`).join(''):'<p>No exact duplicate groups found.</p>');
+ }else if(kind==='unused'){
+   const rows=deadRules(d);
+   const byRule=new Map((d.rules||[]).map(r=>[(r.layer||'')+'::'+(r.rule??''),r]));
+   accessFindings.innerHTML=t+
+   '<div class="section-title"><h3>Unused Rules</h3><span class="hint">'+rows.length+' zero-hit or disabled rule(s)</span></div>'+
+   (rows.length?`<div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Layer</th><th>Rule</th><th>Name</th><th>Why</th><th>Source</th><th>Destination</th><th>Service</th><th>Action</th><th>Hits</th><th>Last Hit</th></tr></thead><tbody>${
+     rows.map(x=>{
+       const f=byRule.get((x.layer||'')+'::'+(x.rule??''))||{};
+       const last=(f.last_hit&&typeof f.last_hit==='object')?f.last_hit['iso-8601']:f.last_hit;
+       return `<tr><td><span class="pill ${Number(f.depth||0)>0?'inline':'good'}">${esc(x.layer||'')}</span></td>`+
+         `<td><span class="rule-no">Rule ${esc(x.display_rule||x.rule)}</span></td>`+
+         `<td>${esc(f.name||'—')}</td>`+
+         `<td><span class="pill ${x.reason==='Disabled'?'bad':'warn'}">${esc(x.reason)}</span></td>`+
+         `<td>${esc(f.source||'—')}</td><td>${esc(f.destination||'—')}</td>`+
+         `<td>${esc(f.service||'—')}</td><td>${esc(f.action||'—')}</td>`+
+         `<td>${esc(f.hits??'—')}</td><td>${esc(last||'never')}</td></tr>`;
+     }).join('')
+   }</tbody></table></div>
+   <p class="muted" style="margin-top:12px">A zero-hit rule is a candidate for review, not proof that it is safe to delete. Hit counters reset on policy install and on gateway restart, and a rule can protect a path that is simply idle. Confirm against the gateway before removing anything.</p>`
+   :'<p>No zero-hit or disabled rules found.</p>');
  }else{
    let rs=d.findings.any_any_any_rules||[];
    accessFindings.innerHTML=t+'<h3>Any / Any / Any Rules</h3>'+(rs.length?`<div class="table-wrap"><table><tr><th>Layer</th><th>Rule</th><th>Name</th><th>Source</th><th>Destination</th><th>Service</th><th>Action</th><th>Hits</th></tr>${rs.map(r=>`<tr><td><span class="pill ${Number(r.depth||0)>0?'purple':'good'}">${esc(r.layer||'')}</span></td><td><span class="rule-no">Rule ${esc(r.display_rule||r.rule)}</span></td><td>${esc(r.name)}</td><td>${esc(r.source)}</td><td>${esc(r.destination)}</td><td>${esc(r.service)}</td><td>${esc(r.action)}</td><td>${esc(r.hits??'N/A')}</td></tr>`).join('')}</table></div>`:'<p>No Any / Any / Any rules found.</p>')+cleanupNote(d);
@@ -899,17 +947,289 @@ function topoIcon(role){
   }
   return '';
 }
-function renderTopology(d){
- let ns=d.nodes||[],es=d.edges||[],pos={},dev=ns.filter(n=>['gateway','management','device'].includes(n.role)),ifs=ns.filter(n=>n.role==='interface'),nets=ns.filter(n=>n.role==='network');
- dev.forEach((n,i)=>pos[n.id]={x:70,y:80+i*170});
- ifs.forEach(n=>{let sib=ifs.filter(x=>x.parent===n.parent),idx=sib.findIndex(x=>x.id===n.id),p=pos[n.parent]||{x:70,y:80};pos[n.id]={x:430,y:p.y+(idx-(sib.length-1)/2)*90}});
- nets.forEach((n,i)=>{let e=es.find(e=>e.to===n.id),p=e?pos[e.from]:null;pos[n.id]={x:810,y:p?p.y:80+i*90}});
- let H=Math.max(590,dev.length*180,ifs.length*90+120),W=1250;
- let edge=es.map(e=>{let a=pos[e.from],b=pos[e.to];if(!a||!b)return'';let x1=a.x+200,y1=a.y+33,x2=b.x,y2=b.y+33,m=(x1+x2)/2;return `<path class="edge" d="M${x1},${y1} C${m},${y1} ${m},${y2} ${x2},${y2}"/><text class="edge-label" x="${m-36}" y="${(y1+y2)/2-5}">${esc(e.label)}</text>`}).join('');
- let nodes=ns.map(n=>{let p=pos[n.id];if(!p)return'';let sub=n.role==='interface'?(n.cidr||''):(n.ips||[]).join(', ');let icon=(n.role==='gateway'||n.role==='management')?topoIcon(n.role):'';let tx=icon?52:12;return `<g class="toponode ${esc(n.role||'device')}" transform="translate(${p.x},${p.y})"><rect width="200" height="66" rx="10"/>${icon}<text x="${tx}" y="27">${esc(n.name).slice(0,24)}</text><text class="sub" x="${tx}" y="47">${esc(sub).slice(0,27)}</text></g>`}).join('');
- topology.innerHTML=`<svg viewBox="0 0 ${W} ${H}" id="topoSvg"><g id="world">${edge}${nodes}</g></svg>`;panZoom();
+/* ============================================================
+   Network Mapping.
+
+   The first version drew interfaces as first-class nodes in a middle column,
+   so a lab with 4 gateways became 22 nodes in 3 columns and every subnet edge
+   had to cross the interface column. An interface is a property of a gateway,
+   not its peer, so it is now a ROW INSIDE the gateway card. Two columns, no
+   crossing column, and the node count drops to devices + networks.
+
+   Collapsed, a gateway shows one edge per distinct subnet. Expanded, each
+   interface row anchors its own edge, so you can see which port reaches which
+   network without reading a label soup.
+   ============================================================ */
+
+const TOPO = {
+  expanded: new Set(),
+  focus: null,
+  query: '',
+  view: {scale: 1, tx: 0, ty: 0},
+};
+
+const TOPO_W = 320, TOPO_NET_W = 250, TOPO_COL_GAP = 300;
+const TOPO_HEAD = 62, TOPO_ROW = 30, TOPO_GAP = 20;
+
+function buildTopoModel(d){
+  const nodes = d.nodes || [], edges = d.edges || [];
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const devices = nodes.filter(n => ['gateway','management','device'].includes(n.role));
+  const nets = nodes.filter(n => n.role === 'network');
+  const ifaces = new Map();
+
+  nodes.filter(n => n.role === 'interface').forEach(i => {
+    const link = edges.find(e => e.from === i.id && byId.get(e.to)?.role === 'network');
+    const list = ifaces.get(i.parent) || [];
+    list.push({
+      id: i.id,
+      name: i.name || 'interface',
+      cidr: i.cidr || (i.ips || [])[0] || '',
+      subnet: link ? link.to : null,
+    });
+    ifaces.set(i.parent, list);
+  });
+  devices.forEach(dv => (ifaces.get(dv.id) || []).sort((a,b) => a.name.localeCompare(b.name)));
+  return {byId, devices, nets, ifaces};
 }
-function panZoom(){let svg=topoSvg,w=world,scale=1,tx=0,ty=0,drag=false,lx=0,ly=0;function a(){w.setAttribute('transform',`translate(${tx} ${ty}) scale(${scale})`)}svg.addEventListener('wheel',e=>{e.preventDefault();scale=Math.max(.45,Math.min(2.7,scale*(e.deltaY<0?1.1:.9)));a()},{passive:false});svg.addEventListener('mousedown',e=>{drag=true;lx=e.clientX;ly=e.clientY});window.addEventListener('mouseup',()=>drag=false);svg.addEventListener('mousemove',e=>{if(!drag)return;tx+=(e.clientX-lx)/scale;ty+=(e.clientY-ly)/scale;lx=e.clientX;ly=e.clientY;a()})}
+
+function topoMatches(text){
+  if(!TOPO.query) return true;
+  return String(text || '').toLowerCase().includes(TOPO.query.toLowerCase());
+}
+
+function topoLayout(m){
+  const pos = new Map();
+  let y = 30;
+  for(const dv of m.devices){
+    const list = m.ifaces.get(dv.id) || [];
+    const open = TOPO.expanded.has(dv.id) && list.length > 0;
+    const h = TOPO_HEAD + (open ? list.length * TOPO_ROW + 8 : 0);
+    pos.set(dv.id, {x: 30, y, h, open, ifaces: list});
+    y += h + TOPO_GAP;
+  }
+  const deviceBottom = y;
+
+  // Order networks by the mean Y of whatever connects to them: the cheapest
+  // way to stop edges crossing without running a real layout algorithm.
+  const score = new Map();
+  for(const net of m.nets){
+    const ys = [];
+    for(const dv of m.devices){
+      const p = pos.get(dv.id);
+      (m.ifaces.get(dv.id) || []).forEach((f, idx) => {
+        if(f.subnet !== net.id) return;
+        ys.push(p.open ? p.y + TOPO_HEAD + idx * TOPO_ROW : p.y + TOPO_HEAD / 2);
+      });
+    }
+    score.set(net.id, ys.length ? ys.reduce((a,b) => a+b, 0) / ys.length : 1e9);
+  }
+  const ordered = [...m.nets].sort((a,b) => score.get(a.id) - score.get(b.id));
+
+  let ny = 30;
+  for(const net of ordered){
+    const want = score.get(net.id);
+    ny = Math.max(ny, Number.isFinite(want) ? want - 26 : ny);
+    pos.set(net.id, {x: 30 + TOPO_W + TOPO_COL_GAP, y: ny, h: 54});
+    ny += 54 + 16;
+  }
+  return {pos, height: Math.max(deviceBottom, ny) + 30,
+          width: 30 + TOPO_W + TOPO_COL_GAP + TOPO_NET_W + 30};
+}
+
+function topoAnchor(pos, dv, m, ifaceIdx){
+  const p = pos.get(dv.id);
+  if(!p) return null;
+  if(p.open && ifaceIdx >= 0) return {x: p.x + TOPO_W, y: p.y + TOPO_HEAD + ifaceIdx * TOPO_ROW + 15};
+  return {x: p.x + TOPO_W, y: p.y + TOPO_HEAD / 2};
+}
+
+function renderTopology(d){
+  if(!d || !(d.nodes || []).length){
+    topology.innerHTML = emptyState('⌘','No topology objects',
+      'show-gateways-and-servers returned nothing. Check that this API user can read gateway objects.',
+      'Reload','onclick="loadMap(event)"');
+    return;
+  }
+  const m = buildTopoModel(d);
+  const {pos, height, width} = topoLayout(m);
+
+  // ---- edges -------------------------------------------------------------
+  const edges = [];
+  for(const dv of m.devices){
+    const p = pos.get(dv.id);
+    const list = m.ifaces.get(dv.id) || [];
+    if(p.open){
+      list.forEach((f, idx) => {
+        if(!f.subnet || !pos.get(f.subnet)) return;
+        edges.push({from: dv.id, to: f.subnet, a: topoAnchor(pos, dv, m, idx),
+                    b: pos.get(f.subnet), label: ''});
+      });
+    }else{
+      const seen = new Map();
+      list.forEach(f => {
+        if(!f.subnet || !pos.get(f.subnet)) return;
+        const names = seen.get(f.subnet) || [];
+        names.push(f.name.replace(/^interface\s*/i, 'if'));
+        seen.set(f.subnet, names);
+      });
+      for(const [subnet, names] of seen){
+        edges.push({from: dv.id, to: subnet, a: topoAnchor(pos, dv, m, -1),
+                    b: pos.get(subnet), label: names.join(', ')});
+      }
+    }
+  }
+
+  const active = id => !TOPO.focus || TOPO.focus === id ||
+    edges.some(e => (e.from === TOPO.focus && e.to === id) || (e.to === TOPO.focus && e.from === id));
+
+  const edgeSvg = edges.map(e => {
+    if(!e.a || !e.b) return '';
+    const x1 = e.a.x, y1 = e.a.y, x2 = e.b.x, y2 = e.b.y + 27;
+    const mx = (x1 + x2) / 2;
+    const on = !TOPO.focus || e.from === TOPO.focus || e.to === TOPO.focus;
+    return `<g class="topo-edge${on ? '' : ' dim'}">`
+      + `<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}"/>`
+      + (e.label ? `<text x="${mx}" y="${(y1+y2)/2 - 6}" text-anchor="middle">${esc(e.label)}</text>` : '')
+      + `</g>`;
+  }).join('');
+
+  // ---- device cards ------------------------------------------------------
+  const deviceSvg = m.devices.map(dv => {
+    const p = pos.get(dv.id);
+    const list = p.ifaces;
+    const ip = (dv.ips || [])[0] || '';
+    const hit = topoMatches(dv.name) || topoMatches(ip);
+    const cls = [dv.role || 'device'];
+    if(!active(dv.id)) cls.push('dim');
+    if(TOPO.query && !hit) cls.push('dim');
+    if(TOPO.query && hit) cls.push('hit');
+
+    const rows = p.open ? list.map((f, idx) => {
+      const net = f.subnet ? m.byId.get(f.subnet) : null;
+      return `<g class="topo-if" transform="translate(0,${TOPO_HEAD + idx * TOPO_ROW})">`
+        + `<line x1="14" y1="15" x2="${TOPO_W - 12}" y2="15" class="if-rule"/>`
+        + `<text class="if-name" x="20" y="19">${esc(f.name)}</text>`
+        + `<text class="if-cidr" x="${TOPO_W - 20}" y="19" text-anchor="end">${esc(f.cidr || '—')}</text>`
+        + `</g>`;
+    }).join('') : '';
+
+    const badge = list.length
+      // The pill holds text AND a chevron, so it is sized for the widest
+      // label ("12 ports") with the chevron parked clear of it. A tighter
+      // box clipped the trailing "s" at some zoom levels.
+      ? `<g class="topo-badge" transform="translate(${TOPO_W - 86},14)">`
+        + `<rect width="72" height="22" rx="11"/>`
+        + `<text x="28" y="15" text-anchor="middle">${list.length} port${list.length > 1 ? 's' : ''}</text>`
+        + `<path class="chev" d="${p.open ? 'M56 8l-4 4 4 4' : 'M56 8l4 4-4 4'}"/></g>`
+      : '';
+
+    return `<g class="topo-node ${cls.join(' ')}" data-id="${esc(dv.id)}"`
+      + `${list.length ? ' data-expandable="1"' : ''} transform="translate(${p.x},${p.y})"`
+      + ` role="button" tabindex="0" aria-expanded="${p.open}">`
+      + `<rect class="card" width="${TOPO_W}" height="${p.h}" rx="14"/>`
+      + topoIcon(dv.role)
+      + `<text class="n-name" x="52" y="27">${esc(dv.name).slice(0, 26)}</text>`
+      + `<text class="n-sub" x="52" y="46">${esc(ip || dv.type || '')}</text>`
+      + badge + rows + `</g>`;
+  }).join('');
+
+  // ---- network cards -----------------------------------------------------
+  const netSvg = m.nets.map(net => {
+    const p = pos.get(net.id);
+    if(!p) return '';
+    const users = edges.filter(e => e.to === net.id).length;
+    const hit = topoMatches(net.name);
+    const cls = ['network'];
+    if(!active(net.id)) cls.push('dim');
+    if(TOPO.query && !hit) cls.push('dim');
+    if(TOPO.query && hit) cls.push('hit');
+    return `<g class="topo-node ${cls.join(' ')}" data-id="${esc(net.id)}"`
+      + ` transform="translate(${p.x},${p.y})" role="button" tabindex="0">`
+      + `<rect class="card" width="${TOPO_NET_W}" height="54" rx="14"/>`
+      + `<text class="n-name" x="18" y="26">${esc(net.name)}</text>`
+      + `<text class="n-sub" x="18" y="44">${users} connection${users === 1 ? '' : 's'}</text>`
+      + `</g>`;
+  }).join('');
+
+  topology.innerHTML =
+    `<svg id="topoSvg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMin meet">`
+    + `<g id="world">${edgeSvg}${deviceSvg}${netSvg}</g></svg>`;
+  topoBindEvents();
+  topoApplyView();
+  const total = m.devices.length + m.nets.length;
+  const el = document.getElementById('topoCount');
+  if(el) el.textContent = `${total} node(s) · ${edges.length} link(s)`
+    + (TOPO.expanded.size ? ` · ${TOPO.expanded.size} expanded` : '');
+}
+
+function topoToggle(id){
+  if(TOPO.expanded.has(id)) TOPO.expanded.delete(id); else TOPO.expanded.add(id);
+  renderTopology(mapData);
+}
+function topoExpandAll(open){
+  TOPO.expanded.clear();
+  if(open){
+    const m = buildTopoModel(mapData);            // build once, not per device
+    m.devices.forEach(d => {
+      if((m.ifaces.get(d.id) || []).length) TOPO.expanded.add(d.id);
+    });
+  }
+  renderTopology(mapData);
+}
+function topoSearch(v){ TOPO.query = v || ''; renderTopology(mapData); }
+function topoFit(){ TOPO.view = {scale: 1, tx: 0, ty: 0}; topoApplyView(); }
+function topoZoom(f){
+  TOPO.view.scale = Math.max(.4, Math.min(2.6, TOPO.view.scale * f));
+  topoApplyView();
+}
+function topoApplyView(){
+  const w = document.getElementById('world');
+  if(w) w.setAttribute('transform',
+    `translate(${TOPO.view.tx} ${TOPO.view.ty}) scale(${TOPO.view.scale})`);
+}
+
+function topoBindEvents(){
+  const svg = document.getElementById('topoSvg');
+  if(!svg) return;
+  let drag = false, moved = 0, lx = 0, ly = 0;
+
+  svg.addEventListener('wheel', e => {
+    e.preventDefault();
+    topoZoom(e.deltaY < 0 ? 1.12 : 0.89);
+  }, {passive: false});
+
+  svg.addEventListener('mousedown', e => { drag = true; moved = 0; lx = e.clientX; ly = e.clientY; });
+  window.addEventListener('mouseup', () => { drag = false; });
+  svg.addEventListener('mousemove', e => {
+    if(!drag) return;
+    moved += Math.abs(e.clientX - lx) + Math.abs(e.clientY - ly);
+    TOPO.view.tx += (e.clientX - lx) / TOPO.view.scale;
+    TOPO.view.ty += (e.clientY - ly) / TOPO.view.scale;
+    lx = e.clientX; ly = e.clientY;
+    topoApplyView();
+  });
+
+  svg.addEventListener('click', e => {
+    if(moved > 4) return;                       // a drag is not a click
+    const g = e.target.closest('.topo-node');
+    if(!g){ TOPO.focus = null; renderTopology(mapData); return; }
+    const id = g.dataset.id;
+    if(g.dataset.expandable){ topoToggle(id); return; }
+    TOPO.focus = (TOPO.focus === id) ? null : id;
+    renderTopology(mapData);
+  });
+
+  svg.addEventListener('keydown', e => {
+    if(e.key !== 'Enter' && e.key !== ' ') return;
+    const g = e.target.closest('.topo-node');
+    if(!g) return;
+    e.preventDefault();
+    if(g.dataset.expandable) topoToggle(g.dataset.id);
+    else { TOPO.focus = (TOPO.focus === g.dataset.id) ? null : g.dataset.id; renderTopology(mapData); }
+  });
+}
+
 function exportAccess(){if(!L.value){notify('warn','No Access Layer selected','Pick an Access Layer before exporting.');return}location.href='/api/export.csv?layer='+encodeURIComponent(L.value)}
 
 function showAccessTab(tab,btn){
