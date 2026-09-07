@@ -16,6 +16,7 @@ markup still work, because index.html is concatenated as one unit.
 from __future__ import annotations
 
 import functools
+import re
 from pathlib import Path
 
 APP = Path(__file__).resolve().parent.parent / "app"
@@ -32,6 +33,26 @@ def ui_source() -> str:
     parts += [_read(p) for p in sorted((APP / "static" / "css").glob("*.css"))]
     parts += [_read(p) for p in sorted((APP / "static" / "js").glob("*.js"))]
     return "\n".join(parts)
+
+
+@functools.lru_cache(maxsize=1)
+def ui_text() -> str:
+    """`ui_source()` with every run of whitespace collapsed to one space.
+
+    An HTML formatter is allowed to rewrap a long line. When one ran over
+    index.html in commit a5db12b it turned
+
+        >&#9642; Access Policy</button>
+    into
+        >&#9642; Access
+          Policy</button>
+
+    which broke five assertions that were about the *words on the button*,
+    not about where the line happened to break. Assertions on visible text
+    use this; assertions on structure (ids, attributes, CSS, JS) keep using
+    ui_source(), where exact characters really are the contract.
+    """
+    return re.sub(r"\s+", " ", ui_source())
 
 
 @functools.lru_cache(maxsize=1)

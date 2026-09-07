@@ -63,7 +63,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass   # Windows PowerShel
 pip install -r requirements.txt
 
 copy .env.example .env      # then edit .env with your Management details
-pytest -q                   # expect: 352 passed
+pytest -q                   # expect: 372 passed
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -89,8 +89,8 @@ docker compose up --build      # reads .env via env_file
 
 | Check | Expected |
 |---|---|
-| `pytest -q` | `352 passed` |
-| `GET /health` | `{"status":"ok","version":"4.16.1","mode":"read-only",...}` |
+| `pytest -q` | `372 passed` |
+| `GET /health` | `{"status":"ok","version":"4.18.0","mode":"read-only",...}` |
 | `GET /api/checkpoint/test` | `{"connected":true,"api_server_version":"...","read_only":true}` |
 | `GET /api/bootstrap` | lists your access layers and policy packages |
 
@@ -295,7 +295,7 @@ Add `&force=true` to `bootstrap`, `policy-browser`, `package-policy-browser` or
 ## Testing
 
 ```bash
-pytest -q          # 352 tests, no Management Server required
+pytest -q          # 372 tests, no Management Server required
 ```
 
 Tests use fixture payloads shaped like real Management API responses; nothing in the
@@ -321,6 +321,24 @@ When a bug is found against a real environment:
 4. Run the full suite.
 5. Re-validate against SmartConsole.
 6. Bump the version.
+
+---
+
+## Acceptance run
+
+`pytest` proves the code behaves; it says nothing about whether this
+application reports *your* estate correctly. For that, point the acceptance
+runner at the Management Server:
+
+```powershell
+python -m tools.acceptance --package Standard
+```
+
+22 read-only checks across safety, connection, access policy, data quality,
+Traffic Path, NAT and topology. Prints one line per check and a total, exits
+non-zero on any failure, and writes `acceptance-report.json` as evidence.
+Expected traffic verdicts live in `tools/acceptance_cases.json` and are meant
+to be edited as the policy changes.
 
 ---
 

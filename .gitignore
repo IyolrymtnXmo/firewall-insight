@@ -23,3 +23,7 @@ Thumbs.db
 # Local scratch
 *.log
 *.csv
+pytest_out.txt
+pytest_output.txt
+python_test.txt
+acceptance-report.json

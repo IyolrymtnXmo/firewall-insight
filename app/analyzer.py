@@ -56,6 +56,11 @@ def _intervals_cover(earlier, later) -> bool:
 
 def _dimension_cover(earlier_values,later_values,res: ObjectResolver,kind:str):
     eu=res.uids(earlier_values); lu=res.uids(later_values)
+    # An empty side is not "covered", it is unknown. Both the subset test and
+    # the interval test are vacuously true against an empty list, so without
+    # this guard a rule whose source the API returned as [] would be reported
+    # as shadowed by any earlier rule - a confident claim built on no data.
+    if not lu: return False,"No values on this dimension"
     if res.is_any(earlier_values): return True,"Any"
     if set(lu).issubset(set(eu)): return True,"Exact object/group UID coverage"
     ea=[]; la=[]

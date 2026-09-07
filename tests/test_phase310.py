@@ -1,4 +1,4 @@
-from conftest import app_source
+from conftest import app_source, ui_text
 
 def test_sidebar_separates_raw_and_analyze_adjacent():
     """Raw Access Policy must sit before Analyze in the sidebar.
@@ -13,8 +13,9 @@ def test_sidebar_separates_raw_and_analyze_adjacent():
     assert raw in src
     assert ana in src
     assert src.index(raw) < src.index(ana)
-    assert "▤ Access Policy</button>" in src
-    assert "◇ Analyze</button>" in src
+    # the label text, whatever the formatter did to the line breaks
+    assert "▤ Access Policy</button>" in ui_text()
+    assert "◇ Analyze</button>" in ui_text()
 
 def test_raw_access_page_and_analyze_page_both_exist():
     src = app_source()

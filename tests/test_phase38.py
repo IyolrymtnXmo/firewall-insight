@@ -1,4 +1,4 @@
-from conftest import app_source
+from conftest import app_source, ui_text
 from app.nat_analyzer import analyze_nat_rulebase
 
 
@@ -46,6 +46,7 @@ def test_nat_scalar_fields_do_not_false_duplicate():
 
 
 def test_sidebar_access_policy_entry_exists():
-    source = app_source()
-    assert "▤ Access Policy" in source
-    assert 'data-page="browser"' in source
+    # label via ui_text() so an HTML formatter's line wrap cannot fail a
+    # test about the menu entry existing; attribute via the raw source.
+    assert "▤ Access Policy" in ui_text()
+    assert 'data-page="browser"' in app_source()

@@ -28,7 +28,7 @@ headless Chromium; the numbers from that run are in CHANGELOG.md.
 
 from pathlib import Path
 
-from conftest import app_source, ui_source
+from conftest import app_source, ui_source, ui_text
 
 APP = Path(__file__).resolve().parent.parent / "app"
 
@@ -385,7 +385,9 @@ class TestClickTargets:
         assert "the net effect is just a focus" in self.SRC
 
     def test_the_hint_mentions_double_click(self):
-        assert "double-click anything, to isolate it" in ui_source()
+        # the hint is one long sentence; a formatter wraps it, so match the
+        # words rather than the line.
+        assert "double-click anything, to isolate it" in ui_text()
 
 
 class TestNoEmojiInTheChrome:

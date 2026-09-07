@@ -4,6 +4,118 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.18.0 — an acceptance run, so "is it tested?" has an answer
+
+"ทดสอบให้เสร็จ" had no pass criteria, so the honest answer to *is Project Dev
+tested?* was "somewhat". `tools/acceptance.py` replaces that with a number:
+22 checks against the live lab, one line each, a total, and a non-zero exit
+code when anything fails. It also writes `acceptance-report.json`, so a
+screenshot of a green run is backed by something a reviewer can open.
+
+```
+1. Safety        no mutating Management command anywhere in app/
+2. Connection    login · the named policy package exists
+3. Access        rulebase loaded · inline layers found · cleanup rule
+                 recognised and not counted as Any/Any/Any · score computed
+4. Data quality  hydration not truncated · every inline layer loaded ·
+                 result reports itself complete
+5. Traffic Path  one check per flow in tools/acceptance_cases.json
+6. NAT           rulebase loaded · show-hits probed rather than assumed
+7. Topology      objects → nodes · cluster membership from the API ·
+                 management HA pair · subnets derived · limitations stated
+```
+
+Expected traffic verdicts live in `tools/acceptance_cases.json` — editable
+without touching the runner, seeded from the documented lab. A case with
+`"expect": null` is recorded but never judged, for a flow you want on the
+record before deciding what it should do. **Rule numbers are deliberately not
+asserted**: they shift whenever a rule is inserted, and a test that breaks on
+renumbering teaches you to ignore it.
+
+The traffic checks call `trace_access_tree` through the same resolver
+construction `app/api/traffic.py` uses. Calling the single-layer
+`trace_access()` would have tested a different code path from the one the UI
+walks, which is worse than not testing at all.
+
+### Tests
+
+`tests/test_v418_acceptance.py` (13) drives the whole runner against a fake
+Management Server. It cannot prove the lab is healthy — nothing offline can —
+but it proves the runner *runs*: every signature it calls, every result key it
+reads, and the inline-aware trace it walks. A tool that dies on
+`TypeError: package_access_tree() takes 2 positional arguments` the first time
+it meets a real server is worse than no tool, because it fails exactly when
+you were relying on it. Two of the tests exist to stop the matrix becoming
+decoration: one asserts a wrong expectation actually fails the run, another
+that the defaults cover both an allow and a deny.
+
+372 tests.
+
+---
+
+## v4.17.0 — an empty rule dimension is unknown, not covered
+
+Found while writing Chapter 3 of the learning guide, by reading
+`_dimension_cover` line by line rather than by hitting it in the lab.
+
+Both containment shortcuts are vacuously true against an empty list:
+
+```python
+set([]).issubset(anything)            # True
+_intervals_cover(earlier, later=[])   # True - the loop never runs
+```
+
+So a rule whose `source`, `destination` or `service` came back as `[]` was
+reported as **shadowed by the first earlier rule it was compared against** — a
+confident finding derived from no data at all, which is the one thing this tool
+must never produce. `_dimension_cover` now returns
+`False, "No values on this dimension"` for an empty side.
+
+A real Check Point rule always carries all three fields, which is why this
+never appeared against the lab. It is the kind of defect that only shows up on
+someone else's estate, in the payload nobody thought to test.
+
+`tests/test_v417_empty_dimension.py` (7 tests) pins it, including that a normal
+shadow is still detected — a guard that switches the feature off would pass a
+"no false positives" test perfectly.
+
+### Added — `tools/ch3_demo.py`
+
+Runs every claim Chapter 3 makes against the real modules and prints the
+result. The chapter quotes its output verbatim, so if the code changes and the
+output stops matching, the guide is visibly out of date rather than quietly
+wrong. Read-only, no `.env` and no network needed.
+
+### Fixed — the suite was testing the HTML formatter's settings
+
+Commit `a5db12b` ("fix index.html", 24 Aug) ran an HTML formatter over the
+template. It changed nothing about the page, but it rewrapped long lines, and
+**five tests had been failing ever since**:
+
+```
+>&#9642; Access Policy</button>        became        >&#9642; Access
+                                                       Policy</button>
+```
+
+Every one of those assertions was about the *words on a button* or the *text of
+a hint*, not about where the line broke — so they were pinning the editor's
+formatting settings, not the application. `conftest.ui_text()` now returns
+`ui_source()` with runs of whitespace collapsed, and assertions about visible
+text use it. Assertions about structure (ids, attributes, CSS, JS) still use
+`ui_source()`, where the exact characters really are the contract.
+
+`test_header_has_no_phase_subtitle` was the same mistake twice over — it pinned
+`</h1></div>` with no space. It now asserts "nothing but the closing tag
+follows the title", which is what it always meant.
+
+Verified against three different formattings of the same page — unformatted,
+the formatter's output, and a deliberate one-tag-per-line rewrap: **359 passed**
+in all three.
+
+359 tests.
+
+---
+
 ## v4.16.1 — five defects the live lab showed
 
 ### Fixed — cluster cards rendered as empty rectangles

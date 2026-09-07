@@ -1,9 +1,9 @@
-from conftest import app_source
+from conftest import app_source, ui_text
 
 def test_access_policy_restored_to_original_browser_and_analyze_sidebar_removed():
     src = app_source()
     assert 'data-page="browser"' in src
-    assert '>▤ Access Policy<' in src
+    assert '>▤ Access Policy<' in ui_text()
     assert '<section id="browser" class="page">' in src
     
 
