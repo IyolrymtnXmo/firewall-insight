@@ -4,6 +4,81 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.19.1 — the runner was judging the policy it said it would not judge
+
+`tools/acceptance.py` opens with "it does not judge whether the POLICY is good
+— that is what the Analyze page is for", and then three of its checks did
+exactly that. Running it against `Internal-FW` (one `Allow-Any` rule) produced
+**16/19 with 3 failures**, of which only one was about the policy at all:
+
+| reported as a tool failure | what it actually was |
+|---|---|
+| `inline layers discovered: 0` | the package has none, which is allowed |
+| `cleanup rule recognised: cleanup=0` | no trailing Drop, which is a policy choice |
+| `no Any/Any/Any permit rule` | a genuine policy finding, in the wrong place |
+
+A run that cannot be green until the estate is perfect is a run nobody looks at
+twice. The checks are now split:
+
+- **Checks** answer *does this application report the estate correctly* — they
+  must pass on any package. Where a feature has nothing to exercise (no inline
+  layers, no cleanup rule) the check reports INFO instead of inventing a
+  requirement out of how one package happens to be written.
+- **Findings** answer *what did the application find* — permit-all rules,
+  missing cleanup, shadowed and duplicate rules, disabled and zero-hit rules.
+  Printed and stored in `policy_findings`, never counted as failures.
+
+First run after the split: **External-FW 26/26**, `Internal-FW` green on the
+tool with the permit-all rule reported as a finding.
+
+---
+
+## v4.19.0 — three policy packages, and a permit-all rule is a finding
+
+The lab grew from one policy package to three (`External-FW`, `Internal-FW`,
+`Standard`), which the acceptance run only discovered by listing them. Two
+consequences:
+
+**Cases are now keyed by package.** One flat list of flows cannot describe
+three different rulebases. `acceptance_cases.json` takes a `packages` map;
+a flat `cases` list still works. Running against a package with no cases
+defined says so rather than reporting a clean run — zero cases and zero
+failures otherwise look identical to a pass.
+
+**An Any/Any/Any *permit* rule now fails the run.** `Internal-FW` is a single
+`Any → Any → Any → Accept`. The existing check only confirmed that a trailing
+Drop was recognised as a cleanup rule; nothing said anything about a rule that
+permits everything. A tool that scores that 100 and moves on is not worth
+running.
+
+### Fixed — the first run's failure was my case file, not the policy
+
+`VLAN10 client reaches RDP server on VLAN20` used `192.168.20.10`. The real
+object is `RDP-Server_192.168.20.100`, and `Web-Server` is `192.168.20.20`.
+The cases are now transcribed from the live rulebase, with a `why` field on
+each naming the rule it exercises, and they include the negative direction of
+every permit: VLAN20 must *not* reach RDP, VLAN10 must *not* reach AD over
+LDAP. A matrix of permits alone cannot tell a working firewall from an open one.
+
+---
+
+## v4.18.1 — a failing check names the rule that decided
+
+First run against the live lab: **21/22**, and the one failure was a real
+finding — `VLAN10 client reaches RDP server on VLAN20` came back `drop`.
+
+The report said what happened and not why, which sends you back to
+SmartConsole to work out which rule did it. Each traffic case now records the
+walked path — layer, display rule number, rule name, action — so the failure
+line reads `expected accept, got drop via Network rule 5 (Access-to-RDP)`
+instead of stopping at the verdict.
+
+`acceptance-report.json` gains `decided_by`, `path` and `reason` per case.
+
+375 tests.
+
+---
+
 ## v4.18.0 — an acceptance run, so "is it tested?" has an answer
 
 "ทดสอบให้เสร็จ" had no pass criteria, so the honest answer to *is Project Dev

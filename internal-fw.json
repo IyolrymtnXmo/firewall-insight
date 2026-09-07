@@ -1,0 +1,211 @@
+{
+  "app_version": "4.19.0",
+  "package": "Internal-FW",
+  "api_version": "2.0.1",
+  "packages": [
+    "External-FW",
+    "Internal-FW",
+    "Standard"
+  ],
+  "access_summary": {
+    "total_rules": 1,
+    "top_level_rules": 1,
+    "inline_rules": 0,
+    "analyzed_rules": 1,
+    "inline_layers": 0,
+    "failed_inline_layers": 0,
+    "disabled_rules": 0,
+    "zero_hit_rules": 0,
+    "any_any_any_rules": 1,
+    "cleanup_rules": 0,
+    "duplicate_groups": 0,
+    "potential_shadowed_or_redundant": 0,
+    "top_level_shadow_findings": 0,
+    "inline_shadow_findings": 0,
+    "top_level_duplicate_groups": 0,
+    "inline_duplicate_groups": 0,
+    "top_level_any_any_any_rules": 1,
+    "inline_any_any_any_rules": 0,
+    "optimization_score": 92
+  },
+  "data_quality": {
+    "complete": true,
+    "failed_inline_layers": 0,
+    "inline_layer_errors": [],
+    "object_hydration_truncated": false,
+    "warnings": []
+  },
+  "traffic": [
+    {
+      "case": "anything is permitted (single Allow-Any rule)",
+      "action": "accept",
+      "confidence": "exact",
+      "decided_by": "Internal-FW Network rule 1 (Allow-Any)",
+      "path": [
+        {
+          "rule": "1",
+          "name": "Allow-Any",
+          "layer": "Internal-FW Network",
+          "action": "Accept"
+        }
+      ],
+      "reason": "Terminal Access rule matched exactly."
+    }
+  ],
+  "nat_rules": 10,
+  "topology": {
+    "objects": 6,
+    "nodes": 22,
+    "edges": 25,
+    "clusters": [
+      "External-Cluster"
+    ],
+    "members": [
+      "External-GW01",
+      "External-GW02"
+    ],
+    "networks": [
+      "172.23.34.0/24",
+      "172.23.31.0/24",
+      "10.99.99.0/30",
+      "192.168.10.0/24",
+      "192.168.20.0/24"
+    ],
+    "management": [
+      {
+        "name": "CP-MGMT-01",
+        "role": "primary"
+      },
+      {
+        "name": "CP-MGMT-02",
+        "role": "secondary"
+      }
+    ],
+    "limitations": [
+      "Connected subnets are calculated from configured interface IPv4 address and mask.",
+      "Links show configured logical relationships only; physical cabling, switches and live routing are not inferred.",
+      "Management HA is shown as configured (one primary, 1 secondary), from management-blades. Whether the peers are currently synchronised is not exposed by the object model."
+    ]
+  },
+  "checks": [
+    {
+      "group": "safety",
+      "check": "no mutating Management command anywhere in app/",
+      "ok": true,
+      "detail": "show-* only"
+    },
+    {
+      "group": "connect",
+      "check": "login to the Management Server",
+      "ok": true,
+      "detail": "API 2.0.1"
+    },
+    {
+      "group": "connect",
+      "check": "policy package 'Internal-FW' exists",
+      "ok": true,
+      "detail": "packages: External-FW, Internal-FW, Standard"
+    },
+    {
+      "group": "access",
+      "check": "rulebase loaded",
+      "ok": true,
+      "detail": "1 rules inspected"
+    },
+    {
+      "group": "access",
+      "check": "inline layers discovered",
+      "ok": false,
+      "detail": "0 layer(s), 0 inline rule(s)"
+    },
+    {
+      "group": "access",
+      "check": "cleanup rule recognised, not flagged as Any/Any/Any",
+      "ok": false,
+      "detail": "cleanup=0 any/any/any=1"
+    },
+    {
+      "group": "access",
+      "check": "no Any/Any/Any permit rule",
+      "ok": false,
+      "detail": "1 rule(s) permit Any->Any->Any - see Analyze; a cleanup Drop would not be counted here"
+    },
+    {
+      "group": "access",
+      "check": "optimizer score computed",
+      "ok": true,
+      "detail": "score 92"
+    },
+    {
+      "group": "quality",
+      "check": "object hydration completed (not truncated)",
+      "ok": true,
+      "detail": "all referenced objects fetched"
+    },
+    {
+      "group": "quality",
+      "check": "every inline layer loaded",
+      "ok": true,
+      "detail": "0 failed"
+    },
+    {
+      "group": "quality",
+      "check": "result is reported as complete",
+      "ok": true,
+      "detail": "no warnings"
+    },
+    {
+      "group": "traffic",
+      "check": "anything is permitted (single Allow-Any rule)",
+      "ok": true,
+      "detail": "got accept · exact"
+    },
+    {
+      "group": "nat",
+      "check": "NAT rulebase loaded",
+      "ok": true,
+      "detail": "10 NAT rule(s)"
+    },
+    {
+      "group": "nat",
+      "check": "show-hits support probed, not assumed",
+      "ok": true,
+      "detail": "nat_hits_available=True"
+    },
+    {
+      "group": "topology",
+      "check": "gateways and servers loaded",
+      "ok": true,
+      "detail": "6 object(s) -> 22 map node(s)"
+    },
+    {
+      "group": "topology",
+      "check": "cluster membership resolved from the API",
+      "ok": true,
+      "detail": "1 cluster(s), 2 membership link(s)"
+    },
+    {
+      "group": "topology",
+      "check": "management HA pair identified",
+      "ok": true,
+      "detail": "CP-MGMT-01=primary, CP-MGMT-02=secondary"
+    },
+    {
+      "group": "topology",
+      "check": "connected subnets derived",
+      "ok": true,
+      "detail": "172.23.34.0/24, 172.23.31.0/24, 10.99.99.0/30, 192.168.10.0/24, 192.168.20.0/24"
+    },
+    {
+      "group": "topology",
+      "check": "limitations are stated, not hidden",
+      "ok": true,
+      "detail": "3 caveat(s) reported"
+    }
+  ],
+  "result": {
+    "passed": 16,
+    "failed": 3,
+    "judged": 19
+  }
+}

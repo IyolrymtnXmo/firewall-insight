@@ -170,17 +170,49 @@ async def run(package: str, out_path: str) -> int:
         evidence["access_summary"] = s
         rep.check("access", "rulebase loaded", s.get("total_rules", 0) > 0,
                   f"{s.get('total_rules')} rules inspected")
-        rep.check("access", "inline layers discovered",
-                  s.get("inline_layers", 0) > 0,
-                  f"{s.get('inline_layers')} layer(s), "
-                  f"{s.get('inline_rules', 0)} inline rule(s)")
-        rep.check("access", "cleanup rule recognised, not flagged as Any/Any/Any",
-                  s.get("cleanup_rules", 0) > 0,
-                  f"cleanup={s.get('cleanup_rules')} "
-                  f"any/any/any={s.get('any_any_any_rules')}")
+        # A package is not obliged to contain inline layers or an explicit
+        # cleanup rule. Asserting either would make this a test of how one
+        # package happens to be written, and Internal-FW - one Allow-Any rule -
+        # would "fail" for being small. Where the feature is exercised, assert
+        # it worked; where there is nothing to exercise, say so.
+        layers = s.get("inline_layers", 0)
+        rep.check("access", "inline layer discovery",
+                  True if layers else None,
+                  f"{layers} layer(s), {s.get('inline_rules', 0)} inline rule(s)"
+                  if layers else "this package has no inline layers")
+        cleanup = s.get("cleanup_rules", 0)
+        rep.check("access", "cleanup rule told apart from an Any/Any/Any finding",
+                  True if cleanup else None,
+                  f"cleanup={cleanup} any/any/any={s.get('any_any_any_rules')}"
+                  if cleanup else "no trailing Drop rule in this package")
         rep.check("access", "optimizer score computed",
                   isinstance(s.get("optimization_score"), int),
                   f"score {s.get('optimization_score')}")
+
+        # ---- 3b. what the application FOUND, kept apart from whether it works
+        # These are statements about the policy, not about this tool. Mixing
+        # them into the pass/fail total would mean a run could not be green
+        # until the estate was perfect, and nobody would look at it again.
+        print(f"\n{DIM}3b. Policy findings (reported, not scored){OFF}")
+        findings = []
+        broad = s.get("any_any_any_rules", 0)
+        if broad:
+            findings.append(f"{broad} rule(s) permit Any -> Any -> Any")
+        if not cleanup:
+            findings.append("no explicit cleanup rule; the layer relies on the "
+                            "implicit drop, which is not logged")
+        for n, label in (("potential_shadowed_or_redundant", "shadowed/redundant rule(s)"),
+                         ("duplicate_groups", "exact duplicate group(s)"),
+                         ("disabled_rules", "disabled rule(s)"),
+                         ("zero_hit_rules", "zero-hit rule(s) (review candidates)")):
+            if s.get(n):
+                findings.append(f"{s[n]} {label}")
+        evidence["policy_findings"] = findings
+        if findings:
+            for f in findings:
+                rep.check("findings", f, None, "")
+        else:
+            rep.check("findings", "nothing to report on this package", None, "")
 
         # ---- 4. data quality: does the app know what it does not know? ----
         print(f"\n{DIM}4. Data quality{OFF}")
@@ -205,6 +237,10 @@ async def run(package: str, out_path: str) -> int:
         # single-layer trace_access() here would test a different code path
         # from the one the UI uses, which is worse than not testing at all.
         layer = cases.get("layer") or "Network"
+        # Cases can be listed per package (the lab has External-FW / Internal-FW
+        # / Standard) or flat, which is what the seeded file used to do.
+        per_pkg = (cases.get("packages") or {}).get(package)
+        active = per_pkg if per_pkg is not None else cases.get("cases", [])
         objects: dict[str, Any] = {}
         for node in tree.get("layers", []):
             for obj in node.get("payload", {}).get("objects-dictionary", []) or []:
@@ -213,7 +249,10 @@ async def run(package: str, out_path: str) -> int:
         resolver = ObjectResolver(objects)
 
         traffic_ev = []
-        for case in cases.get("cases", []):
+        if per_pkg is None and cases.get("packages"):
+            rep.check("traffic", f"no traffic cases defined for '{package}'", None,
+                      "add them under \"packages\" in acceptance_cases.json")
+        for case in active:
             try:
                 query = resolve_service_query(
                     str(case.get("service", "443")), case.get("protocol", "tcp"), resolver)
@@ -225,11 +264,27 @@ async def run(package: str, out_path: str) -> int:
                 continue
             action = str(got.get("result") or "").lower()
             conf = str(got.get("confidence") or "")
+            # A failing case that does not say WHICH rule decided is half an
+            # answer. Record the walked path so the report names the rule.
+            path = [
+                {"rule": st.get("display_rule") or st.get("rule"),
+                 "name": st.get("name") or "",
+                 "layer": st.get("layer") or "",
+                 "action": st.get("action") or ""}
+                for st in (got.get("path") or [])
+            ]
+            decided = " -> ".join(
+                f"{p['layer']} rule {p['rule']}"
+                + (f" ({p['name']})" if p["name"] else "")
+                for p in path) or "no rule matched"
             traffic_ev.append({"case": case["name"], "action": action,
-                               "confidence": conf})
+                               "confidence": conf, "decided_by": decided,
+                               "path": path,
+                               "reason": got.get("reason") or ""})
             want = case.get("expect")
             if not want:
-                rep.check("traffic", case["name"], None, f"{action or '?'} · {conf}")
+                rep.check("traffic", case["name"], None,
+                          f"{action or '?'} · {conf}  via {decided}")
                 continue
             ok = True
             if want.get("action"):
@@ -238,7 +293,7 @@ async def run(package: str, out_path: str) -> int:
                 ok = ok and want["confidence"] == conf
             rep.check("traffic", case["name"], ok,
                       f"got {action or '?'} · {conf}"
-                      + ("" if ok else f"  (expected {want})"))
+                      + ("" if ok else f"  (expected {want})  via {decided}"))
         evidence["traffic"] = traffic_ev
 
         # ---- 6. NAT -------------------------------------------------------
@@ -294,6 +349,12 @@ async def run(package: str, out_path: str) -> int:
     Path(out_path).write_text(json.dumps(evidence, indent=2, ensure_ascii=False),
                               encoding="utf-8")
 
+    fnd = evidence.get("policy_findings") or []
+    if fnd:
+        print(f"\n{YELLOW}  {len(fnd)} policy finding(s) - reported, not counted "
+              f"as failures:{OFF}")
+        for f in fnd:
+            print(f"    · {f}")
     bar = GREEN if rep.failed == 0 else RED
     print(f"\n{bar}{'='*58}{OFF}")
     print(f"{bar}  {ok}/{total} checks passed"

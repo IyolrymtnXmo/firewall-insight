@@ -224,3 +224,169 @@ class TestTheDefaultMatrix:
         renumbering teaches you to ignore it."""
         for case in ACC._default_cases()["cases"]:
             assert "rule" not in (case.get("expect") or {})
+
+
+class TestAFailureNamesTheRule:
+    """A run that says "expected accept, got drop" and stops there sends you
+    back to SmartConsole to work out which rule did it. The evidence records
+    the walked path so the report answers that itself."""
+
+    def test_every_traffic_row_names_what_decided_it(self, report):
+        _code, data = report
+        for row in data["traffic"]:
+            assert "decided_by" in row and row["decided_by"]
+            assert "path" in row
+
+    def test_the_path_carries_rule_layer_and_action(self, report):
+        _code, data = report
+        walked = [r for r in data["traffic"] if r["path"]]
+        assert walked, "no case walked a rule"
+        for step in walked[0]["path"]:
+            for key in ("rule", "name", "layer", "action"):
+                assert key in step, key
+
+    def test_a_failing_check_puts_the_rule_in_its_detail(self, tmp_path, monkeypatch):
+        import asyncio, json
+        from app.runtime import cache_clear
+        cache_clear()
+        cases = tmp_path / "cases.json"
+        cases.write_text(json.dumps({"layer": "Network", "cases": [
+            {"name": "wrong on purpose", "src": "192.168.20.50",
+             "dst": "192.168.10.10", "protocol": "tcp", "service": "389",
+             "expect": {"action": "drop"}}]}), encoding="utf-8")
+        monkeypatch.setattr(ACC, "CheckPointClient", FakeClient)
+        monkeypatch.setattr(ACC, "CASES_FILE", cases)
+        out = tmp_path / "r.json"
+        asyncio.run(ACC.run("Standard", str(out)))
+        row = next(r for r in json.loads(out.read_text(encoding="utf-8"))["checks"]
+                   if r["check"] == "wrong on purpose")
+        assert row["ok"] is False
+        assert "via" in row["detail"] and "rule" in row["detail"].lower()
+
+
+class TestPerPackageCases:
+    """The lab grew from one policy package to three (External-FW, Internal-FW,
+    Standard). One flat list of flows cannot describe three different
+    rulebases, so cases can be keyed by package."""
+
+    def _run(self, tmp_path, monkeypatch, cases, package="Standard"):
+        import asyncio, json
+        from app.runtime import cache_clear
+        cache_clear()
+        f = tmp_path / "cases.json"
+        f.write_text(json.dumps(cases), encoding="utf-8")
+        monkeypatch.setattr(ACC, "CheckPointClient", FakeClient)
+        monkeypatch.setattr(ACC, "CASES_FILE", f)
+        out = tmp_path / f"{package}.json"
+        code = asyncio.run(ACC.run(package, str(out)))
+        return code, json.loads(out.read_text(encoding="utf-8"))
+
+    CASES = {"layer": "Network", "packages": {
+        "Standard": [{"name": "in-standard", "src": "192.168.20.50",
+                      "dst": "192.168.10.10", "protocol": "tcp",
+                      "service": "389", "expect": {"action": "accept"}}],
+        "Other": [{"name": "in-other", "src": "1.1.1.1", "dst": "2.2.2.2",
+                   "protocol": "tcp", "service": "80", "expect": None}],
+    }}
+
+    def test_only_the_named_packages_cases_run(self, tmp_path, monkeypatch):
+        _code, data = self._run(tmp_path, monkeypatch, self.CASES)
+        names = [t["case"] for t in data["traffic"]]
+        assert names == ["in-standard"]
+
+    def test_a_package_with_no_cases_says_so_rather_than_passing_silently(
+            self, tmp_path, monkeypatch):
+        """Zero cases and zero failures looks identical to a clean run."""
+        _code, data = self._run(tmp_path, monkeypatch, self.CASES, package="Nothing")
+        row = next(r for r in data["checks"]
+                   if "no traffic cases defined" in r["check"])
+        assert row["ok"] is None
+
+    def test_a_flat_case_list_still_works(self, tmp_path, monkeypatch):
+        flat = {"layer": "Network", "cases": [
+            {"name": "flat", "src": "192.168.20.50", "dst": "192.168.10.10",
+             "protocol": "tcp", "service": "389", "expect": {"action": "accept"}}]}
+        _code, data = self._run(tmp_path, monkeypatch, flat)
+        assert [t["case"] for t in data["traffic"]] == ["flat"]
+
+
+class TestAnyAnyAnyPermitIsAFinding:
+    def test_a_permit_all_rule_is_reported_as_a_finding(self, tmp_path, monkeypatch):
+        """Internal-FW is a single Any/Any/Any Accept. That is a statement
+        about the POLICY, not about whether this tool works - so it is
+        reported and counted separately, never as a tool failure. Mixing them
+        would mean the run could not be green until the estate was perfect,
+        and nobody would look at it again."""
+        import asyncio, json
+        from app.runtime import cache_clear
+
+        class PermitAll(FakeClient):
+            async def show_rulebase_tree(self, root, max_depth=10):
+                return {"root_layer": root, "errors": [], "total_layers": 1,
+                        "layers": [{"name": root, "uid": "u1", "depth": 0,
+                                    "path": root, "parent_layer": None,
+                                    "parent_rule": None, "display_prefix": "",
+                                    "rule_count": 1,
+                                    "payload": {"layer": root,
+                                                "objects-dictionary": OBJS,
+                                                "rulebase": [{
+                                                    "type": "access-rule",
+                                                    "rule-number": 1,
+                                                    "name": "Allow-Any",
+                                                    "enabled": True,
+                                                    "source": ["any"],
+                                                    "destination": ["any"],
+                                                    "service": ["any"],
+                                                    "vpn": [], "action": "acc"}]}}]}
+
+        cache_clear()
+        f = tmp_path / "cases.json"
+        f.write_text(json.dumps({"layer": "Network", "packages": {"P": []}}),
+                     encoding="utf-8")
+        monkeypatch.setattr(ACC, "CheckPointClient", PermitAll)
+        monkeypatch.setattr(ACC, "CASES_FILE", f)
+        out = tmp_path / "r.json"
+        asyncio.run(ACC.run("P", str(out)))
+        data = json.loads(out.read_text(encoding="utf-8"))
+        assert any("permit Any -> Any -> Any" in f
+                   for f in data["policy_findings"]), data["policy_findings"]
+        # ...and it did not make the tool look broken
+        assert all(r["ok"] is not False for r in data["checks"]
+                   if r["group"] == "access")
+
+    def test_a_cleanup_drop_is_not_counted_as_one(self, report):
+        """The distinction the whole check depends on."""
+        _code, data = report
+        row = next(r for r in data["checks"]
+                   if r["check"].startswith("cleanup rule told apart"))
+        assert row["ok"] is True
+
+    def test_a_package_without_inline_layers_is_not_a_failure(self, tmp_path,
+                                                              monkeypatch):
+        """A package is not obliged to contain inline layers."""
+        import asyncio, json
+        from app.runtime import cache_clear
+
+        class Flat(FakeClient):
+            async def show_packages(self):
+                return [{"name": "P"}]
+
+            async def show_rulebase_tree(self, root, max_depth=10):
+                return {"root_layer": root, "errors": [], "total_layers": 1,
+                        "layers": [{"name": root, "uid": "u1", "depth": 0,
+                                    "path": root, "parent_layer": None,
+                                    "parent_rule": None, "display_prefix": "",
+                                    "rule_count": 1,
+                                    "payload": {"layer": root,
+                                                "objects-dictionary": OBJS,
+                                                "rulebase": [RULES[0]]}}]}
+
+        cache_clear()
+        f = tmp_path / "c.json"
+        f.write_text(json.dumps({"layer": "Network", "packages": {"P": []}}),
+                     encoding="utf-8")
+        monkeypatch.setattr(ACC, "CheckPointClient", Flat)
+        monkeypatch.setattr(ACC, "CASES_FILE", f)
+        out = tmp_path / "r.json"
+        code = asyncio.run(ACC.run("P", str(out)))
+        assert code == 0, "a small package must not fail the run"

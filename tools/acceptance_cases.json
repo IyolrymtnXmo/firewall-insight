@@ -1,0 +1,125 @@
+{
+  "_comment": [
+    "Expected Traffic Path verdicts, transcribed from the live policy on 7 Sep 2026.",
+    "action: accept | drop | null (recorded, never judged)",
+    "Rule numbers are deliberately NOT asserted - they shift on every insert.",
+    "Destinations use the real object addresses: RDP-Server is .20.100 (not .20.10)",
+    "and Web-Server is .20.20. Getting those wrong is what made the first run fail."
+  ],
+  "layer": "Network",
+  "packages": {
+    "External-FW": [
+      {
+        "name": "VLAN10 reaches the RDP server",
+        "src": "192.168.10.50",
+        "dst": "192.168.20.100",
+        "protocol": "tcp",
+        "service": "3389",
+        "expect": {
+          "action": "accept"
+        },
+        "why": "rule 5 Access-to-RDP source LAB-VLAN10"
+      },
+      {
+        "name": "VLAN20 CANNOT reach the RDP server",
+        "src": "192.168.20.50",
+        "dst": "192.168.20.100",
+        "protocol": "tcp",
+        "service": "3389",
+        "expect": {
+          "action": "drop"
+        },
+        "why": "rule 5 source is VLAN10 + Net-Corp only"
+      },
+      {
+        "name": "VLAN20 reaches AD over LDAP",
+        "src": "192.168.20.50",
+        "dst": "192.168.10.10",
+        "protocol": "tcp",
+        "service": "389",
+        "expect": {
+          "action": "accept"
+        },
+        "why": "rule 4 VLAN20-to-AD"
+      },
+      {
+        "name": "VLAN10 CANNOT reach AD over LDAP",
+        "src": "192.168.10.50",
+        "dst": "192.168.10.10",
+        "protocol": "tcp",
+        "service": "389",
+        "expect": {
+          "action": "drop"
+        },
+        "why": "rule 4 source is VLAN20 + Net-Corp + Vlan33"
+      },
+      {
+        "name": "Lab hosts reach the web server",
+        "src": "192.168.10.50",
+        "dst": "192.168.20.20",
+        "protocol": "tcp",
+        "service": "443",
+        "expect": {
+          "action": "accept"
+        },
+        "why": "rule 6 Access-to-Web, LAB-Internal-Nets"
+      },
+      {
+        "name": "Lab hosts browse the internet",
+        "src": "192.168.10.50",
+        "dst": "8.8.8.8",
+        "protocol": "tcp",
+        "service": "443",
+        "expect": {
+          "action": "accept"
+        },
+        "why": "rule 8 -> InternetLayer 8.1"
+      },
+      {
+        "name": "Lab hosts CANNOT SMB into the corporate VLAN",
+        "src": "192.168.10.50",
+        "dst": "172.23.31.180",
+        "protocol": "tcp",
+        "service": "445",
+        "expect": {
+          "action": "drop"
+        },
+        "why": "no rule permits 445 outbound"
+      },
+      {
+        "name": "The internet CANNOT reach a lab client",
+        "src": "8.8.8.8",
+        "dst": "192.168.10.50",
+        "protocol": "tcp",
+        "service": "3389",
+        "expect": {
+          "action": "drop"
+        },
+        "why": "cleanup rule 9"
+      },
+      {
+        "name": "VLAN20 to AD on an unmodelled high port",
+        "src": "192.168.20.50",
+        "dst": "192.168.10.10",
+        "protocol": "tcp",
+        "service": "9999",
+        "expect": null,
+        "why": "AD-Services contains ALL_DCE_RPC, whose ports are negotiated at runtime - the honest answer is unknown, not drop"
+      }
+    ],
+    "Internal-FW": [
+      {
+        "name": "anything is permitted (single Allow-Any rule)",
+        "src": "192.168.10.50",
+        "dst": "172.23.31.180",
+        "protocol": "tcp",
+        "service": "445",
+        "expect": {
+          "action": "accept"
+        },
+        "why": "the package has one rule: Any/Any/Any Accept. This case exists to make that visible, not to endorse it."
+      }
+    ]
+  },
+  "cases": []
+}
