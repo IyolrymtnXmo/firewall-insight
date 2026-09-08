@@ -386,7 +386,16 @@ function showPage(id,b){
   document.querySelectorAll('.menu button').forEach(x=>x.classList.remove('active'));
   if(b)b.classList.add('active');
   if(typeof layerControl!=='undefined') layerControl.style.display=(id==='traffic')?'inline-block':'none';
-  if(typeof packageControl!=='undefined') packageControl.style.display=(id==='dashboard'||id==='browser'||id==='access'||id==='nat'||id==='traffic')?'inline-block':'none';
+  if(typeof packageControl!=='undefined') packageControl.style.display=(id==='dashboard'||id==='browser'||id==='access'||id==='nat'||id==='traffic'||id==='diff'||id==='compliance')?'inline-block':'none';
+  // Both new pages are useless with an empty selector, and both lists are one
+  // cheap local read - so fill them on arrival rather than making the first
+  // thing a new user does be pressing Refresh.
+  if(id==='diff' && !snapshotList.length) loadSnapshots();
+  if(id==='health' && !healthBaseline.options.length) loadBaselines();
+  if(id==='compliance'){
+    if(!profileSel.options.length) loadProfiles();
+    if(!snapshotList.length) loadSnapshots();
+  }
 }
 
 function goTo(id){
@@ -791,7 +800,7 @@ async function runNat(){
  setStatus('Loading and analyzing NAT rulebase…','busy');
  try{
    natData=await api('/api/nat-analyze?package='+encodeURIComponent(P.value)); renderNatSpecialViews(natData);let s=natData.summary;
-   metricCards(natCards,[['Total NAT Rules',s.total_nat_rules],['Duplicate NAT',s.duplicate_nat_groups],['Broad Any/Any/Any',s.broad_original_any_any_any],['Disabled NAT',s.disabled_nat_rules],['Possible No-Translation',s.possible_no_translation_rules]]);
+   metricCards(natCards,[['Total NAT Rules',s.total_nat_rules],['Duplicate NAT',s.duplicate_nat_groups],['Broad Any/Any/Any',s.broad_original_any_any_any],['Disabled NAT',s.disabled_nat_rules],['Possible No-Translation',s.possible_no_translation_rules],['Install-On Not Found',s.install_on_checked?s.install_on_unknown_rules:'n/a']]);
    setDashboardMetric(dNat,s.total_nat_rules,false);setDashboardMetric(dNatDup,s.duplicate_nat_groups,true);dashPackage.textContent=P.value||'Not selected';natTabs.style.display='flex';renderNat(pendingNatTab||'rulebase');pendingNatTab=null;
    const hits=s.nat_hits_available;
    setStatus('NAT analysis complete — '+s.total_nat_rules+' rule(s). Hit counts '+(hits?'available':'not supported by this Management API build')+'.',hits?'success':'warn');
@@ -829,11 +838,29 @@ async function trace(){
  setStatus('Analyzing traffic path through Access and Inline Layers…','busy');
  busyShow('Tracing traffic path',
    src.value.trim()+' \u2192 '+dst.value.trim()+' \u00b7 elapsed',
-   ['Load package / inline layer tree','Resolve objects and service','Walk the ordered rulebase','Correlate NAT']);
+   ['Load package / inline layer tree','Resolve objects and service','Walk the ordered rulebase','Correlate NAT','Place the path on the network map']);
  const stopProgress=trackProgress(rid);
  try{
    let d=await api('/api/traffic-path?'+q),w=d.access.winner,n=d.nat||[],path=d.access.path||[],possible=d.access.possible_winner;
    const confidence=d.access.confidence||'none';
+   // NAT is first-match-wins, so an earlier rule this simulator cannot
+   // evaluate is returned ahead of a later rule that does match. Showing the
+   // later rule's translation as the answer would be the confident-and-wrong
+   // failure the Access side already refuses to make.
+   // An exact Check Point object name wins over the standard service list -
+   // the rulebase is written in object names. When the object turns out to be
+   // a different protocol or port from the one the person typed, say so here
+   // rather than leaving it to be spotted in a small display string.
+   const svcWarn=d.query.service_warnings||[];
+   const svcWarnHtml=svcWarn.length?`<div class="hint" style="margin-top:6px;color:var(--warn,#e0a33e)">\u26a0 ${svcWarn.map(esc).join('<br>\u26a0 ')}</div>`:'';
+   const natLead=n[0]||null, natBlocked=n[1]||null;
+   const natCell=!natLead?(P.value?'No match':'Not checked')
+     :`Rule ${esc(natLead.rule)} <span class="pill ${natLead.confidence==='exact'?'good':'warn'}">${esc(String(natLead.confidence||'').toUpperCase())}</span>`;
+   const natDetail=!natLead?'—'
+     :(natLead.state==='unknown'
+        ?esc(natLead.reason||'This NAT rule uses object(s) with no static model.')
+          +(natBlocked?` Later Rule ${esc(natBlocked.rule)} matches, but cannot be declared the rule that runs.`:'')
+        :`Source → ${esc(natLead.translated_source)} · Destination → ${esc(natLead.translated_destination)}`);
    const actionClass=String(w?.action||'').toLowerCase().includes('accept')?'good':(String(w?.action||'').toLowerCase().includes('drop')||String(w?.action||'').toLowerCase().includes('reject')?'bad':'purple');
 
    const pathHtml=path.length?`
@@ -849,7 +876,7 @@ async function trace(){
              <td>${esc(x.name||'—')}</td>
              <td><span class="pill ${String(x.action||'').toLowerCase().includes('accept')?'good':(String(x.action||'').toLowerCase().includes('drop')?'bad':'purple')}">${esc(x.action||'Inline')}</span></td>
              <td>${x.transition==='inline-layer'?`→ Inline Layer: <b>${esc(x.inline_layer||'')}</b>`:'Final rule'}</td>
-             <td>Src: ${esc(x.source_match||'—')}<br>Dst: ${esc(x.destination_match||'—')}<br>Svc: ${esc(x.service_match||'—')}</td>
+             <td>Src: ${esc(x.source_match||'—')}<br>Dst: ${esc(x.destination_match||'—')}<br>Svc: ${esc(x.service_match||'—')}${x.vpn_state&&x.vpn_state!=='match'?`<br><span class="pill warn">VPN</span> ${esc(x.vpn_match||'')}`:''}</td>
            </tr>`).join('')}</tbody>
          </table>
        </div>
@@ -868,15 +895,30 @@ async function trace(){
      <tr><th>Item</th><th>Result</th><th>Details</th></tr>
      <tr><td>Source</td><td>${esc(d.query.source)}</td><td>${esc(w?.source_match||'—')}</td></tr>
      <tr><td>Destination</td><td>${esc(d.query.destination)}</td><td>${esc(w?.destination_match||'—')}</td></tr>
-     <tr><td>Service</td><td>${esc(d.query.service_display||d.query.service_input||'—')}</td><td>${esc(w?.service_match||'—')} · resolved by ${esc(d.query.service_resolved_by||'—')}</td></tr>
+     <tr><td>Service</td><td>${esc(d.query.service_display||d.query.service_input||'—')}</td><td>${esc(w?.service_match||'—')} · resolved by ${esc(d.query.service_resolved_by||'—')}${svcWarnHtml}</td></tr>
+     ${(w||possible)&&(w||possible).vpn_state&&(w||possible).vpn_state!=='match'?`<tr><td>VPN</td><td><span class="pill warn">UNKNOWN</span></td><td>${esc((w||possible).vpn_match||'')}</td></tr>`:''}
      <tr><td>Access Rule</td><td>${w?'Rule '+esc(w.display_rule||w.rule):'No match'}</td><td>${w?`${esc(w.layer||'—')} · ${esc(w.name||'—')}`:esc(d.access.reason||'—')}</td></tr>
      <tr><td>Action</td><td>${esc(w?.action||(confidence==='unknown'?'UNVERIFIED':'—'))}</td><td>${esc(d.access.reason||'—')} · Confidence: ${esc(confidence)}</td></tr>
-     <tr><td>NAT</td><td>${n.length?'Rule '+esc(n[0].rule):(P.value?'No match':'Not checked')}</td><td>${n.length?`Source → ${esc(n[0].translated_source)} · Destination → ${esc(n[0].translated_destination)}`:'—'}</td></tr>
+     <tr><td>NAT</td><td>${natCell}</td><td>${natDetail}</td></tr>
    </table></div>
    ${pathHtml}
+   ${d.map_path?`<div class="card" style="margin-top:16px">
+     <div class="section-title"><h3>On the Network Map</h3>
+       <span class="hint">policy certainty: ${esc(d.map_path.policy_confidence)} · topology certainty: ${esc(d.map_path.topology_confidence)}</span></div>
+     <p style="margin:10px 0 0">${(d.map_path.hops||[]).map(h=>esc(h.name||h.node_id)).join(' → ')||'No path could be drawn.'}</p>
+     <div class="hint" style="margin-top:6px">${esc(d.map_path.source.detail)}<br>${esc(d.map_path.destination.detail)}</div>
+     <div class="hint" style="margin-top:6px">${(d.map_path.limitations||[]).map(esc).join(' · ')}</div>
+     <button class="primary" style="margin-top:12px" onclick="showTraceOnMap()">Show this path on the Network Map</button>
+   </div>`:''}
    <div class="hint" style="margin-top:12px">${(d.limitations||[]).map(esc).join(' · ')}</div>`;
+   LAST_TRACE_PATH=d.map_path||null;
+   if(d.map_path_error) notify('warn','Network map overlay unavailable',d.map_path_error+' The Access result above is unaffected.');
    reportDataQuality(d.data_quality,'Traffic Path');
    if(d.nat_error) notify('warn','NAT correlation failed',d.nat_error+' The Access result above is unaffected.');
+   if(svcWarn.length) notify('warn','Service name resolved to a policy object',
+     svcWarn.join(' ')+' Re-run with the exact object name if this is not the flow you meant.',{duration:14000});
+   if(natLead&&natLead.state==='unknown') notify('warn','NAT correlation unverified',
+     (natLead.reason||'')+' Check the NAT rulebase in SmartConsole before relying on the translation shown.',{duration:12000});
    if(d.access.matched){
      const msg=`Traffic path matched configured policy path (${confidence}).`;
      setStatus(msg,confidence==='exact'?'success':'warn');
@@ -906,9 +948,28 @@ async function trace(){
  }
 }
 
-async function loadMap(ev){
-  return task('map','Loading gateway topology',async()=>{
-    mapData=await api('/api/network-map?force=true');
+async function loadMap(ev, withRouting){
+  return task('map', withRouting?'Loading topology and routing':'Loading gateway topology',async()=>{
+    mapData=await api('/api/network-map?force=true'+(withRouting?'&routing=true':''));
+    // "I did not read routes" and "there are no routes" must not look alike.
+    if(withRouting){
+      const r=mapData.routing||{};
+      if(r.enabled===false)
+        notify('warn','Routing not read',
+          'GAIA_ENABLED is false in .env, so no routing was read and none is drawn. This map shows configured interfaces only — it is not evidence that the gateways have no routes.',
+          {duration:14000});
+      else if(r.routes_unparsed)
+        notify('warn','Some routes could not be parsed',
+          `${r.routes_unparsed} route entr(y/ies) were not understood and are NOT drawn. Run tools/probe_gaia.py and narrow the readers to this build's shape.`,
+          {duration:14000});
+      else if(r.routes_parsed)
+        notify('success','Routing overlaid',
+          `${r.routes_parsed} route(s) read from ${r.gateways_read} gateway(s).`);
+      if((r.unreachable||[]).length)
+        notify('warn','Some gateways were not read',
+          'No routing from: '+r.unreachable.join('; ')+'. They are drawn without routes, which can make the map look like they have none.',
+          {duration:14000});
+    }
     inventory.innerHTML=mapData.nodes.map(n=>`<div class="node"><b>${esc(n.name)}</b><br><span class="muted">${esc(n.role||n.type)}</span><br>${esc(n.cidr||(n.ips||[]).join(', '))}</div>`).join('');
     topoLoadSaved(mapData);
     renderTopology(mapData);
@@ -980,6 +1041,7 @@ const TOPO = {
   unmerged: new Set(),  // merge groups the user opened back up
   legend: true,
   graph: null,
+  trace: null,        // the traced path overlay, or null when none is shown
   pinned: new Map(),    // id -> [x,y] the user placed by hand and saved
   at: new Map(),        // id -> [x,y] where the layout last put it
   view: {scale: 1, tx: 0, ty: 0},
@@ -1065,6 +1127,7 @@ function buildTopoGraph(d){
   // interfaces: cluster membership (from the cluster's cluster-member-names)
   // and management HA (from management-blades.secondary).
   const rel = raw.filter(e => e.kind === 'membership' || e.kind === 'mgmt-ha');
+  const routeEdges = raw.filter(e => e.kind === 'route');
   const memberOf = new Map();                 // memberId -> clusterId
   rel.filter(e => e.kind === 'membership').forEach(e => memberOf.set(e.to, e.from));
 
@@ -1129,6 +1192,20 @@ function buildTopoGraph(d){
   const nodes = [], links = [], byId = new Map();
   const push = n => { nodes.push(n); byId.set(n.id, n); return n; };
 
+  // A route can point at a subnet that Auto Merge folded into a shared node,
+  // or at a cluster member the cluster is currently hiding. Resolving through
+  // both is what stops the routing overlay from vanishing the moment somebody
+  // merges or collapses - the same problem the traced-path overlay has.
+  const cellOf = new Map();
+  for(const c of cells) for(const m of (c.members || [])) cellOf.set(m.id, c.id);
+  const routeTarget = id => {
+    if(byId.has(id)) return id;
+    const cell = cellOf.get(id);
+    if(cell && !hidden.has(cell)) return cell;
+    const cl = memberOf.get(id);
+    return cl && byId.has(cl) ? cl : null;
+  };
+
   for(const dv of m.devices){
     if(clusterHidden.has(dv.id)) continue;
     const list = m.ifaces.get(dv.id) || [];
@@ -1157,6 +1234,16 @@ function buildTopoGraph(d){
           r: Math.max(c.kind === 'merged' ? 46 : 38, String(c.name || '').length * 4),
           w: c.kind === 'merged' ? 1.25 : 1});
   }
+  // Prefixes a gateway says it can reach but the map cannot see into. Drawn as
+  // an outline rather than a solid chip: the estate knows this subnet exists
+  // only because a routing table mentioned it.
+  for(const rn of (d.nodes || []).filter(n => n.role === 'routed-network')){
+    if(byId.has(rn.id)) continue;
+    push({id: rn.id, kind: 'routed-network', role: 'routed-network', name: rn.name,
+          sub: rn.default_route ? 'default route' : 'from a routing table',
+          r: Math.max(40, String(rn.name || '').length * 4), w: 1.1});
+  }
+
   for(const c of cells){
     if(hidden.has(c.id)) continue;
     for(const [dev, names] of c.users){
@@ -1164,6 +1251,16 @@ function buildTopoGraph(d){
       if(a && b) links.push({a, b, from: dev, to: c.id, kind: 'subnet',
                              label: [...new Set(names)].join(', ')});
     }
+  }
+
+  // Route links last, so a device already placed by its interfaces keeps that
+  // geometry and the route only adds to it.
+  for(const e of routeEdges){
+    const from = routeTarget(e.from), to = routeTarget(e.to);
+    if(!from || !to || from === to) continue;
+    const a = byId.get(from), b = byId.get(to);
+    if(a && b) links.push({a, b, from, to, kind: 'route', len: 1.15,
+                           label: e.label || '', route: e});
   }
   // Relationship links are drawn differently on purpose: "is a member of" and
   // "is the HA peer of" are not traffic paths, and a map that draws them the
@@ -1401,12 +1498,57 @@ function topoIterations(n){
 // --------------------------------------------------------------------------
 // graph painting
 // --------------------------------------------------------------------------
+/* The overlay speaks in backend node ids; the graph draws something else.
+   A subnet can be folded into a merged cell, and a cluster member can be
+   hidden inside its cluster. Resolving through both is what keeps a
+   highlighted path from vanishing the moment the user merges or collapses. */
+function topoTraceResolve(id){
+  if(!TOPO.graph || !id) return null;
+  const nodes = TOPO.graph.nodes || [];
+  if(nodes.some(n => n.id === id)) return id;
+  const merged = nodes.find(n => n.kind === 'merged'
+    && (n.members || []).some(m => m.id === id));
+  if(merged) return merged.id;
+  const cluster = nodes.find(n => n.role === 'cluster'
+    && ((n.node && n.node.member_ids) || []).includes(id));
+  return cluster ? cluster.id : null;
+}
+
+/* Hop ids as the graph currently draws them, with consecutive duplicates
+   dropped: two hops that fold into the same merged node are one node here. */
+function topoTraceHops(){
+  const t = TOPO.trace;
+  if(!t) return [];
+  const out = [];
+  for(const hop of t.hops || []){
+    const id = topoTraceResolve(hop.node_id);
+    if(id && id !== out[out.length - 1]) out.push(id);
+  }
+  return out;
+}
+
+function topoTraceClass(){
+  const t = TOPO.trace;
+  return t ? 'path-' + (t.draw || 'none') : '';
+}
+
 function topoNodeSvg(nd){
   const cls = ['topo-g-node', nd.kind === 'device' ? nd.role : nd.kind];
   const hit = topoMatches(nd.name) || topoMatches(nd.sub);
   if(TOPO.query){ cls.push(hit ? 'hit' : 'dim'); }
   if(TOPO.focus && !topoNear(nd.id)) cls.push('dim');
   if(nd.fixed) cls.push('pinned');
+  // A node on a traced path is marked with the path's own certainty, never
+  // with a single "highlighted" style: an unverified path that looks like a
+  // proven one is the exact mistake Chapter 6 warned about.
+  if(TOPO.trace){
+    const hops = topoTraceHops();
+    const at = hops.indexOf(nd.id);
+    if(at >= 0){
+      cls.push('on-path', topoTraceClass());
+      if(at === 0 || at === hops.length - 1) cls.push('path-end');
+    }else if(hops.length){ cls.push('off-path'); }
+  }
 
   const canExpand = (nd.kind === 'device' && nd.leaves > 0) || nd.kind === 'merged';
   let shape, label;
@@ -1505,11 +1647,22 @@ function topoLabelAt(l){
 function topoLinkSvg(l, showLabel){
   const on = !TOPO.focus || l.from === TOPO.focus || l.to === TOPO.focus;
   const kind = l.kind && l.kind !== 'subnet' ? ' ' + l.kind : '';
+  let path = '';
+  if(TOPO.trace){
+    const hops = topoTraceHops();
+    for(let i = 0; i < hops.length - 1; i++){
+      if((l.from === hops[i] && l.to === hops[i+1])
+       || (l.to === hops[i] && l.from === hops[i+1])){
+        path = ' on-path ' + topoTraceClass(); break;
+      }
+    }
+    if(!path && hops.length) path = ' off-path';
+  }
   // Every labelled link gets its <text> even when it is currently too short to
   // show one: nodes move while the simulation runs, so emitting conditionally
   // would slide the DOM index away from the link it belongs to.
   const at = showLabel && l.label ? topoLabelAt(l) : null;
-  return `<g class="topo-g-edge${kind}${on ? '' : ' dim'}">`
+  return `<g class="topo-g-edge${kind}${path}${on ? '' : ' dim'}">`
     + `<line x1="${l.a.x.toFixed(1)}" y1="${l.a.y.toFixed(1)}"`
     + ` x2="${l.b.x.toFixed(1)}" y2="${l.b.y.toFixed(1)}"/>`
     + (showLabel && l.label
@@ -1633,6 +1786,65 @@ function topoStatus(g){
   if(g.mergedFrom) bits.push(`${g.mergedFrom} subnets merged`);
   if(TOPO.pinned.size) bits.push(`${TOPO.pinned.size} placed`);
   el.textContent = bits.join(' · ');
+  topoTraceBar();
+}
+
+/* The bar states both certainties, because they fail independently: a proven
+   verdict can sit on a path the map cannot see, and vice versa. Hiding either
+   behind one word would be a claim the data does not carry. */
+const TRACE_DRAW_TEXT = {
+  exact:      ['Verified path', 'good'],
+  inferred:   ['Inferred path', 'warn'],
+  unverified: ['UNVERIFIED path', 'warn'],
+  none:       ['No path drawn', 'bad'],
+};
+function topoTraceBar(){
+  const bar = document.getElementById('topoTraceBar');
+  if(!bar) return;
+  const t = TOPO.trace;
+  if(!t){ bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  const [text, tone] = TRACE_DRAW_TEXT[t.draw] || TRACE_DRAW_TEXT.none;
+  const hops = (t.hops || []).map(h => esc(h.name || h.node_id)).join(' → ') || '—';
+  bar.style.display = 'block';
+  bar.innerHTML = `<div class="trace-bar ${esc(t.draw)}">
+    <div class="trace-bar-head">
+      <span class="pill ${tone}">${esc(text)}</span>
+      <b>${esc(t.source.ip)} → ${esc(t.destination.ip)}</b>
+      <span class="pill ${String(t.verdict||'').toLowerCase().includes('accept')?'good':(String(t.verdict||'').toLowerCase().includes('drop')?'bad':'warn')}">${esc(t.verdict)}</span>
+      ${t.rule?`<span class="rule-no">Rule ${esc(t.rule)}</span>`:''}
+      <span class="hint">policy: ${esc(t.policy_confidence)} · topology: ${esc(t.topology_confidence)}</span>
+      <button class="ghost" onclick="clearTraceOnMap()">Clear</button>
+    </div>
+    <div class="hint">${hops}</div>
+    <div class="hint">${esc(t.source.detail)} · ${esc(t.destination.detail)}</div>
+    <div class="hint">${(t.limitations||[]).map(esc).join(' · ')}</div>
+  </div>`;
+}
+
+function clearTraceOnMap(){
+  TOPO.trace = null;
+  if(mapData) renderTopology(mapData);
+  topoTraceBar();
+}
+
+/* Jump from a finished trace to the map with the path marked on it. */
+let LAST_TRACE_PATH = null;
+async function showTraceOnMap(){
+  if(!LAST_TRACE_PATH){
+    notify('warn','No traced path yet','Run Analyze Path first.');
+    return;
+  }
+  goTo('map');
+  if(!mapData) await loadMap();
+  if(!mapData) return;
+  TOPO.trace = LAST_TRACE_PATH;
+  if(TOPO.mode !== 'graph'){
+    notify('info','Switched to graph view','The traced path is drawn on the graph layout.');
+    topoSetMode('graph');
+  }else{
+    renderTopology(mapData);
+  }
+  topoTraceBar();
 }
 
 // --------------------------------------------------------------------------
@@ -2277,6 +2489,31 @@ function renderNatSpecialViews(data){
     </tr>`).join(''):'<tr><td colspan="13" class="muted">No possible no-translation NAT rules found.</td></tr>';
   }
 
+  // Install-on targets. A check that did not run must not render as a clean
+  // result: with no gateway list there is nothing to compare against, and an
+  // empty table would read as "all targets are fine".
+  const checked=((data&&data.summary)||{}).install_on_checked===true;
+  const ioFindings=((data&&data.findings)||{}).install_on_findings||[];
+  const byRule=new Map(rules.map(r=>[norm(r.rule),r]));
+  const iob=document.getElementById('nat-installon-body');
+  if(iob){
+    iob.innerHTML=!checked
+      ?'<tr><td colspan="4" class="muted">Not checked \u2014 the gateway list from show-gateways-and-servers was not available, so no install-on target could be verified.</td></tr>'
+      :(ioFindings.length?ioFindings.map(f=>{
+          const r=byRule.get(norm(f.rule))||{};
+          return `<tr>
+      <td><strong>Rule ${esc(f.rule)}</strong></td>
+      <td>${esc(r.name||'—')}</td>
+      <td>${esc(f.target)}</td>
+      <td>${esc(f.reason)}</td>
+    </tr>`;}).join('')
+        :'<tr><td colspan="4" class="muted">Every install-on target matches a gateway show-gateways-and-servers returned.</td></tr>');
+  }
+  const ion=document.getElementById('nat-installon-note');
+  if(ion&&!checked) ion.textContent='This check did not run: the gateway list from show-gateways-and-servers was not available to this analysis.';
+  const ioc=document.getElementById('nat-installon-tab-count');
+  if(ioc)ioc.textContent=checked?`(${ioFindings.length})`:'(n/a)';
+
   const dc=document.getElementById('nat-disabled-tab-count');
   if(dc)dc.textContent=`(${disabled.length})`;
   const nc=document.getElementById('nat-notrans-tab-count');
@@ -2288,15 +2525,15 @@ function renderNatSpecialViews(data){
 
 function showNatTab(tab,btn){
   // Hide every NAT content area first.
-  const ids=['nat-disabled-view','nat-notrans-view'];
+  const ids=['nat-disabled-view','nat-notrans-view','nat-installon-view'];
   ids.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
 
   // renderNat() owns rulebase / duplicates / broad views.
   // Clear its container when entering the custom views.
-  if(tab==='disabled' || tab==='notrans'){
+  if(tab==='disabled' || tab==='notrans' || tab==='installon'){
     if(typeof natResults!=='undefined' && natResults) natResults.innerHTML='';
 
-    const target=document.getElementById(tab==='disabled'?'nat-disabled-view':'nat-notrans-view');
+    const target=document.getElementById('nat-'+(tab==='disabled'?'disabled':tab==='notrans'?'notrans':'installon')+'-view');
     if(target) target.style.display='block';
 
     if(btn && btn.parentElement){
@@ -2308,4 +2545,368 @@ function showNatTab(tab,btn){
 
   // For standard tabs, hide special views and delegate to the original renderer.
   renderNat(tab,btn);
+}
+
+
+// --------------------------------------------------------------------------
+// Policy Diff (v4.25): what changed between two snapshots
+//
+// The whole page exists to answer one question periodic review always starts
+// from and no other screen here answers: what moved since last time. Three
+// things it must not blur, and the rendering keeps them apart:
+//   modified            somebody edited a field of the rule
+//   moved               nothing was edited, but first-match-wins order changed
+//   scope changed       the rule is untouched; an object inside it grew
+// and a fourth that is not a finding but must never be silently dropped:
+//   scope unverifiable  an object has no static model, so we cannot compare
+// --------------------------------------------------------------------------
+let snapshotList = [];
+
+async function loadSnapshots(ev){
+  return task('snapshots','Reading saved snapshots',async()=>{
+    const d=await api('/api/snapshots');
+    snapshotList=d.snapshots||[];
+    const opts=snapshotList.map(s=>
+      `<option value="${esc(s.id)}">${esc(s.package)} · ${esc(String(s.taken_at||'').replace('T',' ').slice(0,16))} · ${esc(s.access_rules)} rules · v${esc(s.app_version)}</option>`).join('');
+    // A is the older one, so it defaults to the bottom of a newest-first list.
+    snapA.innerHTML=opts; snapB.innerHTML=opts;
+    if(snapshotList.length>1){ snapA.selectedIndex=1; snapB.selectedIndex=0; }
+    snapNote.textContent=snapshotList.length
+      ? `${snapshotList.length} snapshot(s) in ${d.directory}`
+      : `No snapshots yet. Capture one, change something in SmartConsole, capture another, then compare. Saved to ${d.directory}`;
+    setStatus(`${snapshotList.length} snapshot(s) available.`, 'success');
+    return d;
+  },{button:ev&&ev.currentTarget,successMessage:null}).catch(()=>{});
+}
+
+async function takeSnapshot(ev){
+  if(!P.value){setStatus('Select a Policy Package first.','warn');notify('warn','No Policy Package selected','A snapshot is of one package. Choose one from the selector at the top of the page.');return}
+  const rid=newRid();
+  const stop=trackProgress(rid);
+  return task('snapshot','Capturing policy snapshot',async()=>{
+    const d=await api('/api/snapshot?package='+encodeURIComponent(P.value)+'&rid='+rid);
+    await loadSnapshots();
+    if(d.nat_error) notify('warn','NAT rulebase not captured',d.nat_error+' The Access rules in this snapshot are unaffected, but a NAT diff against it will be empty.');
+    notify('success','Snapshot captured',
+      `${d.summary.access_rules} Access rule(s) and ${d.summary.nat_rules} NAT rule(s) written to ${d.saved_to}`,
+      {duration:11000});
+    return d;
+  },{
+    button:ev&&ev.currentTarget,
+    sub:'Reading the package · elapsed',
+    steps:['Load package and inline layers','Read the NAT rulebase',"Resolve each rule's reach and write the file"],
+    successMessage:null,
+  }).catch(()=>{}).finally(()=>stop());
+}
+
+function diffRows(rows,cols){
+  if(!rows.length) return '<p class="muted">None.</p>';
+  return `<div class="table-wrap"><table><thead><tr>${cols.map(c=>`<th>${esc(c[0])}</th>`).join('')}</tr></thead><tbody>`
+    + rows.map(r=>`<tr>${cols.map(c=>`<td>${c[1](r)}</td>`).join('')}</tr>`).join('')
+    + '</tbody></table></div>';
+}
+
+function diffSection(title, hint, tone, rows, cols){
+  return `<div class="card" style="margin:14px 0">
+    <div class="section-title"><h3><span class="pill ${tone}">${esc(rows.length)}</span> ${esc(title)}</h3>
+      <span class="hint">${esc(hint)}</span></div>
+    ${diffRows(rows,cols)}
+  </div>`;
+}
+
+const RULE_CELL = r=>`<span class="rule-no">Rule ${esc(r.display_rule||'—')}</span> ${esc(r.name||'')}`;
+
+async function runDiff(ev){
+  if(!snapA.value||!snapB.value){setStatus('Pick two snapshots first.','warn');notify('warn','Two snapshots needed','Capture at least two, then choose the older one as A and the newer one as B.');return}
+  if(snapA.value===snapB.value){setStatus('Those are the same snapshot.','warn');notify('warn','Same snapshot twice','Comparing a snapshot with itself always reports no change, which tells you nothing.');return}
+  return task('diff','Comparing snapshots',async()=>{
+    const d=await api('/api/snapshot-diff?a='+encodeURIComponent(snapA.value)+'&b='+encodeURIComponent(snapB.value));
+    const s=d.summary;
+    const head=`<div class="flow">
+      <div class="step"><span class="muted">A · older</span><br><b>${esc(d.a.package)}</b><br><span class="muted">${esc(String(d.a.taken_at||'').replace('T',' ').slice(0,16))} · v${esc(d.a.app_version)}</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="muted">B · newer</span><br><b>${esc(d.b.package)}</b><br><span class="muted">${esc(String(d.b.taken_at||'').replace('T',' ').slice(0,16))} · v${esc(d.b.app_version)}</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="muted">Verdict</span><br><span class="pill ${d.identical?'good':'warn'}">${d.identical?'NO CHANGE':'CHANGED'}</span></div>
+    </div>`;
+
+    const warn=(d.warnings||[]).length
+      ? `<div class="card" style="margin-top:14px;border-color:rgba(246,196,83,.46)">
+           <div class="section-title"><h3>Read this before acting on the result</h3></div>
+           <ul style="margin:8px 0 0 18px">${d.warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul>
+         </div>` : '';
+
+    diffResult.innerHTML = head + warn
+      + `<div class="cards" style="margin-top:16px">`
+      + [['Added',s.added],['Removed',s.removed],['Modified',s.modified],['Moved',s.moved],
+         ['Scope changed',s.scope_changed],['Unverifiable',s.scope_unverifiable],
+         ['Unchanged',s.unchanged],['NAT changes',s.nat_added+s.nat_removed+s.nat_modified]]
+          .map(x=>`<div class="card"><div class="metric-label">${esc(x[0])}</div><div class="metric num">${esc(x[1])}</div></div>`).join('')
+      + `</div>`
+
+      + diffSection('Added','Rules present in B and not in A','good',d.access.added,
+          [['Rule',RULE_CELL],['Layer',r=>esc(r.layer||'')],['Action',r=>esc(r.action||'')],
+           ['Source',r=>esc(r.source||'')],['Destination',r=>esc(r.destination||'')],['Service',r=>esc(r.service||'')]])
+
+      + diffSection('Removed','Rules present in A and not in B','bad',d.access.removed,
+          [['Rule',RULE_CELL],['Layer',r=>esc(r.layer||'')],['Action',r=>esc(r.action||'')],
+           ['Source',r=>esc(r.source||'')],['Destination',r=>esc(r.destination||'')],['Service',r=>esc(r.service||'')]])
+
+      + diffSection('Modified','A field of the rule was edited','warn',d.access.modified,
+          [['Rule',RULE_CELL],['Layer',r=>esc(r.layer||'')],
+           ['Changes',r=>r.changes.map(c=>`<b>${esc(c.field)}</b>: ${esc(String(c.from??'—'))} → ${esc(String(c.to??'—'))}`).join('<br>')]])
+
+      + diffSection('Moved','Nothing was edited, but the position changed — and Access Control is first match wins, so position is part of the meaning','warn',d.access.moved,
+          [['Rule',RULE_CELL],['From',r=>esc(r.from_position)],['To',r=>esc(r.to_position)],
+           ['Why this matters',r=>esc(r.reason||'')]])
+
+      + diffSection('Scope changed without the rule changing','The rule text, its uids and its number are identical — an object inside it grew or shrank. A textual diff cannot see this','warn',d.access.scope_changed,
+          [['Rule',RULE_CELL],['Dimension',r=>`<span class="pill purple">${esc(r.dimension)}</span>`],
+           ['Object',r=>esc(r.text||'')],
+           ['Direction',r=>`<span class="pill ${r.direction==='widened'?'bad':'warn'}">${esc(r.direction)}</span>`],
+           ['Intervals',r=>`${esc(r.from_intervals)} → ${esc(r.to_intervals)}`]])
+
+      + diffSection('Could not be compared','An object on this dimension has no static model, so whether its reach changed cannot be decided. Reported rather than counted as unchanged','warn',d.access.scope_unverifiable,
+          [['Rule',RULE_CELL],['Dimension',r=>esc(r.dimension)],['Object',r=>esc(r.text||'')],
+           ['Reason',r=>esc(r.reason||'')]])
+
+      + diffSection('NAT added','','good',d.nat.added,
+          [['Rule',r=>`<span class="rule-no">Rule ${esc(r.rule)}</span> ${esc(r.name||'')}`],
+           ['Original src',r=>esc(r.original_source||'')],['Translated src',r=>esc(r.translated_source||'')],
+           ['Method',r=>esc(r.method||'')]])
+      + diffSection('NAT removed','','bad',d.nat.removed,
+          [['Rule',r=>`<span class="rule-no">Rule ${esc(r.rule)}</span> ${esc(r.name||'')}`],
+           ['Original src',r=>esc(r.original_source||'')],['Translated src',r=>esc(r.translated_source||'')],
+           ['Method',r=>esc(r.method||'')]])
+      + diffSection('NAT modified','','warn',d.nat.modified,
+          [['Rule',r=>`<span class="rule-no">Rule ${esc(r.rule)}</span> ${esc(r.name||'')}`],
+           ['Changes',r=>r.changes.map(c=>`<b>${esc(c.field)}</b>: ${esc(String(c.from??'—'))} → ${esc(String(c.to??'—'))}`).join('<br>')]])
+
+      + `<div class="hint" style="margin-top:12px">${(d.notes||[]).map(esc).join(' · ')}</div>`;
+
+    if(d.identical) notify('success','No change','Every tracked rule matched, in the same order, with the same resolved reach.');
+    else notify('warn','Policy changed',
+      `${s.added} added · ${s.removed} removed · ${s.modified} modified · ${s.moved} moved · ${s.scope_changed} changed scope without changing`,
+      {duration:13000});
+    setStatus(d.identical?'No change between the two snapshots.':'Differences found between the two snapshots.',
+      d.identical?'success':'warn');
+    return d;
+  },{button:ev&&ev.currentTarget,successMessage:null}).catch(()=>{});
+}
+
+
+// --------------------------------------------------------------------------
+// Compliance (v4.26): the customer's standard, not ours
+//
+// Four statuses, and the rendering keeps them apart because collapsing any two
+// of them is how a compliance report stops being evidence:
+//   pass            proven to satisfy the check
+//   fail            proven to violate it, with the offending rules named
+//   unverifiable    an input could not be resolved - NEVER rounded up to pass
+//   not_applicable  nothing in this package for the check to test
+// Plus a fifth thing that is not a status: whether the check cites a standard
+// at all. A house rule is a fine reason to fix something and a bad reason to
+// tell an auditor you are non-compliant with NIST.
+// --------------------------------------------------------------------------
+const COMPLIANCE_TONE = {pass:'good', fail:'bad', unverifiable:'warn', not_applicable:'purple'};
+
+async function loadProfiles(ev){
+  return task('profiles','Reading compliance profiles',async()=>{
+    const d=await api('/api/compliance-profiles');
+    profileSel.innerHTML=(d.profiles||[]).map(p=>
+      `<option value="${esc(p.id)}">${esc(p.name)} · ${esc(p.checks)} checks · ${esc(p.cited_checks)} cited</option>`).join('');
+    profileNote.textContent=(d.profiles||[]).length
+      ? `${d.profiles.length} profile(s) in ${d.directory} — copy one and edit it to make it yours.`
+      : `No profiles found in ${d.directory}.`;
+    return d;
+  },{button:ev&&ev.currentTarget,successMessage:null}).catch(()=>{});
+}
+
+function complianceSourceChanged(){
+  const snap=complianceSource.value==='snapshot';
+  complianceSnapWrap.style.display=snap?'':'none';
+  if(snap && !complianceSnap.options.length){
+    complianceSnap.innerHTML=(snapshotList||[]).map(s=>
+      `<option value="${esc(s.id)}">${esc(s.package)} · ${esc(String(s.taken_at||'').replace('T',' ').slice(0,16))}</option>`).join('')
+      || '<option value="">No snapshots captured yet</option>';
+  }
+}
+
+function complianceSource_cite(r){
+  const s=r.source||{};
+  if(!r.cited) return `<span class="pill purple">HOUSE RULE</span> <span class="muted">${esc(s.note||'no external standard cited')}</span>`;
+  const head=`<b>${esc(s.standard||'')}</b>${s.clause?' · '+esc(s.clause):''}`;
+  const body=[s.quote?`<div class="hint" style="margin-top:4px">&ldquo;${esc(s.quote)}&rdquo;</div>`:'',
+              s.note?`<div class="hint" style="margin-top:4px">${esc(s.note)}</div>`:'',
+              s.url?`<div class="hint" style="margin-top:4px"><code>${esc(s.url)}</code></div>`:''].join('');
+  return head+body;
+}
+
+async function runCompliance(ev){
+  if(!profileSel.value){setStatus('Pick a profile first.','warn');notify('warn','No profile selected','A profile is the list of checks to run. Refresh the list, or add a YAML file to the profiles directory.');return}
+  const bySnapshot=complianceSource.value==='snapshot';
+  if(bySnapshot && !complianceSnap.value){setStatus('Pick a snapshot.','warn');notify('warn','No snapshot selected','Capture one on the Policy Diff page first.');return}
+  if(!bySnapshot && !P.value){setStatus('Select a Policy Package first.','warn');notify('warn','No Policy Package selected','Choose a package at the top of the page, or evaluate a stored snapshot instead.');return}
+
+  const rid=newRid();
+  const stop=trackProgress(rid);
+  return task('compliance','Running the compliance profile',async()=>{
+    const q=bySnapshot
+      ? 'profile='+encodeURIComponent(profileSel.value)+'&snapshot='+encodeURIComponent(complianceSnap.value)
+      : 'profile='+encodeURIComponent(profileSel.value)+'&package='+encodeURIComponent(P.value)+'&rid='+rid;
+    const d=await api('/api/compliance?'+q);
+    const s=d.summary;
+
+    const head=`<div class="flow">
+      <div class="step"><span class="muted">Profile</span><br><b>${esc(d.profile.name)}</b><br><span class="muted">${esc(s.total)} check(s) · ${esc(s.uncited_checks)} uncited</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="muted">Evaluated</span><br><b>${esc(d.evaluated.package||d.evaluated.id||'—')}</b><br><span class="muted">${esc(d.evaluated.kind)}${d.taken_at?' · '+esc(String(d.taken_at).replace('T',' ').slice(0,16)):''}</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="muted">Verdict</span><br><span class="pill ${d.conformant?'good':'warn'}">${d.conformant?'CONFORMANT':'NOT CONFORMANT'}</span><br><span class="muted">${esc(s.failed)} failed · ${esc(s.unverifiable)} unverifiable</span></div>
+    </div>`;
+
+    const cards=`<div class="cards" style="margin-top:16px">`
+      + [['Checks',s.total],['Passed',s.passed],['Failed',s.failed],
+         ['Unverifiable',s.unverifiable],['Not applicable',s.not_applicable]]
+        .map(x=>`<div class="card"><div class="metric-label">${esc(x[0])}</div><div class="metric num">${esc(x[1])}</div></div>`).join('')
+      + `</div>`;
+
+    const order={fail:0, unverifiable:1, pass:2, not_applicable:3};
+    const rows=(d.results||[]).slice().sort((a,b)=>(order[a.status]??9)-(order[b.status]??9));
+
+    const body=rows.map(r=>`<div class="card" style="margin:12px 0">
+      <div class="section-title">
+        <h3><span class="pill ${COMPLIANCE_TONE[r.status]||'purple'}">${esc(String(r.status).replace('_',' ').toUpperCase())}</span>
+          ${esc(r.title)}</h3>
+        <span class="hint">${esc(r.id)} · severity ${esc(r.severity)}</span>
+      </div>
+      <p style="margin:8px 0 0">${esc(r.detail)}</p>
+      ${(r.offenders||[]).length?`<div class="table-wrap" style="margin-top:10px"><table>
+        <thead><tr><th>Rule</th><th>Layer</th><th>Action</th><th>Source</th><th>Destination</th><th>Service</th><th>Why</th></tr></thead>
+        <tbody>${r.offenders.map(o=>`<tr>
+          <td><span class="rule-no">Rule ${esc(o.display_rule||'—')}</span> ${esc(o.name||'')}</td>
+          <td>${esc(o.layer||'')}</td><td>${esc(o.action||'')}</td>
+          <td>${esc(o.source||'')}</td><td>${esc(o.destination||'')}</td><td>${esc(o.service||'')}</td>
+          <td>${esc(o.reason||'matches the forbidden condition')}</td></tr>`).join('')}</tbody></table></div>`:''}
+      ${(r.unverifiable_rules||[]).length?`<div class="hint" style="margin-top:10px"><b>Could not be decided for:</b><br>
+        ${r.unverifiable_rules.map(o=>`Rule ${esc(o.display_rule||'—')} ${esc(o.name||'')} — ${esc(o.reason||'')}`).join('<br>')}</div>`:''}
+      <div class="hint" style="margin-top:10px">${complianceSource_cite(r)}</div>
+    </div>`).join('');
+
+    // What the profile author already knows this tool cannot decide. Printed
+    // BELOW the results and clearly separated, so a clean run never reads as
+    // "the standard is satisfied".
+    const notChecked=(d.not_checkable||[]).length?`<div class="card" style="margin-top:18px;border-color:rgba(246,196,83,.46)">
+      <div class="section-title"><h3>Not checked by this tool</h3>
+        <span class="hint">Requirements this profile declares out of scope for a configuration reader</span></div>
+      <div class="table-wrap" style="margin-top:10px"><table>
+        <thead><tr><th>Requirement</th><th>Clause</th><th>Why not</th></tr></thead>
+        <tbody>${d.not_checkable.map(n=>`<tr><td>${esc(n.requirement||'')}</td><td>${esc(n.clause||'')}</td><td>${esc(n.why||'')}</td></tr>`).join('')}</tbody>
+      </table></div></div>`:'';
+
+    complianceResult.innerHTML=head+cards+body+notChecked
+      +`<div class="hint" style="margin-top:12px">${(d.notes||[]).map(esc).join(' · ')}</div>`;
+
+    if(d.data_quality) reportDataQuality(d.data_quality,'Compliance');
+    if(s.unverifiable) notify('warn','Some checks could not be decided',
+      `${s.unverifiable} check(s) are unverifiable. They are not counted as passes, and the run is not conformant while one remains.`,
+      {duration:12000});
+    setStatus(d.conformant?'Conformant with this profile.':`${s.failed} failed, ${s.unverifiable} unverifiable.`,
+      d.conformant?'success':'warn');
+    return d;
+  },{
+    button:ev&&ev.currentTarget,
+    sub:'Reading the package · elapsed',
+    steps:['Load package and inline layers','Read the NAT rulebase','Analyse the rulebase','Evaluate the profile'],
+    successMessage:null,
+  }).catch(()=>{}).finally(()=>stop());
+}
+
+
+
+// --------------------------------------------------------------------------
+// Gateway Health (v4.28): state now, and what moved since the baseline
+//
+// The one thing this page must never do is let silence read as health. A
+// gateway that did not answer gets a finding of its own, at high severity, and
+// the summary counts it separately from the ones that did.
+// --------------------------------------------------------------------------
+const SEV_TONE = {high:'bad', medium:'warn', low:'purple'};
+
+async function loadBaselines(ev){
+  return task('baselines','Reading health baselines',async()=>{
+    const d=await api('/api/health-baselines');
+    healthBaseline.innerHTML='<option value="">Do not compare</option>'
+      +(d.baselines||[]).map(b=>`<option value="${esc(b.id)}">${esc(String(b.taken_at||'').replace('T',' ').slice(0,16))} · ${esc(b.gateways)} gw · ${esc(b.findings)} finding(s)</option>`).join('');
+    healthNote.textContent=(d.baselines||[]).length
+      ? `${d.baselines.length} baseline(s) in ${d.directory}`
+      : `No baselines yet — every reading is saved as one, in ${d.directory}`;
+    return d;
+  },{button:ev&&ev.currentTarget,successMessage:null}).catch(()=>{});
+}
+
+async function runHealth(ev){
+  return task('health','Reading gateway state',async()=>{
+    const q=healthBaseline.value?'?baseline='+encodeURIComponent(healthBaseline.value):'';
+    const d=await api('/api/health'+q);
+    const s=d.summary;
+
+    const head=`<div class="flow">
+      <div class="step"><span class="muted">Read</span><br><b>${esc(s.gateways_read)} gateway(s)</b><br><span class="muted">${esc(String(d.taken_at||'').replace('T',' ').slice(0,16))}</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="muted">Not reached</span><br><b>${esc(s.gateways_unreachable)}</b><br><span class="muted">${s.gateways_unreachable?'state unknown':'none'}</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="muted">Findings</span><br><span class="pill ${s.high?'bad':(s.findings?'warn':'good')}">${esc(s.findings)}</span><br><span class="muted">${esc(s.high)} high</span></div>
+    </div>`;
+
+    const findings=(d.findings||[]).length?`<div class="card" style="margin-top:16px">
+      <div class="section-title"><h3>Findings</h3><span class="hint">State of the estate, reported and never scored</span></div>
+      <div class="table-wrap" style="margin-top:10px"><table>
+        <thead><tr><th>Severity</th><th>Where</th><th>What</th><th>Detail</th></tr></thead>
+        <tbody>${d.findings.map(f=>`<tr>
+          <td><span class="pill ${SEV_TONE[f.severity]||'purple'}">${esc(String(f.severity).toUpperCase())}</span></td>
+          <td>${esc(f.host)}</td><td>${esc(f.kind)} · ${esc(f.subject||'')}</td>
+          <td>${esc(f.detail)}</td></tr>`).join('')}</tbody></table></div></div>`
+      :'<div class="card" style="margin-top:16px"><p>No findings on the gateways that answered.</p></div>';
+
+    const gws=(d.gateways||[]).map(g=>`<div class="card" style="margin:12px 0">
+      <div class="section-title"><h3>${esc(g.host)}</h3>
+        <span class="hint">${esc(g.version.product||'')} build ${esc(g.version.build||'?')} · ${esc(g.interfaces_up)} of ${esc(g.interfaces.length)} interfaces up</span></div>
+      ${g.cluster.readable?`<p style="margin:8px 0 0">${esc(g.cluster.mode)} · status <span class="pill ${g.cluster.status==='ok'?'good':'bad'}">${esc(g.cluster.status)}</span> — ${g.cluster.members.map(m=>`<b>${esc(m.name)}</b> <span class="pill ${m.status==='active'?'good':'purple'}">${esc(m.status)}</span>`).join(' · ')}</p>`:'<p class="muted" style="margin:8px 0 0">No cluster state returned by this gateway.</p>'}
+      <div class="table-wrap" style="margin-top:10px"><table>
+        <thead><tr><th>Interface</th><th>Type</th><th>State</th><th>Address</th><th>Comment</th></tr></thead>
+        <tbody>${g.interfaces.map(i=>`<tr>
+          <td><b>${esc(i.name)}</b></td><td>${esc(i.type)}</td>
+          <td><span class="pill ${i.enabled?'good':(i.configured?'bad':'purple')}">${i.enabled?'up':'down'}</span></td>
+          <td>${esc(i.cidr||'—')}</td><td>${esc(i.comments||'')}</td></tr>`).join('')}</tbody></table></div></div>`).join('');
+
+    const unreachable=(d.unreachable||[]).length?`<div class="card" style="margin-top:16px;border-color:rgba(255,113,132,.45)">
+      <div class="section-title"><h3>Not reached</h3><span class="hint">Nothing above says anything about these</span></div>
+      <ul style="margin:8px 0 0 18px">${d.unreachable.map(u=>`<li><b>${esc(u.host)}</b> — ${esc(u.error)}</li>`).join('')}</ul></div>`:'';
+
+    const diff=d.diff?`<div class="card" style="margin-top:18px">
+      <div class="section-title"><h3><span class="pill ${d.diff.unchanged?'good':'warn'}">${d.diff.unchanged?'NO CHANGE':esc(d.diff.summary.changes)+' CHANGE(S)'}</span> Since baseline</h3>
+        <span class="hint">${esc(String(d.diff.baseline.taken_at||'').replace('T',' ').slice(0,16))} → now</span></div>
+      ${d.diff.changes.length?`<div class="table-wrap" style="margin-top:10px"><table>
+        <thead><tr><th>Gateway</th><th>What</th><th>Change</th></tr></thead>
+        <tbody>${d.diff.changes.map(c=>`<tr><td>${esc(c.host)}</td><td>${esc(c.kind)} · ${esc(c.subject||'')}</td><td>${esc(c.detail)}</td></tr>`).join('')}</tbody>
+      </table></div>`:'<p style="margin:8px 0 0">Interfaces, cluster roles and builds all match the baseline.</p>'}
+      <div class="hint" style="margin-top:10px">${(d.diff.notes||[]).map(esc).join(' · ')}</div></div>`:'';
+
+    healthResult.innerHTML=head+findings+diff+gws+unreachable
+      +`<div class="hint" style="margin-top:12px">${(d.notes||[]).map(esc).join(' · ')}${d.saved_as?' · Saved as baseline '+esc(d.saved_as):''}</div>`;
+
+    await loadBaselines();
+    if(s.gateways_unreachable) notify('warn','Some gateways were not read',
+      `${s.gateways_unreachable} gateway(s) did not answer. They produce no findings, which is not the same as having none.`,
+      {duration:13000});
+    if(d.diff && !d.diff.unchanged) notify('warn','State changed since the baseline',
+      d.diff.changes.slice(0,3).map(c=>c.detail).join(' · '),{duration:14000});
+    setStatus(s.findings?`${s.findings} finding(s), ${s.high} high.`:'No findings on the gateways that answered.',
+      s.high?'warn':'success');
+    return d;
+  },{button:ev&&ev.currentTarget,successMessage:null}).catch(e=>{
+    if(String(e&&e.message||'').includes('GAIA_ENABLED'))
+      healthResult.innerHTML='<div class="card"><p>'+esc(String(e.message))+'</p></div>';
+  });
 }

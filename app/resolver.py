@@ -340,7 +340,10 @@ class ObjectResolver:
     def describe_uid(self, uid: str) -> str:
         o=self.obj(uid); name=str(o.get("name") or uid); t=str(o.get("type","")).lower()
         if self.is_any_uid(uid): return "Any"
-        if o.get("ip-address"): return f"{name} ({o['ip-address']})"
+        # show-object returns ipv4-address / ipv6-address; only some
+        # older payloads use the generic ip-address key.
+        ip = o.get("ip-address") or o.get("ipv4-address") or o.get("ipv6-address")
+        if ip: return f"{name} ({ip})"
         subnet=o.get("subnet4") or o.get("subnet") or o.get("subnet6")
         ml=o.get("mask-length4") if o.get("mask-length4") is not None else o.get("mask-length")
         if ml is None: ml=o.get("mask-length6")

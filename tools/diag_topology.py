@@ -158,6 +158,15 @@ async def main() -> None:
             ha = {k: v for k, v in h.items()
                   if any(t in k.lower() for t in ("ha", "secondary", "primary", "peer", "standby"))}
             print(f"  any HA-ish field: {ha or 'NONE'}")
+            # v4.22: HA is paired inside a domain, so print the domain the API
+            # reports. On a plain SMC every server lands in one unnamed group.
+            dom = h.get("domain")
+            if isinstance(dom, dict):
+                print(f"  domain: {dom.get('name')} ({dom.get('domain-type') or 'type not stated'})")
+            elif dom:
+                print(f"  domain: {dom}")
+            else:
+                print("  domain: not reported (single-domain management)")
 
         if hosts and not any(
             any(t in k.lower() for t in ("ha", "secondary", "peer", "standby"))

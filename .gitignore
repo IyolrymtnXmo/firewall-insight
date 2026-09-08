@@ -27,3 +27,9 @@ pytest_out.txt
 pytest_output.txt
 python_test.txt
 acceptance-report.json
+
+# Policy snapshots are local audit evidence, not source
+snapshots/
+internal-fw.json
+gaia-probe.json
+health-baselines/

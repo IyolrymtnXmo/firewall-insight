@@ -43,11 +43,14 @@ class TestModuleBoundaries:
         for name in ("version.py", "runtime.py", "progress.py", "policy.py",
                      "config.py", "checkpoint.py", "resolver.py", "analyzer.py",
                      "nat_analyzer.py", "inline_layers.py", "policy_browser.py",
-                     "traffic.py"):
+                     "traffic.py", "matching.py", "nat_correlate.py", "path_map.py",
+                     "snapshot.py", "snapshot_diff.py", "compliance.py", "gaia.py",
+                     "gaia_topology.py"):
             assert (APP / name).is_file(), name
 
     def test_routes_are_split_by_area(self):
-        for name in ("meta", "access", "nat", "traffic", "topology", "export", "ui"):
+        for name in ("meta", "access", "nat", "traffic", "topology", "export", "ui",
+                     "snapshot", "compliance"):
             assert (APP / "api" / f"{name}.py").is_file(), name
 
     def test_no_module_is_oversized(self):
@@ -91,6 +94,29 @@ class TestReadOnlyIsStillStructural:
         for command in ('"publish"', '"install-policy"', '"set-access-rule"',
                         '"add-access-rule"', '"delete-access-rule"'):
             assert command not in joined, command
+
+    def test_no_mutating_gaia_command_exists(self):
+        """v4.27 added a second API whose reads and writes share a prefix space.
+
+        The Management API made this cheap: its reads all start with `show-`.
+        Gaia lists `show-routes` beside `set-static-route`, `run-script` and
+        `run-reboot`, so the same guarantee needs its own scan - plus the
+        runtime allowlist in app/gaia.py, which refuses anything else before
+        a request is built.
+        """
+        joined = "\n".join(p.read_text(encoding="utf-8") for p in APP.rglob("*.py"))
+        for command in ("run-script", "run-reboot", "set-static-route",
+                        "add-static-route", "delete-static-route", "add-license",
+                        "delete-license", "set-interface", "set-initial-setup",
+                        "put-file", "set-global-params"):
+            assert f'"{command}"' not in joined, command
+            assert f"'{command}'" not in joined, command
+
+    def test_the_gaia_allowlist_contains_only_reads(self):
+        from app.gaia import ALLOWED
+        assert ALLOWED, "an empty allowlist would silently disable the feature"
+        for command in ALLOWED:
+            assert command.startswith("show-"), command
 
 
 class TestUiSurvivedTheMove:

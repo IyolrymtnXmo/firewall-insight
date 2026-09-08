@@ -4,7 +4,18 @@
     "action: accept | drop | null (recorded, never judged)",
     "Rule numbers are deliberately NOT asserted - they shift on every insert.",
     "Destinations use the real object addresses: RDP-Server is .20.100 (not .20.10)",
-    "and Web-Server is .20.20. Getting those wrong is what made the first run fail."
+    "and Web-Server is .20.20. Getting those wrong is what made the first run fail.",
+    "",
+    "STILL UNCOVERED on External-FW (Chapter 4 homework c): rule 1 VPN,",
+    "rule 2 Admin-Access, rule 3 Lab-Device-Mgmt, rule 7 ICMP. Do not invent",
+    "addresses for these - an invented address falls through to the cleanup rule",
+    "and the case then passes while testing nothing. Run",
+    "  python -m tools.suggest_cases --package External-FW --only 1,2,3,7",
+    "which derives one flow from each rule's own objects, prints what the",
+    "application says today, and emits the cases with expect:null. Confirm each",
+    "verdict against SmartConsole or a gateway log, then set expect.",
+    "Rule 7 is ICMP: its case carries \"protocol\": \"icmp\" and an ICMP type,",
+    "not a tcp port."
   ],
   "layer": "Network",
   "packages": {

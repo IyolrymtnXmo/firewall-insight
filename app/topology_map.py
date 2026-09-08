@@ -66,6 +66,28 @@ def _mgmt_role(o: dict[str, Any]) -> str | None:
     return "secondary" if blades.get("secondary") else "primary"
 
 
+def _names(ns: list[dict[str, Any]]) -> str:
+    return ", ".join(sorted(str(x.get("name") or x["id"]) for x in ns))
+
+
+def _mgmt_domain(o: dict[str, Any]) -> str:
+    """Which domain this management server belongs to, as the API states it.
+
+    A Multi-Domain estate answers show-gateways-and-servers with servers from
+    several domains in one payload. Pairing across that whole set would invent
+    HA between servers that never speak to each other, and would report "two
+    primaries" as an ambiguity when it is simply two domains, each with its
+    own. Where the field is absent - a plain SMC - every server falls into one
+    unnamed group, which is exactly the v4.16 behaviour.
+    """
+    d = o.get("domain")
+    if isinstance(d, dict):
+        return str(d.get("name") or d.get("uid") or "")
+    if isinstance(d, str):
+        return d
+    return ""
+
+
 def _role_for(typ: str, name: str, o: dict[str, Any]) -> str:
     if typ in CLUSTER_TYPES:
         return "cluster"
@@ -105,6 +127,9 @@ def network_map(objects: list[dict[str, Any]]) -> dict[str, Any]:
             mr = _mgmt_role(o)
             if mr:
                 node["mgmt_role"] = mr
+            dom = _mgmt_domain(o)
+            if dom:
+                node["mgmt_domain"] = dom
         nodes.append(node)
 
         ifaces = o.get("interfaces") if isinstance(o.get("interfaces"), list) else []
@@ -161,21 +186,43 @@ def network_map(objects: list[dict[str, Any]]) -> dict[str, Any]:
             "Cluster members not returned by show-gateways-and-servers, so they are "
             "not on the map: " + ", ".join(sorted(set(missing))) + ".")
 
-    # ---- management HA -------------------------------------------------
-    primaries = [n for n in nodes if n.get("mgmt_role") == "primary"]
-    secondaries = [n for n in nodes if n.get("mgmt_role") == "secondary"]
-    if len(primaries) == 1 and secondaries:
-        for sec in secondaries:
-            edges.append({"from": primaries[0]["id"], "to": sec["id"],
-                          "label": "management HA", "kind": "mgmt-ha"})
-        limitations.append(
-            "Management HA is shown as configured (one primary, "
-            f"{len(secondaries)} secondary), from management-blades. Whether the "
-            "peers are currently synchronised is not exposed by the object model.")
-    elif len(primaries) > 1:
-        limitations.append(
-            f"{len(primaries)} management servers report the primary role, so no "
-            "HA pairing is drawn - the object model cannot say which pairs with which.")
+    # ---- management HA, one domain at a time ---------------------------
+    # Three shapes are possible and all three have to be said out loud. The
+    # third one is why this was rewritten: a secondary whose primary the API
+    # did not return used to render identically to a stand-alone management
+    # server, and the map has no way to tell those apart - so it must say so
+    # rather than quietly pick the reassuring reading.
+    groups: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    for n in nodes:
+        role = n.get("mgmt_role")
+        if role not in ("primary", "secondary"):
+            continue
+        group = groups.setdefault(
+            str(n.get("mgmt_domain") or ""), {"primary": [], "secondary": []}
+        )
+        group[role].append(n)
+
+    for domain, group in sorted(groups.items()):
+        where = f" in domain {domain}" if domain else ""
+        primaries, secondaries = group["primary"], group["secondary"]
+        if len(primaries) == 1 and secondaries:
+            for sec in secondaries:
+                edges.append({"from": primaries[0]["id"], "to": sec["id"],
+                              "label": "management HA", "kind": "mgmt-ha"})
+            limitations.append(
+                f"Management HA{where} is shown as configured (one primary, "
+                f"{len(secondaries)} secondary), from management-blades. Whether the "
+                "peers are currently synchronised is not exposed by the object model.")
+        elif len(primaries) > 1:
+            limitations.append(
+                f"{len(primaries)} management servers{where} report the primary role "
+                f"({_names(primaries)}), so no HA pairing is drawn - the object model "
+                "cannot say which pairs with which.")
+        elif secondaries:
+            limitations.append(
+                f"{_names(secondaries)}{where} report the secondary role, but no primary "
+                "was returned by show-gateways-and-servers, so no HA pairing is drawn. "
+                "The primary may exist and be outside this API user's visibility.")
 
     nodes.extend(subnet_nodes.values())
     return {"nodes": nodes, "edges": edges, "count": len(nodes),

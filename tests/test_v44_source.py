@@ -16,7 +16,13 @@ def test_traffic_ui_accepts_domains_and_service_names():
     assert '<label class="field"><span>Destination</span>' in MAIN
     assert "<span>Port / Service</span>" in MAIN
     assert MAIN.count('placeholder="IP or FQDN"') == 2
-    assert 'placeholder="443, https, or a service object"' in MAIN
+    # By meaning, as the docstring says: v4.23 added ICMP to the same field, and
+    # pinning the whole sentence made a true statement about the UI fail.
+    import re
+    svc = re.search(r'id="port"[^>]*placeholder="([^"]+)"', MAIN)
+    assert svc, "the Port / Service input must still carry a placeholder"
+    for word in ("443", "https", "service object"):
+        assert word in svc.group(1), (word, svc.group(1))
     assert "service:port.value.trim()" in MAIN
 
 

@@ -41,7 +41,38 @@ There is no `add-*`, `set-*`, `delete-*`, `publish`, or `install-policy` code pa
 Every HTTP route is a `GET`. This is deliberate and should be preserved: the tool is
 intended to be safe to point at a production Management Server.
 
-`.env` holds Management credentials and is excluded by `.gitignore`. **Never commit it.**
+### The Gaia API needs its own guarantee (v4.27)
+
+Routing, interfaces and cluster state come from the **Gaia API** on each gateway,
+which is a different API with different credentials. It does not have the property
+that made the Management API easy to audit: its reads sit in the same command space
+as `set-static-route`, `add-license`, `run-script` and `run-reboot`, on the same
+session.
+
+So `app/gaia.py` carries an explicit read allowlist that is **enforced at call time**
+— a command outside it raises before any request is built, so it never reaches the
+network, not even as an authentication attempt:
+
+```
+show-routes  show-static-routes  show-interfaces  show-interface
+show-bond-interfaces  show-cluster-state  show-version  show-asset
+show-lldp-status  show-physical-interfaces-xcvr
+```
+
+`tests/test_v413_structure.py` scans `app/` for mutating Gaia command strings the
+same way it does for Management ones. The integration is **off unless configured**
+(`GAIA_ENABLED=false` by default), and the map distinguishes *routing was not read*
+from *there are no routes*.
+
+`.env` holds Management **and** Gaia credentials and is excluded by `.gitignore`.
+**Never commit it.**
+
+### One write, and it is local
+
+Capturing a policy snapshot (`GET /api/snapshot`) writes one JSON file under
+`snapshots/` on the machine running the application. It is the only write anywhere
+in the codebase, it changes nothing on any Check Point host, and the response
+returns `saved_to` rather than leaving the caller to discover it.
 
 ---
 
@@ -357,9 +388,16 @@ disabled rules, each with a cap. Document any change to it.
 Domain-based traffic queries resolve DNS from the machine running Firewall Insight,
 which may differ from what the gateway resolves under split DNS.
 
-`app/main.py` embeds the entire frontend (HTML, CSS, JavaScript) as a Python string.
-This is known technical debt; splitting it into `templates/` and `static/` is the
-recommended next refactor, but only once behaviour is stable.
+The network map is logical: it is drawn from configured interface addresses and the
+relationships the API states (cluster membership, management HA). It knows nothing
+about cabling, switches or live routing, and Management HA is reported as
+*configured*, never as *currently synchronised* — the object model does not carry
+sync state. The Traffic Path overlay on that map reports policy certainty and
+topology certainty separately, and draws the path by the weaker of the two.
+
+NAT correlation matches `original-source` and `original-destination` only;
+`original-service` is not evaluated, so a service-specific NAT rule can be reported
+where it would not fire.
 
 ---
 

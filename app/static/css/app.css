@@ -940,3 +940,52 @@ input:focus,select:focus{box-shadow:0 0 0 4px rgba(139,92,246,.16)}
 .light .topo-legend .sw.cluster{background:#e9dfff}
 .topo-legend .sw.external{background:#4a2a12;border:1.5px solid #ff9f5a}
 .light .topo-legend .sw.external{background:#ffeede}
+
+/* traced path overlay ------------------------------------------------
+   Three certainties, three visibly different lines. A dashed line for an
+   inferred path and a dotted, dimmer one for an unverified path is the whole
+   point of the feature: the map must not let a guess borrow the authority of
+   a proven path. Colour alone would not do it - it disappears for a
+   colour-blind reader and in a printed screenshot - so the dash pattern and
+   the opacity carry the difference too, and the bar above the map says it in
+   words as well. */
+.topo-g-edge.off-path line{opacity:.07}
+.topo-g-edge.off-path text{opacity:0}
+.topo-g-edge.on-path line{stroke-width:3.4;opacity:1}
+.topo-g-edge.on-path.path-exact line{stroke:var(--good);stroke-dasharray:none}
+.topo-g-edge.on-path.path-inferred line{stroke:var(--warn);stroke-dasharray:9 5}
+.topo-g-edge.on-path.path-unverified line{stroke:var(--warn);stroke-dasharray:2 6;opacity:.72}
+.topo-g-edge.on-path.path-none line{stroke:var(--bad);stroke-dasharray:2 6;opacity:.5}
+
+.topo-g-node.off-path{opacity:.22}
+.topo-g-node.on-path .chip{stroke-width:2.8}
+.topo-g-node.on-path.path-exact .chip{stroke:var(--good)}
+.topo-g-node.on-path.path-inferred .chip{stroke:var(--warn);stroke-dasharray:7 4}
+.topo-g-node.on-path.path-unverified .chip{stroke:var(--warn);stroke-dasharray:2 5}
+.topo-g-node.on-path.path-none .chip{stroke:var(--bad);stroke-dasharray:2 5}
+.topo-g-node.on-path.path-end .halo{fill:var(--purple);opacity:.20}
+
+.trace-bar{border:1px solid rgba(255,255,255,.10);border-radius:12px;
+  padding:12px 14px;margin:0 0 12px;background:rgba(255,255,255,.03)}
+.trace-bar.exact{border-color:rgba(56,217,150,.42)}
+.trace-bar.inferred,.trace-bar.unverified{border-color:rgba(246,196,83,.46)}
+.trace-bar.none{border-color:rgba(255,113,132,.42)}
+.trace-bar-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.trace-bar .hint{margin-top:4px}
+
+/* routing overlay (v4.27) -------------------------------------------
+   A route edge is a different kind of claim from a subnet edge: a subnet
+   link is derived from a configured interface address and is true for as
+   long as the config says so, while a route was read at one moment and can
+   change before the next packet. Different dash, different weight, and the
+   node it points at is drawn as an outline rather than a solid chip so a
+   prefix the map only knows by hearsay never looks like one it can see. */
+.topo-g-edge.route line{stroke:#7cc6ff;stroke-width:1.9;stroke-dasharray:6 4;opacity:.75}
+.topo-g-node.routed-network .chip{fill:none;stroke:#7cc6ff;stroke-dasharray:5 3}
+.topo-g-node.routed-network .lbl{fill:#bfe3ff}
+/* Legend swatches for the routing overlay. The dashed outline says the same
+   thing the node itself does: this prefix is on the map only because a routing
+   table mentioned it, not because an interface address puts it there. */
+.topo-legend .sw.routed{background:transparent;border:1.5px dashed #7cc6ff}
+.topo-legend .sw.routeline{background:transparent;border:0;border-top:2px dashed #7cc6ff;
+  border-radius:0;height:0;align-self:center}

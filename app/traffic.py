@@ -2,6 +2,14 @@ from __future__ import annotations
 from ipaddress import ip_address, ip_network
 from typing import Any
 import socket
+from .matching import (  # noqa: F401  (re-exported: importers use app.traffic)
+    address_match_state,
+    address_matches,
+    resolve_service_query,
+    service_match_state,
+    service_matches_query,
+    vpn_match_state,
+)
 from .resolver import ObjectResolver
 
 
@@ -23,168 +31,6 @@ def _uid(v):
 def _action(rule,res): return res.name(_uid(rule.get("action")))
 
 
-def _domain_candidates(text: str) -> tuple[list[str], str | None]:
-    value = str(text or "").strip()
-    try:
-        ip_address(value)
-        return [value], None
-    except ValueError:
-        pass
-
-    ips = []
-    try:
-        for info in socket.getaddrinfo(value, None, type=socket.SOCK_STREAM):
-            addr = info[4][0]
-            if addr not in ips:
-                ips.append(addr)
-    except OSError as exc:
-        return [], str(exc)
-    return ips, None
-
-
-def _domain_object_match(uid: str, domain: str, res: ObjectResolver) -> bool:
-    o = res.obj(uid)
-    name = str(o.get("name") or "").strip().lower()
-    typ = str(o.get("type") or "").lower()
-    query = str(domain or "").strip().lower().rstrip(".")
-
-    if not query:
-        return False
-
-    # Check Point DNS-domain objects commonly use the domain itself as name.
-    candidate = name.lstrip(".").rstrip(".")
-    if "dns-domain" in typ or "domain" in typ:
-        if candidate == query:
-            return True
-        # Leading-dot / sub-domain style object: .example.com
-        if name.startswith(".") and (query == candidate or query.endswith("." + candidate)):
-            return True
-
-    members = o.get("members")
-    if isinstance(members, list):
-        for child in members:
-            cu = child if isinstance(child, str) else child.get("uid") if isinstance(child, dict) else None
-            if cu and _domain_object_match(cu, query, res):
-                return True
-    return False
-
-
-def address_matches(values: Any, address_text: str, res: ObjectResolver) -> tuple[bool, str]:
-    raw = str(address_text or "").strip()
-    try:
-        ip = ip_address(raw)
-        ips = [ip]
-        is_domain = False
-        dns_error = None
-    except ValueError:
-        is_domain = True
-        resolved, dns_error = _domain_candidates(raw)
-        ips = []
-        for value in resolved:
-            try:
-                ips.append(ip_address(value))
-            except ValueError:
-                pass
-
-    for uid in res.uids(values):
-        if res.is_any_uid(uid):
-            if is_domain and ips:
-                return True, f"Any · {raw} → {', '.join(str(x) for x in ips[:4])}"
-            return True, "Any"
-
-        if is_domain and _domain_object_match(uid, raw, res):
-            return True, f"{res.describe_uid(uid)} · domain match"
-
-        atoms, _complete = res.address_atoms_partial(uid)
-        for ip in ips:
-            n = int(ip)
-            if any(a.version == ip.version and a.start <= n <= a.end for a in atoms):
-                if is_domain:
-                    return True, f"{res.describe_uid(uid)} · {raw} → {ip}"
-                return True, res.describe_uid(uid)
-
-    if is_domain:
-        if ips:
-            return False, f"No matching object for {raw} ({', '.join(str(x) for x in ips[:4])})"
-        return False, f"Domain not resolved/matched: {raw}" + (f" ({dns_error})" if dns_error else "")
-    return False, "No matching object"
-
-
-def _service_object_by_name(name: str, res: ObjectResolver) -> tuple[str, list] | None:
-    q = str(name or "").strip().lower()
-    if not q:
-        return None
-    for uid, obj in res.objects.items():
-        if str(obj.get("name") or "").strip().lower() != q:
-            continue
-        atoms = res.service_atoms(uid)
-        if atoms:
-            return uid, atoms
-    return None
-
-
-def resolve_service_query(service_text: str, proto: str, res: ObjectResolver) -> dict[str, Any]:
-    raw = str(service_text or "").strip()
-    p = str(proto or "tcp").lower()
-
-    if raw.isdigit():
-        port = int(raw)
-        if not (0 <= port <= 65535):
-            raise ValueError("Port must be between 0 and 65535")
-        return {
-            "input": raw, "protocol": p, "port": port,
-            "atoms": [(p, port, port)],
-            "resolved_by": "numeric-port",
-            "display": f"{p.upper()}/{port}",
-        }
-
-    cp_obj = _service_object_by_name(raw, res)
-    if cp_obj:
-        uid, atoms = cp_obj
-        atom_tuples = [(a.proto, a.start, a.end) for a in atoms]
-        # Use a representative port for legacy NAT/display paths.
-        selected = next((a for a in atoms if a.proto in (p, "any")), atoms[0])
-        return {
-            "input": raw,
-            "protocol": selected.proto if selected.proto != "any" else p,
-            "port": selected.start,
-            "atoms": atom_tuples,
-            "resolved_by": "checkpoint-service-object",
-            "object_uid": uid,
-            "display": res.describe_uid(uid),
-        }
-
-    # OS standard service database: https, ssh, smtp, domain, ntp, etc.
-    try:
-        port = socket.getservbyname(raw.lower(), p)
-        return {
-            "input": raw, "protocol": p, "port": port,
-            "atoms": [(p, port, port)],
-            "resolved_by": "standard-service-name",
-            "display": f"{raw} ({p.upper()}/{port})",
-        }
-    except OSError:
-        raise ValueError(
-            f"Unknown service '{raw}'. Enter a port number, a standard service "
-            f"name (for example https/ssh/smtp), or an exact Check Point service object name."
-        )
-
-
-def service_matches_query(values: Any, query: dict[str, Any], res: ObjectResolver) -> tuple[bool, str]:
-    q_atoms = query.get("atoms") or []
-    for uid in res.uids(values):
-        if res.is_any_uid(uid):
-            return True, "Any"
-        atoms, _complete = res.service_atoms_partial(uid)
-        for qp, qs, qe in q_atoms:
-            for a in atoms:
-                proto_ok = a.proto == "any" or qp == "any" or a.proto == qp
-                # A queried service is covered when its range overlaps the rule service.
-                if proto_ok and not (qe < a.start or qs > a.end):
-                    return True, res.describe_uid(uid)
-    return False, "No matching service"
-
-
 def _inline_ref_name(rule: dict[str, Any], uid_to_name: dict[str, str] | None = None) -> str | None:
     value = rule.get("inline-layer")
     if not value:
@@ -195,100 +41,6 @@ def _inline_ref_name(rule: dict[str, Any], uid_to_name: dict[str, str] | None = 
         return (uid_to_name or {}).get(value) or value
     return None
 
-
-
-def address_match_state(values: Any, address_text: str, res: ObjectResolver) -> tuple[str, str]:
-    """
-    Tri-state address matcher:
-      match    = condition is proven to match
-      no-match = condition is proven not to match
-      unknown  = rule uses an object type this static simulator cannot evaluate
-    """
-    raw = str(address_text or "").strip()
-    try:
-        ip = ip_address(raw)
-        ips = [ip]
-        is_domain = False
-    except ValueError:
-        is_domain = True
-        resolved, _ = _domain_candidates(raw)
-        ips = []
-        for value in resolved:
-            try:
-                ips.append(ip_address(value))
-            except ValueError:
-                pass
-
-    saw_unknown = False
-    unknown_names = []
-
-    for uid in res.uids(values):
-        if res.is_any_uid(uid):
-            return "match", "Any"
-
-        obj = res.obj(uid)
-        typ = str(obj.get("type") or "").lower()
-        name = str(obj.get("name") or uid)
-
-        if is_domain and _domain_object_match(uid, raw, res):
-            return "match", f"{res.describe_uid(uid)} · domain match"
-
-        # Partial resolution: a group with one unmodellable member still
-        # proves a match through the members we DO understand.
-        atoms, complete = res.address_atoms_partial(uid)
-
-        for ip in ips:
-            n = int(ip)
-            if any(a.version == ip.version and a.start <= n <= a.end for a in atoms):
-                return "match", res.describe_uid(uid)
-
-        if not complete:
-            saw_unknown = True
-            blockers = res.unmodelled_names(uid, "address")
-            label = f"{name} [{typ or 'unknown'}]"
-            for blocker in (blockers or [label]):
-                entry = blocker if blocker == label else f"{name} \u2192 {blocker}"
-                if entry not in unknown_names:
-                    unknown_names.append(entry)
-
-    if saw_unknown:
-        return "unknown", "Static match unavailable for " + ", ".join(unknown_names[:4])
-
-    return "no-match", "No matching object"
-
-
-def service_match_state(values: Any, query: dict[str, Any], res: ObjectResolver) -> tuple[str, str]:
-    q_atoms = query.get("atoms") or []
-    saw_unknown = False
-    unknown_names = []
-
-    for uid in res.uids(values):
-        if res.is_any_uid(uid):
-            return "match", "Any"
-
-        # Partial resolution: AD-Services contains ALL_DCE_RPC, which has no
-        # fixed port, but a TCP/389 query still matches its ldap member.
-        atoms, complete = res.service_atoms_partial(uid)
-
-        for qp, qs, qe in q_atoms:
-            for a in atoms:
-                proto_ok = a.proto == "any" or qp == "any" or a.proto == qp
-                if proto_ok and not (qe < a.start or qs > a.end):
-                    return "match", res.describe_uid(uid)
-
-        if not complete:
-            obj = res.obj(uid)
-            saw_unknown = True
-            name = str(obj.get("name") or uid)
-            label = f"{name} [{obj.get('type') or 'unknown'}]"
-            for blocker in (res.unmodelled_names(uid, "service") or [label]):
-                entry = blocker if blocker == label else f"{name} \u2192 {blocker}"
-                if entry not in unknown_names:
-                    unknown_names.append(entry)
-
-    if saw_unknown:
-        return "unknown", "Static service match unavailable for " + ", ".join(unknown_names[:4])
-    return "no-match", "No matching service"
 
 
 def trace_layer_candidates(
@@ -325,9 +77,11 @@ def trace_layer_candidates(
                 "source_state":"unknown",
                 "destination_state":"unknown",
                 "service_state":"unknown",
+                "vpn_state":"unknown",
                 "source_match":"Negated source requires gateway-equivalent evaluation",
                 "destination_match":"Negated destination requires gateway-equivalent evaluation",
                 "service_match":"Negated service requires gateway-equivalent evaluation",
+                "vpn_match":"Not evaluated: the rule is already unevaluable",
             })
             continue
 
@@ -343,7 +97,12 @@ def trace_layer_candidates(
         if vs=="no-match":
             continue
 
-        states=(ss,ds,vs)
+        # The VPN column is a fourth dimension. It never returns no-match, so
+        # it can only ever weaken a rule from match to unknown - it can never
+        # make a provable miss uncertain.
+        ns,no=vpn_match_state(r.get("vpn"),res)
+
+        states=(ss,ds,vs,ns)
         overall="match" if all(x=="match" for x in states) else "unknown"
         candidates.append({
             "rule":rn,
@@ -354,9 +113,11 @@ def trace_layer_candidates(
             "source_state":ss,
             "destination_state":ds,
             "service_state":vs,
+            "vpn_state":ns,
             "source_match":so,
             "destination_match":do,
             "service_match":vo,
+            "vpn_match":no,
             "track":res.name(_uid(r.get("track"))),
             "comments":r.get("comments","") or "",
         })
@@ -595,28 +356,10 @@ def trace_access_tree(
 
 
 
-def _nat_rules(items):
-    out=[]
-    def walk(xs):
-        for x in xs or []:
-            if not isinstance(x,dict): continue
-            if x.get("type")=="nat-rule": out.append(x)
-            if isinstance(x.get("rulebase"),list): walk(x["rulebase"])
-    walk(items); return out
-
-def correlate_nat(payload:dict[str,Any],src:str,dst:str,res_extra:dict[str,dict]|None=None)->list[dict[str,Any]]:
-    objs={o["uid"]:o for o in payload.get("objects-dictionary",[]) if isinstance(o,dict) and o.get("uid")}
-    if res_extra: objs.update(res_extra)
-    res=ObjectResolver(objs); findings=[]
-    for r in _nat_rules(payload.get("rulebase",[])):
-        if not r.get("enabled",True): continue
-        sm,so=address_matches(r.get("original-source"),src,res)
-        dm,do=address_matches(r.get("original-destination"),dst,res)
-        if not (sm and dm): continue
-        findings.append({"rule":r.get("rule-number"),"name":r.get("name","") or "","original_source":so,"original_destination":do,"translated_source":res.describe_list(r.get("translated-source")),"translated_destination":res.describe_list(r.get("translated-destination")),"translated_service":res.describe_list(r.get("translated-service"))})
-        break
-    return findings
-
+# correlate_nat moved to app/nat_correlate.py in v4.20 (see its docstring):
+# it became tri-state, and traffic.py is under a 700-line module guard.
+# Re-exported so `from app.traffic import correlate_nat` keeps working.
+from .nat_correlate import correlate_nat  # noqa: E402,F401
 
 # network_map moved to app/topology_map.py in v4.16 (see its docstring).
 # Re-exported so `from app.traffic import network_map` keeps working.

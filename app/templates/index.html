@@ -47,6 +47,12 @@
           Path</button>
         <button data-page="mapping" data-icon="⌘" data-label="Network Mapping" onclick="showPage('mapping',this)">⌘
           Network Mapping</button>
+        <button data-page="diff" data-icon="⧗" data-label="Policy Diff" onclick="showPage('diff',this)">⧗ Policy
+          Diff</button>
+        <button data-page="compliance" data-icon="✓" data-label="Compliance"
+          onclick="showPage('compliance',this)">✓ Compliance</button>
+        <button data-page="health" data-icon="♥" data-label="Gateway Health"
+          onclick="showPage('health',this)">♥ Gateway Health</button>
 
       </div>
       <div class="sidebar-bottom">
@@ -214,6 +220,8 @@
                 <button onclick="goTo('nat')">Analyze NAT Policy</button>
                 <button onclick="goTo('traffic')">Trace Source → Destination</button>
                 <button onclick="goTo('mapping')">Open Network Topology</button>
+                <button onclick="goTo('diff')">Compare Two Snapshots</button>
+                <button onclick="goTo('compliance')">Run a Compliance Profile</button>
               </div>
               <div class="hint" style="margin-top:16px">The tool remains read-only and does not publish or install
                 policy.</div>
@@ -305,6 +313,8 @@
                 id="nat-disabled-tab-count"></span></button>
             <button onclick="showNatTab('notrans',this)">Possible No-Translation <span
                 id="nat-notrans-tab-count"></span></button>
+            <button onclick="showNatTab('installon',this)">Install-On Targets <span
+                id="nat-installon-tab-count"></span></button>
           </div>
           <div id="natResults"></div>
 
@@ -348,6 +358,25 @@
               </table>
             </div>
           </div>
+          <div id="nat-installon-view" style="display:none">
+            <h3>Install-On Targets</h3>
+            <p class="muted" id="nat-installon-note">Each NAT rule's install-on target compared with the gateways
+              show-gateways-and-servers returns. &quot;Policy Targets&quot; means every gateway in the package and is
+              never reported here.</p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Rule</th>
+                    <th>Name</th>
+                    <th>Install On</th>
+                    <th>Why it is reported</th>
+                  </tr>
+                </thead>
+                <tbody id="nat-installon-body"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -365,12 +394,80 @@
               <select id="proto">
                 <option>tcp</option>
                 <option>udp</option>
+                <option>icmp</option>
               </select></label>
             <label class="field"><span>Port / Service</span>
-              <input id="port" type="text" placeholder="443, https, or a service object"></label>
+              <input id="port" type="text" placeholder="443, https, a service object, or an ICMP type"></label>
             <button class="primary" onclick="trace()">Analyze Path</button>
           </div>
           <div id="traceResult" style="margin-top: 24px;"></div>
+        </div>
+      </section>
+
+      <section id="health" class="page">
+        <div class="panel">
+          <h2>Gateway Health</h2>
+          <p class="muted" style="margin:6px 0 0">Interface state, cluster roles and software build, read over the
+            read-only Gaia API. This is <b>not monitoring</b> — it is one reading at one instant. A gateway that did
+            not answer produces no findings, which is not the same as producing none, so it is reported as a finding
+            of its own. Needs <code>GAIA_ENABLED</code> in <code>.env</code>.</p>
+          <div class="controls field-row" style="margin-top:14px">
+            <button class="primary" onclick="runHealth(event)">Read State Now</button>
+            <label class="field"><span>Compare with baseline</span>
+              <select id="healthBaseline"><option value="">Do not compare</option></select></label>
+            <button onclick="loadBaselines(event)">Refresh Baselines</button>
+          </div>
+          <p id="healthNote" class="hint"></p>
+          <div id="healthResult" style="margin-top:20px"></div>
+        </div>
+      </section>
+
+      <section id="compliance" class="page">
+        <div class="panel">
+          <h2>Compliance</h2>
+          <p class="muted" style="margin:6px 0 0">A profile is a YAML file <b>you</b> own, listing the checks you have
+            decided apply to your estate. This application ships no baseline as authority — the profiles below are
+            starting points, and every check reports the clause it came from, or is labelled a house rule when it has
+            none. There is no compliance percentage: a single number would have to price an unverifiable check, and
+            every available price misleads.</p>
+          <div class="controls field-row" style="margin-top:14px">
+            <label class="field"><span>Profile</span>
+              <select id="profileSel"></select></label>
+            <label class="field"><span>Evaluate</span>
+              <select id="complianceSource" onchange="complianceSourceChanged()">
+                <option value="live">The selected package, live</option>
+                <option value="snapshot">A stored snapshot</option>
+              </select></label>
+            <label class="field" id="complianceSnapWrap" style="display:none"><span>Snapshot</span>
+              <select id="complianceSnap"></select></label>
+            <button class="primary" onclick="runCompliance(event)">Run</button>
+            <button onclick="loadProfiles(event)">Refresh Profiles</button>
+          </div>
+          <p id="profileNote" class="hint"></p>
+          <div id="complianceResult" style="margin-top:20px"></div>
+        </div>
+      </section>
+
+      <section id="diff" class="page">
+        <div class="panel">
+          <h2>Policy Diff</h2>
+          <p class="muted" style="margin:6px 0 0">What changed between two audits. Rules are matched by their Check
+            Point uid, never by rule number, so inserting one rule does not report every rule below it as rewritten.
+            Capturing a snapshot writes one JSON file to this machine; nothing is sent to the Management Server but the
+            same read-only <code>show-*</code> calls every other page makes.</p>
+          <div class="controls field-row" style="margin-top:14px">
+            <button class="primary" onclick="takeSnapshot(event)">Capture Snapshot of Selected Package</button>
+            <button onclick="loadSnapshots(event)">Refresh List</button>
+          </div>
+          <div class="controls field-row">
+            <label class="field"><span>Older snapshot (A)</span>
+              <select id="snapA"></select></label>
+            <label class="field"><span>Newer snapshot (B)</span>
+              <select id="snapB"></select></label>
+            <button class="primary" onclick="runDiff(event)">Compare</button>
+          </div>
+          <p id="snapNote" class="hint"></p>
+          <div id="diffResult" style="margin-top:20px"></div>
         </div>
       </section>
 
@@ -379,10 +476,15 @@
           <div class="section-title">
             <h2>Network Mapping</h2>
             <div><button class="primary" onclick="loadMap(event)">Load Topology</button> <button
+                onclick="loadMap(event,true)">Load with Routing</button> <button
                 onclick="mapMode('topology')">Topology</button> <button
                 onclick="mapMode('inventory')">Inventory</button></div>
           </div>
-          <p class="muted">Logical topology only. Physical cabling, switches and live routing are not inferred.</p>
+          <p class="muted">Logical topology only. Physical cabling, switches and live routing are not inferred.
+            <b>Load with Routing</b> does not change that: it <i>reads</i> each gateway's routing table over the
+            read-only Gaia API rather than inferring one — a snapshot at read time, not a live view — and needs
+            <code>GAIA_ENABLED</code> in <code>.env</code>. Route entries the reader could not parse are counted and
+            named, never dropped.</p>
 
           <div class="topo-bar">
             <div class="topo-seg" role="group" aria-label="Map layout">
@@ -452,10 +554,14 @@
             <span><i class="sw external"></i>Faces internet</span>
             <span><i class="sw ha"></i>Management HA</span>
             <span><i class="sw merged"></i>Merged subnets</span>
+            <span><i class="sw routed"></i>Reached by a route only</span>
+            <span><i class="sw routeline"></i>Route (read at one instant)</span>
             <span class="hint">Click a device to expand or collapse it &middot; click a subnet, or double-click
               anything, to isolate it &middot; drag a node to place it &middot; drag the background to pan, scroll to
               zoom</span>
           </div>
+
+          <div id="topoTraceBar" style="display:none"></div>
 
           <div class="topo-stage">
             <div id="topology" class="topology">

@@ -12,6 +12,16 @@ class Settings(BaseSettings):
     checkpoint_rate_limit_base_delay: float = 2.0
     checkpoint_cache_ttl: int = 300
 
+    # Gaia API (routing, interfaces, cluster state). Off unless configured:
+    # the application must keep working exactly as before for anyone who never
+    # sets these, and a half-configured integration must not start guessing.
+    gaia_enabled: bool = False
+    gaia_user: str = ""
+    gaia_password: str = ""
+    gaia_hosts: str = ""            # comma-separated gateway addresses
+    gaia_verify_ssl: bool = False
+    gaia_timeout: float = 30.0
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False)
 
 settings = Settings()

@@ -231,7 +231,24 @@ async def analyze_nat(c, package):
         return cached
     async with heavy_lock:
         data = await c.show_nat_rulebase(package)
-        result = analyze_nat_rulebase(data)
+        # install-on validation needs to know which gateways exist. Fetch the
+        # same read-only list the map uses, and cache it so a NAT analysis and
+        # a map render do not both pay for it. When the call fails the analysis
+        # still runs - analyze_nat_rulebase() then reports that the check did
+        # not run, which is not the same as reporting no problems.
+        gateways = cache_get("gateways-and-servers")
+        gateway_error = None
+        if gateways is None:
+            try:
+                gateways = await c.show_gateways_and_servers()
+                cache_set("gateways-and-servers", gateways)
+            except CheckPointAPIError as exc:
+                gateways, gateway_error = None, str(exc)
+        result = analyze_nat_rulebase(data, gateways=gateways)
+        if gateway_error:
+            result["notes"].append(
+                f"Gateway list unavailable, so install-on targets were not checked: {gateway_error}"
+            )
         cache_set(key, result)
         cache_set(f"nat:{package}", data)
         return result

@@ -4,6 +4,664 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.29.0 — a gateway that could not be read is not a gateway that was not there
+
+Found by using the tool, not by reading it. The route on `Internal-GW01` was
+corrected, `172.23.31.176` answered the Gaia API for the first time, and the
+diff against the 06:26 baseline said:
+
+```
+172.23.31.176   gateway-added
+"This gateway is in the current reading and not in the baseline."
+```
+
+That sentence is false, and the baseline file proves it: the host is sitting in
+`unreachable`, with the connection error recorded beside it. `diff_health()`
+built its index from `report["gateways"]` alone and never looked at the other
+half of the report — so a gateway it had explicitly recorded as *present and
+unreadable* came back as one it had never heard of.
+
+The distinction is the whole point of the page. **"A gateway was added to the
+estate" and "a gateway we could not read is now readable" call for opposite
+responses**: the first is a change somebody should be able to point at a ticket
+for, the second is a fault that was fixed — or, read the other way, a firewall
+that has just stopped answering. Reporting the second as the first claims the
+estate changed when it did not, and silently drops the recorded error, which is
+the only evidence that says which of the two happened.
+
+Two new kinds, each carrying the reason:
+
+- `gateway-became-readable` — answered now, did not in the baseline, and the
+  baseline's error is quoted in the line. It is deliberately *not* followed by
+  an interface-by-interface diff: there is nothing to compare against, and
+  inventing an `interface-added` line for every port on the box would bury the
+  one fact that matters.
+- `gateway-became-unreadable` — read in the baseline, silent now, with the
+  current error quoted. Severity is not duplicated here; the read itself
+  already raises the **high** `not-read` finding.
+
+Unreadable on both sides stays silent — still broken is not news, and the
+current reading says it anyway. A gateway that was unreachable in the baseline
+and is absent from the current reading altogether is now reported
+`gateway-missing`, which the old loop could not do at all: it iterated the
+readable half, so a gateway could be dropped from the configured list without
+the diff ever mentioning it, provided it was already unreachable when the
+baseline was taken.
+
+Baselines written before this release have no `unreachable` key. Absent is not
+the same as empty, but it reads the same way here, and old baselines still diff.
+
+### Tests
+
+677 → 687. The payloads in `test_v429_health_diff_readability.py` are the real
+shape, taken from `health-baselines/health-20260908062638.json` — the baseline
+that produced the wrong line — trimmed to the fields the diff compares.
+
+---
+
+## v4.28.3 — one failing read must not cost the whole gateway
+
+Found by thinking ahead of the lab rather than behind it. `Internal-GW01` is a
+standalone gateway, so `show-cluster-state` will fail on it — and
+`read_all_state()` wrapped all three reads in one `try`, so a command that was
+never going to apply would have taken its interfaces and its version down with
+it. The gateway whose access is currently being restored is exactly that
+gateway, so it would have reappeared as *still unreadable*, for a completely
+different reason, and the obvious conclusion would have been that the routing
+fix had not worked.
+
+This is the rule the routing reader already follows — one gateway failing costs
+only that gateway — applied one level down: **one failing read costs only that
+read.** Each of the three now stands on its own, what succeeded is kept, and
+what failed is reported:
+
+- `cluster` failing is **medium**, and the detail says a standalone gateway has
+  no cluster state, *which is expected rather than wrong*.
+- `interfaces` failing is **high**, because everything else reported for that
+  gateway rests on it.
+
+A gateway that answered nothing at all is still `unreachable`, unchanged.
+
+### Tests
+
+670 → 677, including the client half driven through a fake transport.
+
+---
+
+## v4.28.2 — the routing overlay reached the payload and never reached the map
+
+v4.28.1 fixed the `limit` parameter, the Gaia API answered, and the page said:
+
+```
+Loaded 23 nodes and 31 relationships     (was 22 and 25)
+11 node(s) · 14 link(s)                  (unchanged)
+```
+
+Six route edges and one routed-network node arrived in the JSON and the graph
+drew exactly what it drew before routing existed. `buildTopoModel()` keeps
+nodes whose role is one of gateway / management / device / cluster /
+cluster-member, plus `role === 'network'`; `routed-network` is none of those.
+`buildTopoGraph()` turns edges into links from the interface-derived cells and
+from `rel`, which filters `kind` to `membership` or `mgmt-ha`; `route` is
+neither. Both were dropped in silence, and every Python test still passed
+because the payload was correct — the loss happened after it.
+
+Route links and routed-network nodes are now part of the graph, resolved
+through Auto Merge and cluster collapse the same way the traced-path overlay
+resolves, so the overlay does not vanish the moment somebody merges a subnet.
+A routed prefix is drawn as a dashed outline rather than a solid chip, and the
+legend says why: **reached by a route only** — the estate knows that subnet
+exists because a routing table mentioned it, not because an interface address
+puts it there.
+
+`tests/js/scope_check.mjs` now builds the graph from a map carrying route
+edges, with Auto Merge both off and on, and fails if either the link or the
+node is missing. Verified by re-introducing the defect: both checks fail with
+`route edges were dropped by the graph model`.
+
+### Changed
+
+- Map legend gains two entries for the routing overlay.
+
+---
+
+## v4.28.1 — two bugs the lab found, and the test that should have found them first
+
+Both were shipped by this project, both survived 668 passing tests, and the
+first person to hit either one was the user, on the lab, a week before the
+review. That is the part worth writing down.
+
+**`d is not defined` — the NAT page and the dashboard, both dead.** v4.25 added
+the install-on view inside `renderNatSpecialViews(data)` and referred to `data`
+as `d`:
+
+```js
+const checked=(d.summary||{}).install_on_checked===true;
+```
+
+Valid JavaScript. `node --check` passes. Every UI test in the suite looks for
+*strings inside app.js*, and the string was there — it just named something
+that does not exist at runtime. A source-scanning test can never catch this
+class, so `tests/js/scope_check.mjs` now **runs** the real file in a stubbed DOM
+and calls twenty renderers with payloads shaped like the API's.
+
+The stub is deliberately mean: element ids are read out of `index.html`,
+because a browser exposes them as window properties and that is why the code
+can say `natResults` rather than a `getElementById` call — and every *other*
+identifier stays undefined, so a stray one throws in the test rather than in
+front of somebody. Verified by putting `d.summary` back: the harness fails with
+exactly `d is not defined`. It skips, rather than fails, where node is absent.
+
+**The map reported "no routing" from the gateways the probe had just read.**
+`GaiaClient.routes()` sent `{"limit": 500}`; R82 answers
+`HTTP 400: Validation Error` to a `limit` on `show-routes` and
+`show-static-routes`. `tools/probe_gaia.py` sends `{}` and worked perfectly,
+which is why the probe output looked healthy while the Network Mapping page
+said the same two gateways could not be read. The client now sends what the
+probe sends. The payload carries `from`/`to`/`total`, so a routing table larger
+than one page will need the real parameter names from that build — a guess
+repeated is what caused this.
+
+### Changed
+
+- A compliance offender now says which clause caught it. On the lab, "Telnet
+  (TCP/23) is never permitted" fires on rule 1 because its service is `Any`,
+  and `matches the forbidden condition` was true and useless. It now reads
+  `service Any covers TCP/23`.
+
+### Tests
+
+668 → 670, and the two new ones are the only kind that could have caught the
+first bug.
+
+---
+
+## v4.28.0 — the probe met a real gateway, and the readers lost
+
+`tools/probe_gaia.py` existed so the route readers could be narrowed to what a
+build actually answers. Its first run against Check Point Gaia R82 reported:
+
+```
+show-routes: reader understood 7/7 route entries
+  0.0.0.0/0        via            Static
+  192.168.10.0/24  via            Static
+```
+
+Seven of seven, and **every next hop dropped** — including the default route,
+which the gateway plainly reports as via 172.23.34.254. Gaia nests it one level
+deeper than the reference examples: `next-hop` is an object carrying a
+`gateways` list whose entries hold both the address and the egress interface,
+while a connected route carries only `interface` and correctly has no gateway
+at all. `show-static-routes` uses a third shape again — a list keyed `gateway`
+— which happened to match what had been written, so half the feature looked
+fine and the other half failed silently.
+
+That is the same failure this project exists to refuse, committed by this
+project: **a counter that reports success while discarding the field that
+carries the meaning.** `parsed` now counts routes that were *understood*, not
+routes whose prefix happened to be legible, and a route whose next hop is in an
+unmodelled shape is counted apart and named on the map.
+
+`tests/fixtures/gaia_r82_probe.py` holds the unedited payloads. They are the
+oracle now — principle 11 applied to the second API.
+
+### Added — routing that says something the old map could not
+
+With next hops read, the overlay can do the thing an interface-only map never
+could: **a route whose next hop is an address the map already knows draws an
+edge between the two devices.** "External-GW01 reaches 192.168.10.0/24 through
+Internal-GW01" is a relationship no `show-gateways-and-servers` payload
+contains, and it is visible in the lab right now. A connected route to a subnet
+the map already draws is counted as confirmation rather than drawn twice, and
+`127.0.0.0/8` is skipped with a stated reason rather than dropped.
+
+### Added — Gateway Health (feature 4b)
+
+`app/health.py`, written against the same fixtures. What the real data punishes:
+
+- `"ipv4-address": "Not-Configured"` is a **string**, not an absent field. Read
+  carelessly it invents a host called Not-Configured.
+- `"ipv4-mask-length": "24"` is a string too.
+- `enabled: false` with an address configured is a live finding in the lab —
+  `Mgmt`, 192.168.99.1 — and the Management API **cannot see it**, because that
+  API reports the configured address, not the link state. This is the finding
+  that justifies the second API.
+
+Findings: an interface configured but administratively down; a cluster whose
+status is not `ok`; **two members both claiming active** (split brain, detected
+across gateways rather than from one); no active member; software build drift
+across the estate; and a gateway that did not answer — at high severity,
+because *silence is not health* and a page people read for reassurance must
+never let it look like it.
+
+Baselines: every reading is saved, and `?baseline=<id>` diffs against an
+earlier one. A cluster role flip is reported as what it is — *External-GW01
+went active → standby. A failover happened, or somebody moved it.* — alongside
+interface state and address changes, and upgrades.
+
+### Tests
+
+620 → 661. New: `test_v428_gaia_real_payload.py` (15) and `test_v428_health.py`
+(33), both driven by the captured payloads. Three v4.27 tests were updated
+where the semantics deliberately changed, each with a comment saying why.
+
+### Still open
+
+`Internal-GW01` (172.23.31.176) refused the connection during the probe — its
+route was removed and no policy permits the Gaia port from the workstation. The
+map and the health page both name it rather than drawing the estate as if it
+were smaller.
+
+---
+
+## v4.27.0 — routing, and the guarantee that had to grow to hold it
+
+The map has always said the same thing about itself: *logical topology only,
+physical cabling, switches and live routing are not inferred*. Routing was the
+obvious gap, and the obvious way to close it — SSH to each gateway and parse
+`netstat -rn` — would have cost the property the whole project is built on.
+
+The Gaia API closes it without that trade. It is a real HTTPS API on every
+gateway, it has `show-routes`, `show-interfaces` and `show-cluster-state`, and
+it needs no shell. But it has a shape the Management API does not: those reads
+sit in the same command space as `set-static-route`, `add-license`,
+`run-script` and `run-reboot`, reachable over the same session. Reaching that
+API on the strength of "we only call the read ones" would have downgraded a
+structural guarantee into a promise.
+
+So the allowlist in `app/gaia.py` is enforced in code, at call time, before any
+request is built — a refused command never reaches the network, not even as an
+authentication attempt — and `tests/test_v413_structure.py` now scans for
+mutating *Gaia* command strings the same way it has always scanned for
+mutating Management ones. Adding a capability tightened the guarantee. That is
+the only acceptable direction for a tool people are asked to point at
+production.
+
+**The readers do not pretend to know the payload.** Gaia's envelopes differ
+between builds and this project has no lab-verified sample of each. Writing a
+parser against a shape assumed from documentation is precisely what README
+principle 11 forbids, so `app/gaia_topology.py` tries the plausible keys and —
+the part that matters — keeps what it could not read. Unparsed entries are
+counted, carried with their raw body, surfaced in the map's `limitations` and
+raised as a toast. A routing map that silently omits the four routes it did not
+understand is worse than one that admits to reading six of ten, because the
+first one looks finished.
+
+**"I did not look" and "there is nothing there" are different answers.**
+Asking for routing while `GAIA_ENABLED` is false returns a map that says so, in
+its limitations and in a notification: *this is not evidence that the gateways
+have no routes*. A gateway that failed to answer is named rather than dropped,
+for the same reason.
+
+**A route is drawn as a weaker claim than a subnet.** A subnet link comes from
+a configured interface address and holds as long as the config does; a route
+was read at one instant and can change before the next packet. Different dash,
+different colour, and a prefix the map knows only by hearsay is drawn as an
+outline rather than a solid chip.
+
+### Added
+
+- `app/gaia.py` — `GaiaClient` with the enforced read allowlist, session
+  handling, and `read_all_routes()` which lets one unreachable gateway fail
+  without costing the others.
+- `app/gaia_topology.py` — shape-tolerant route readers and the map overlay.
+- `tools/probe_gaia.py` — read-only. Calls each allowlisted read against each
+  configured gateway, prints the envelope shape and what the readers made of
+  it, and writes the raw answers to `gaia-probe.json` so the parsers can be
+  narrowed to a build's truth instead of widened to every guess.
+- `GET /api/network-map?routing=true`, and a **Load with Routing** button.
+- `GAIA_ENABLED` / `GAIA_USER` / `GAIA_PASSWORD` / `GAIA_HOSTS` /
+  `GAIA_VERIFY_SSL` / `GAIA_TIMEOUT`, documented in `.env.example` and off by
+  default — the application behaves exactly as before for anyone who never
+  sets them.
+
+### Still to verify against the lab
+
+The route readers have never met a real Gaia payload. `tools/probe_gaia.py`
+exists to fix that, and until it has been run against R82 the parsed/unparsed
+counts on the map are the only trustworthy statement about how well they did.
+
+### Tests
+
+577 → 620. New: `test_v427_gaia_allowlist.py` (23) — including that a mutating
+command raises before any transport call — and `test_v427_gaia_routing.py` (18),
+which feeds the readers three different plausible envelopes and asserts the
+unreadable entries survive as findings.
+
+---
+
+## v4.26.0 — compliance as code: the customer writes the standard
+
+The question that had to be answered before this feature was worth building
+was *why would anyone believe our baseline?* Every estate is different, so a
+baseline this application invents is an opinion in the costume of a
+requirement, and an auditor is right to throw it out. Check Point's own
+Compliance blade already ships vendor-authored regulatory content; a worse
+copy of that is not a contribution.
+
+So the tool ships no authority. A **profile** is a YAML or JSON file the
+customer owns, listing the checks they have decided apply to them, and the
+engine reports conformance against those. The two profiles included are
+starting points, and the format makes their status impossible to miss.
+
+**Provenance is part of every result.** A check may declare a `source` —
+standard, clause, quote, URL — and it comes back attached to the finding. A
+check without one still runs, because house rules are legitimate and common,
+but it is labelled `cited: false` and rendered as **HOUSE RULE**, and the
+summary counts how many there were. A house rule is a fine reason to fix
+something and a terrible reason to tell an auditor you are non-compliant with
+NIST; the report keeps those apart on every line.
+
+**Results are tri-state, and `unverifiable` is never rounded up.** A rule
+whose service object has no static model cannot be proven to exclude telnet.
+The engine says so, the run is not conformant while one remains, and the UI
+paints it as a warning rather than a pass. A compliance report that quietly
+signs off "we could not tell" is worse than no report, because somebody puts
+their name on it.
+
+**There is no compliance percentage.** A single number has to price an
+unverifiable check: count it as a pass and the report overstates, as a fail
+and it cries wolf, drop it and the denominator moves silently. Every available
+price misleads, so the engine reports counts and refuses to pick one. There is
+a test that fails if a percentage ever appears in the result.
+
+**A profile declares what it cannot check.** `not_checkable` lists the
+requirements the author knows a configuration reader cannot decide — formal
+change management, whether a periodic review actually happened, whether logs
+are monitored. It is rendered below the results, separated, so a clean run
+never reads as "the standard is satisfied".
+
+### Added
+
+- `app/compliance.py` — seven check types over the snapshot's normalised
+  rules: `no_rule_matches` (with `source_covers` / `destination_covers` /
+  `service_covers` predicates that go tri-state on an unresolvable object),
+  `all_rules_have`, `no_disabled_rules`, `cleanup_rule_present`, `max_rules`,
+  `no_findings` and `nat_no_findings`.
+- `app/compliance_profiles/nist-800-41-baseline.yaml` — three checks, each
+  citing NIST SP 800-41 Rev. 1 with the clause and the quoted text, plus three
+  `not_checkable` entries. Only clauses that were read in the publication
+  itself are cited; nothing was filled in from memory.
+- `app/compliance_profiles/house-hygiene.yaml` — six deliberately uncited
+  checks, so the labelling is visible the first time anyone runs it.
+- `GET /api/compliance-profiles` and `GET /api/compliance`. The run accepts
+  `package=` (live) or `snapshot=` (captured earlier). A live run has the
+  access and NAT analyses, so analysis-backed checks can be decided; a
+  snapshot run does not, so those same checks come back `unverifiable`. The
+  same profile against the same policy answers differently depending on how
+  much evidence the run had, and says which.
+- A live run captures a snapshot on the way through and returns its id, so
+  every compliance result is tied to evidence that can be re-evaluated against
+  a different profile later.
+- **Compliance** page, results ordered failures first, each carrying its
+  citation or its house-rule label.
+- `PyYAML` added to requirements.txt.
+
+### Tests
+
+530 → 577. New: `test_v426_compliance.py` (42), `test_v426_compliance_routes.py`
+(5). The route tests run the same profile twice — once live, once against the
+snapshot it produced — and assert the analysis-backed checks change from
+decided to `unverifiable`.
+
+---
+
+## v4.25.0 — what changed since last time
+
+Every other page answers "what does the policy say now". Periodic review work
+does not start there; it starts from *what moved since the last audit*, and
+neither SmartConsole nor this application had a view for it.
+
+A snapshot is a JSON file: one policy package, its Access rules and its NAT
+rules, each rule carrying its uid, its position, its fields — and the resolved
+address and port intervals of each dimension. No object dictionary, no payload
+bodies. Small enough to keep one per audit cycle for years, plain enough to
+open in an editor and see what the firewall looked like on a given day.
+
+Four decisions shape the comparison, and each of them is the difference
+between a report someone reads twice and one they learn to skip:
+
+**Rules are matched by uid, never by rule number.** Insert one rule at the top
+and every number below it shifts. A number-keyed diff would report an entire
+rulebase as rewritten after a one-line change.
+
+**"Moved" is its own verdict.** Access Control is first-match-wins, so a
+rule's position is part of what it means. A rule that is byte-identical but
+now sits above one it used to sit below has changed behaviour — filing that
+under "unchanged" hides a real event, and filing it under "modified" claims
+fields changed when none did.
+
+**A rule can change without the rule changing.** Add a member to a group and
+every rule referencing it permits more traffic, with identical text, identical
+uids and an identical rule number. A textual diff sees nothing at all. This is
+the finding the feature exists for, and the reason snapshots carry resolved
+intervals rather than only names. It is reported as `widened`, `narrowed` or
+`redefined`, on the dimension it happened on.
+
+**An unresolvable object makes the comparison unavailable, not equal.** Same
+discipline as the tri-state matcher: if either side could not be modelled, the
+answer is "cannot compare" and the diff is not `identical`. And because those
+intervals are produced by *this application*, comparing snapshots taken by two
+different versions of it raises a warning on the whole diff — a scope
+difference might be our change rather than the policy's.
+
+Hit counts are recorded in a snapshot and deliberately excluded from the
+comparison: they move every day and would bury the policy changes.
+
+### Added
+
+- `app/snapshot.py` — capture and an on-disk store. Snapshot ids are validated
+  against a pattern whose first character must be alphanumeric, which rules out
+  `..` and dot-files, and the resolved path is re-checked against the store
+  directory before any read. A bad id is refused, never sanitised.
+- `app/snapshot_diff.py` — the comparison, as a pure function.
+- `GET /api/snapshot`, `GET /api/snapshots`, `GET /api/snapshot-diff` — still
+  every route a GET. Capturing writes one file to the local disk, which is the
+  only write anywhere in this codebase, so the response returns `saved_to`
+  rather than leaving the caller to find out. Nothing goes to the Management
+  Server but the same `show-*` reads every other page makes.
+- **Policy Diff** page: counts across the top, then each category in its own
+  section with its own explanation, and any warnings rendered *above* the
+  findings rather than under them.
+- `snapshots/` added to `.gitignore` — local audit evidence, not source.
+
+### Tests
+
+477 → 530. New: `test_v425_snapshot_diff.py` (18), `test_v425_snapshot_build.py`
+(32), `test_v425_snapshot_routes.py` (3). The route test drives the headline
+case end to end: a group gains a member between two captures, and the diff
+reports zero modified rules and one widened scope.
+
+---
+
+## v4.24.0 — Traffic Path had never read the VPN column
+
+`tools.suggest_cases`, run against the live lab for the first time, skipped
+rule 1 for having an Any destination and an Any service. Following that back
+through the code found something worse than a skipped test case:
+
+```
+analyzer.py        uses vpn in the rule signature and in shadow analysis
+policy_browser.py  shows the VPN column
+api/export.py      exports the VPN column
+traffic.py         the word "vpn" does not appear in the file
+```
+
+A rule scoped to one VPN community was matched by the tri-state tracer as
+though it applied to every packet. Traffic that is *not* inside that community
+would be answered `accept · exact` by the rule that permits the community — a
+confident wrong answer, produced by the one feature the whole project exists
+to keep honest, on the one lab rule nobody had written a case for.
+
+`vpn_match_state()` treats the column the way the file treats every other
+condition it cannot verify. Whether a packet arrives inside a community is
+live connection state, not configuration, so the answer is `unknown` — never
+`no-match`, because we cannot prove the packet is outside the community
+either. An unknown VPN condition makes the whole rule unknown, which stops a
+later exact rule from being reported as final. Security Zones and Identity
+Awareness already worked this way; the VPN column simply was not wired in.
+
+The verdict changes only where it should: a rule whose addresses do not match
+is still a clean `no-match`, and a rule with `vpn: Any` or no VPN field at all
+is untouched.
+
+> **Expect acceptance verdicts to move.** Any flow whose path crosses a
+> VPN-scoped rule now answers `UNVERIFIED` instead of naming a later rule.
+> That is the correct answer, and it is a changed answer — re-run
+> `tools.acceptance` against both packages and re-confirm before trusting the
+> old expectations.
+
+### Changed
+
+- **`app/matching.py`** — the tri-state predicates (address, service, VPN,
+  domain, service-query resolution) moved out of `traffic.py`, which the
+  fourth dimension pushed to 715 lines, past the 700-line module guard. The
+  split follows the seam that was already there: this file answers "does X
+  match Y" and knows nothing about rules, which is why `nat_correlate.py` can
+  now import the address matcher directly instead of through the function-local
+  import it needed to dodge a cycle. `from app.traffic import ...` still works.
+- `tools/suggest_cases.py`, both defects from its first live run:
+  - `All_Internet` (0.0.0.0/0) was sampled as `0.0.0.1` — an address that is
+    genuinely inside the object, looks like a real test input, and tests
+    nothing. Any object covering a /8 or more is now reported as too broad to
+    sample, because choosing which off-lab address means something is a human
+    decision.
+  - `--only 1,2,3,7` also matched inline rules 8.1, 8.2 and 8.3: an inline
+    child's `rule-number` restarts at 1 inside its layer. The filter now
+    matches the display number, so `--only 8.1` is expressible too.
+
+### Tests
+
+461 → 477. New: `test_v424_vpn_column.py` (12).
+
+---
+
+## v4.23.0 — the Chapter 4-6 homework, and the four defects doing it uncovered
+
+The learning guide ends each chapter with exercises. Working through them was
+supposed to produce notes; it produced four defects instead, three of which
+no test in the 381-test suite could see.
+
+**A NAT rule sent in singular form was skipped in silence.** Access rules
+always send `source` as a list, so `ObjectResolver.uids()` returns `[]` for
+anything else — and `correlate_nat()` fed it `original-source` straight from
+the API, which for a NAT rule can be a bare uid. The rule matched nothing and
+was passed over without a word. This is the `_as_list()` lesson Chapter 5
+teaches, in the one file that had not learned it. Reproduced before the fix:
+
+```
+singular form -> []
+list form     -> [{'rule': 1, 'name': 'Hide lab out', ...}]
+```
+
+**NAT correlation was boolean, so it could name the wrong rule.** A NAT rule
+built on an object with no static model answered "does not match", and since
+NAT is first-match-wins, the next rule down became the answer. Not a partial
+answer — a different rule, shown with no warning. Correlation moved to
+`app/nat_correlate.py` and is now tri-state on the same rule as the Access
+side: an unevaluable rule ABOVE a proven one is returned first, and the proven
+rule carries `blocked_by`. Where every object resolves, every field of the
+result is byte-for-byte what it was.
+
+**An unmodellable object listed first hid a real match.** Chapter 4's exercise
+(a) asks you to make `address_match_state()` return `unknown` on the first
+object it cannot model, then explain what breaks. What broke was one test, and
+it was about how a blocker is *named*, not about a verdict. The behaviour the
+rule exists to protect was uncovered:
+
+```
+field ["InternalZone", "LAB-VLAN10"] vs 192.168.10.50 -> unknown
+field ["LAB-VLAN10", "InternalZone"] vs 192.168.10.50 -> match
+```
+
+Same rule, same packet, different answer depending on the order the API listed
+the objects. `tests/test_v423_match_order.py` closes that for addresses and
+services both.
+
+**A secondary management server with no primary rendered as a standalone
+one.** `network_map()` handled one primary with N secondaries, and two
+primaries, and fell out of the `if` chain for the third case saying nothing —
+so a secondary whose primary the API did not return was drawn exactly like a
+lone management server, which is a different estate. Pairing is now done one
+domain at a time (`domain` is a field the API already sends, and a
+Multi-Domain payload's "two primaries" is two domains, not an ambiguity), and
+all three shapes state themselves in `limitations`.
+
+### Added
+
+- **Traffic Path on the network map** (`app/path_map.py`, Chapter 6 exercise d).
+  The join between the two models is the only thing in both: the addresses,
+  tested against the subnets the map derived from interface addresses. Past
+  that join the overlay carries *two* confidences, because they fail
+  independently — `policy_confidence` (does the rulebase decide this flow) and
+  `topology_confidence` (does the packet pass through this box). An exact
+  `accept` to 8.8.8.8 is a certain verdict on a path the map cannot see. What
+  is drawn is the weaker of the two, and the three styles differ by dash
+  pattern as well as colour so a colour-blind reader and a greyscale
+  screenshot both keep the distinction. A failing `show-gateways-and-servers`
+  costs the overlay and nothing else.
+- **NAT install-on validation** (Chapter 5 exercise d). Each rule's install-on
+  target compared with the live gateway list, with its own UI tab. Two traps
+  kept by tests: `Policy Targets` means every gateway and is never a finding,
+  and without the gateway list the result says the check *did not run* —
+  `install_on_checked: false` and `install_on_unknown_rules: null`, never `0`.
+- **Ambiguous service-name warnings** (Chapter 4 exercise d). The lab's own
+  trap: Check Point ships an object called `RDP` which is UDP/259, while
+  Remote Desktop is `Remote_Desktop_Protocol`. Resolution is unchanged — the
+  rulebase is written in object names — but a protocol mismatch, or a policy
+  object shadowing a standard service name, is now stated instead of left in a
+  small display string.
+- **ICMP end to end** (found while doing Chapter 4 exercise c). The resolver
+  has modelled ICMP since v4.10, but the protocol selector offered tcp and udp
+  only, so no ICMP rule in any policy could be traced from the UI, and an ICMP
+  query displayed as `ICMP/8` — port notation for a protocol with no ports.
+- **`tools/suggest_cases.py`** (Chapter 4 exercise c). Derives one flow from
+  each rule's own objects and prints what the application says today. It does
+  not write `acceptance_cases.json`, and every case it emits carries
+  `expect: null`: promoting one is a human decision made against SmartConsole.
+  Hand-written cases would need invented addresses, and an invented address
+  falls through to the cleanup rule, so the case passes while testing nothing.
+- **`docs/Firewall-Insight-Learning-Guide-Ch4-6-Answers.md`** — the worked
+  answers, with the measurements each one rests on, and the two questions that
+  need the lab still marked unanswered rather than guessed.
+
+### Changed
+
+- `describe_uid()` reads `ipv4-address` / `ipv6-address`, not only the generic
+  `ip-address`. Real `show-object` payloads use the former, so host objects
+  had been rendering without their address throughout the NAT table.
+- NAT duplicate signatures resolve a name-only reference to its uid when the
+  objects-dictionary names exactly one such object (Chapter 5 exercise c).
+  An ambiguous name is left as written: announcing a duplicate that cannot be
+  proven is the more expensive mistake.
+- `tools/diag_topology.py` prints each management host's domain.
+- README: the "Known limitations" paragraph claiming `app/main.py` embeds the
+  frontend as a Python string was three releases out of date. Replaced with
+  the map and NAT-correlation limits that are actually true.
+
+### Tests
+
+381 → 461. New files: `test_v420_nat_tristate.py`, `test_v420_service_names.py`,
+`test_v421_nat_install_on.py`, `test_v422_multi_management.py`,
+`test_v423_trace_on_map.py`, `test_v423_route_overlay.py`, `test_v423_icmp.py`,
+`test_v423_suggest_cases.py`, `test_v423_match_order.py`,
+`test_v423_nat_signature.py`.
+
+`test_v44_source.py` had one assertion pinning the whole Port/Service
+placeholder string, which its own docstring says it avoids doing. Adding ICMP
+to that field made a true statement about the UI fail; the assertion now
+checks the meaning, as intended.
+
+### Still open
+
+- Chapter 5 exercise a — `External-FW` has 11 NAT rules and `Internal-FW` 10.
+  Both numbers are in the acceptance evidence; which rule differs is not, and
+  answering it needs the lab.
+- The cases for `External-FW` rules 1, 2, 3 and 7 exist as a generator, not as
+  expectations. `expect` stays `null` until a human confirms each verdict.
+
+---
+
 ## v4.19.1 — the runner was judging the policy it said it would not judge
 
 `tools/acceptance.py` opens with "it does not judge whether the POLICY is good

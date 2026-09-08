@@ -1,0 +1,52 @@
+version: 1
+name: House hygiene - uncited on purpose
+description: >
+  Rules a firewall team might agree among themselves. None of them cites an
+  external standard, and the report says so on every line: `cited: false`, and
+  the summary counts them.
+
+  That labelling is the point. A house rule is a perfectly good reason to fix
+  something - it is not a reason to tell an auditor the estate is
+  non-compliant with a standard. Keeping the two visibly apart is what makes
+  the rest of the report worth reading.
+
+checks:
+  - id: HOUSE-NO-DISABLED
+    title: No disabled rules left in the package
+    severity: low
+    type: no_disabled_rules
+
+  - id: HOUSE-DOCUMENTED
+    title: Every rule carries a comment explaining why it exists
+    severity: medium
+    type: all_rules_have
+    field: comments
+
+  - id: HOUSE-NAMED
+    title: Every rule has a name
+    severity: low
+    type: all_rules_have
+    field: name
+
+  - id: HOUSE-NO-TELNET
+    title: Telnet (TCP/23) is never permitted
+    severity: high
+    type: no_rule_matches
+    where:
+      action: accept
+      enabled: true
+      service_covers:
+        protocol: tcp
+        port: 23
+
+  - id: HOUSE-NO-SHADOWED
+    title: No shadowed or redundant rules
+    severity: medium
+    type: no_findings
+    kind: shadowed
+
+  - id: HOUSE-NAT-NO-BROAD
+    title: No NAT rule translates Any to Any on Any service
+    severity: medium
+    type: nat_no_findings
+    kind: broad

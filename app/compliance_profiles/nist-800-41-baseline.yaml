@@ -1,0 +1,85 @@
+version: 1
+name: NIST SP 800-41 Rev. 1 - the configuration-checkable part
+description: >
+  A starting point, not an authority. Every check below cites the clause it
+  comes from, so a reader who disagrees can argue with NIST rather than with
+  this tool. Copy this file, delete what does not apply to your estate, and
+  add your own - that is the point of the format.
+
+  Read `not_checkable` at the bottom before presenting a clean run: several of
+  the publication's most important recommendations are process controls that
+  no configuration reader can verify.
+
+checks:
+  - id: NIST-DENY-DEFAULT-ANY-PERMIT
+    title: No rule permits Any source to Any destination on Any service
+    severity: high
+    type: no_rule_matches
+    where:
+      action: accept
+      enabled: true
+      source_is_any: true
+      destination_is_any: true
+      service_is_any: true
+    source:
+      standard: NIST SP 800-41 Rev. 1
+      clause: Section 4, Firewall Policy
+      quote: >-
+        Generally, firewalls should block all inbound and outbound traffic that
+        has not been expressly permitted by the firewall policy - traffic that
+        is not needed by the organization. This practice, known as deny by
+        default, decreases the risk of attack and can also reduce the volume of
+        traffic carried on the organization's networks.
+      url: https://nvlpubs.nist.gov/nistpubs/legacy/sp/nistspecialpublication800-41r1.pdf
+
+  - id: NIST-DENY-DEFAULT-CLEANUP
+    title: Every layer ends with an explicit, logged cleanup rule
+    severity: high
+    type: cleanup_rule_present
+    require_log: true
+    source:
+      standard: NIST SP 800-41 Rev. 1
+      clause: Section 4, Firewall Policy (deny by default)
+      note: >-
+        An implicit drop enforces deny-by-default but produces no log, so
+        denied traffic cannot be reviewed. An explicit logged cleanup rule
+        makes the same decision visible.
+      url: https://nvlpubs.nist.gov/nistpubs/legacy/sp/nistspecialpublication800-41r1.pdf
+
+  - id: NIST-REVIEWABLE-RULES
+    title: Every rule is logged, so the ruleset can be reviewed against real traffic
+    severity: medium
+    type: all_rules_have
+    field: track
+    source:
+      standard: NIST SP 800-41 Rev. 1
+      clause: ES-2
+      quote: >-
+        Firewall rulesets and policies should be managed by a formal change
+        management control process because of their potential to impact
+        security and business operations, with ruleset reviews or tests
+        performed periodically to ensure continued compliance with the
+        organization's policies.
+      note: >-
+        The review itself is a process control this tool cannot observe. What
+        it can check is whether the ruleset produces the evidence a review
+        needs.
+      url: https://nvlpubs.nist.gov/nistpubs/legacy/sp/nistspecialpublication800-41r1.pdf
+
+not_checkable:
+  - requirement: Formal change management process for ruleset changes
+    clause: NIST SP 800-41 Rev. 1, ES-2
+    why: >-
+      A process control. Nothing in a policy package records whether a change
+      went through an approval workflow. Verify by evidence and interview.
+  - requirement: Periodic ruleset review actually performed
+    clause: NIST SP 800-41 Rev. 1, ES-2
+    why: >-
+      This tool can show you what the ruleset looks like today and, with the
+      Policy Diff page, what changed since a previous snapshot. It cannot show
+      that a human reviewed it.
+  - requirement: Logs and alerts are continuously monitored
+    clause: NIST SP 800-41 Rev. 1, Section 5.2.3
+    why: >-
+      Monitoring happens outside the policy package. This profile checks only
+      that rules are configured to produce logs at all.

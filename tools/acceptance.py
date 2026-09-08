@@ -44,7 +44,7 @@ from pathlib import Path
 from typing import Any
 
 from app.checkpoint import CheckPointClient
-from app.policy import analyze_package, data_quality, package_access_tree
+from app.policy import analyze_nat, analyze_package, data_quality, package_access_tree
 from app.resolver import ObjectResolver
 from app.topology_map import network_map
 from app.traffic import resolve_service_query, trace_access_tree
@@ -305,6 +305,32 @@ async def run(package: str, out_path: str) -> int:
         rep.check("nat", "show-hits support probed, not assumed",
                   c.nat_show_hits_supported is not None,
                   f"nat_hits_available={c.nat_show_hits_supported}")
+
+        # Install-on validation (v4.21). Whether the check RAN is a statement
+        # about this tool, so it is scored. What it FOUND is a statement about
+        # the policy, so it is reported and not scored - the same split the
+        # Access findings use.
+        nat_analysis = await analyze_nat(c, package)
+        ns = nat_analysis["summary"]
+        evidence["nat_install_on"] = {
+            "checked": ns.get("install_on_checked"),
+            "unknown_rules": ns.get("install_on_unknown_rules"),
+            "findings": nat_analysis["findings"].get("install_on_findings", []),
+        }
+        rep.check("nat", "install-on targets compared with the live gateway list",
+                  bool(ns.get("install_on_checked")),
+                  "show-gateways-and-servers supplied the gateway names"
+                  if ns.get("install_on_checked") else
+                  "gateway list unavailable, so the check did not run")
+        io_findings = nat_analysis["findings"].get("install_on_findings", [])
+        if io_findings:
+            for f in io_findings:
+                rep.check("findings",
+                          f"NAT Rule {f['rule']} installs on '{f['target']}', which is "
+                          "not a gateway show-gateways-and-servers returns",
+                          None, "")
+            evidence.setdefault("policy_findings", []).append(
+                f"{len(io_findings)} NAT rule(s) install on a target that is not a live gateway")
 
         # ---- 7. topology --------------------------------------------------
         print(f"\n{DIM}7. Network Mapping{OFF}")
