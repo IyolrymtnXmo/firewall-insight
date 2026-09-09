@@ -763,18 +763,18 @@
           </div>
         </div>
 
-        <div class="panel">
-          <!-- Check Point Management API -->
+        <div class="settings-grid">
+          <!-- Row 1: Check Point + Gaia side by side -->
           <div class="card flush" id="cpCredCard">
             <div class="card-h">
               <div>
                 <h3>Check Point Management API</h3>
-                <p>Credentials for the Management Server REST API (read-only).</p>
+                <p>Management Server REST API (read-only).</p>
               </div>
               <div class="r"><span id="cpCredStatus" class="pill neutral">Checking…</span></div>
             </div>
-            <div class="cred-form" style="padding: var(--space-md) var(--space-lg) var(--space-lg)">
-              <div class="form-grid">
+            <div class="cred-form">
+              <div class="form-stack">
                 <label for="cpMgmt">Management Server</label>
                 <input id="cpMgmt" type="url" placeholder="https://10.10.10.10" autocomplete="off">
 
@@ -799,17 +799,16 @@
             </div>
           </div>
 
-          <!-- Gaia API -->
           <div class="card flush" id="gaiaCredCard">
             <div class="card-h">
               <div>
                 <h3>Gaia API (Gateway Health)</h3>
-                <p>Credentials for Gaia REST API on each gateway (routing, interfaces, cluster state).</p>
+                <p>Gaia REST API on each gateway.</p>
               </div>
               <div class="r"><span id="gaiaCredStatus" class="pill neutral">Checking…</span></div>
             </div>
-            <div class="cred-form" style="padding: var(--space-md) var(--space-lg) var(--space-lg)">
-              <div class="form-grid">
+            <div class="cred-form">
+              <div class="form-stack">
                 <label for="gaiaEnabled">Gaia Enabled</label>
                 <label class="toggle-switch">
                   <input id="gaiaEnabled" type="checkbox">
@@ -837,38 +836,42 @@
             </div>
           </div>
 
-          <!-- Advanced Settings -->
+          <!-- Row 2: Advanced + Security side by side -->
           <div class="card flush fold" data-fold="settings-advanced">
             <div class="card-h">
               <div><h3>Advanced Settings</h3><p>Timeouts, rate limits and caching behaviour</p></div>
             </div>
-            <div class="cred-form" style="padding: var(--space-md) var(--space-lg) var(--space-lg)">
-              <div class="form-grid">
-                <label for="cpVerifySsl">SSL Verification</label>
-                <label class="toggle-switch">
-                  <input id="cpVerifySsl" type="checkbox">
-                  <span class="toggle-slider"></span>
-                </label>
-
-                <label for="cpTimeout">Timeout (seconds)</label>
-                <input id="cpTimeout" type="number" value="90" min="5" max="600" step="1">
-
-                <label for="cpInterval">Rate Limit Interval</label>
-                <input id="cpInterval" type="number" value="0.55" min="0" max="10" step="0.05">
-
-                <label for="cpCacheTtl">Cache TTL (seconds)</label>
-                <input id="cpCacheTtl" type="number" value="300" min="0" max="3600" step="10">
+            <div class="cred-form">
+              <div class="form-stack form-stack-2col">
+                <div>
+                  <label for="cpVerifySsl">SSL Verification</label>
+                  <label class="toggle-switch">
+                    <input id="cpVerifySsl" type="checkbox">
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+                <div>
+                  <label for="cpTimeout">Timeout (seconds)</label>
+                  <input id="cpTimeout" type="number" value="90" min="5" max="600" step="1">
+                </div>
+                <div>
+                  <label for="cpInterval">Rate Limit Interval</label>
+                  <input id="cpInterval" type="number" value="0.55" min="0" max="10" step="0.05">
+                </div>
+                <div>
+                  <label for="cpCacheTtl">Cache TTL (seconds)</label>
+                  <input id="cpCacheTtl" type="number" value="300" min="0" max="3600" step="10">
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- Credential Security -->
           <div class="card flush">
             <div class="card-h">
               <div><h3>Credential Security</h3><p>How saved credentials are protected</p></div>
               <div class="r"><span class="pill good">Encrypted at rest</span></div>
             </div>
-            <div style="padding: var(--space-sm) var(--space-lg) var(--space-lg); font-size: 12.5px; color: var(--muted); line-height: 1.7">
+            <div class="cred-form" style="font-size:12.5px;color:var(--muted);line-height:1.7">
               Saved credentials are encrypted at rest using a server-side key that is auto-generated on first use and excluded from version control.<br>
               <span class="hint">Fallback: <code>.env</code> values are used if no encrypted credentials are saved.</span>
             </div>
