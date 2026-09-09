@@ -6,6 +6,10 @@ def test_sidebar_separates_raw_and_analyze_adjacent():
     Asserted by attribute position rather than one exact attribute string, so
     adding an unrelated attribute (data-label for the collapsed rail tooltip)
     cannot fail a test about menu ordering.
+
+    v4.30 replaced the ◈ ▤ ◇ ⇄ ➜ glyph set with drawn SVG icons, so the
+    label assertion is now about the words on the item and the fact that the
+    item carries an icon - not about which character sat in front of it.
     """
     src = app_source()
     raw = 'data-page="browser"'
@@ -13,9 +17,7 @@ def test_sidebar_separates_raw_and_analyze_adjacent():
     assert raw in src
     assert ana in src
     assert src.index(raw) < src.index(ana)
-    # v4.30 replaced the ◈ ▤ ◇ ⇄ ➜ glyph set with one drawn SVG set, so the
-    # label assertion is about the words on the item and the fact that the item
-    # carries an icon - not about which character sat in front of it.
+    # the label text, whatever the formatter did to the line breaks
     assert "Access Policy</span></button>" in ui_text()
     assert "Analyze</span></button>" in ui_text()
     assert 'data-label="Access Policy"' in src

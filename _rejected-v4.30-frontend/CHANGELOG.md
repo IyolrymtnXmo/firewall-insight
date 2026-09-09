@@ -4,218 +4,45 @@ All notable changes to Firewall Insight.
 
 ---
 
-## v4.30.3 — the shell does not scroll
+## v4.30.0 — the chrome has no brand colour
 
-The bar and the rail kept ending up at the bottom of the page. Two attempts had
-already failed on the same underlying cause, and both failures were mine:
+The old frontend looked like it had been generated, and the CSS said why:
+`--purple:#8b5cf6` is Tailwind's `violet-500` to the digit, `--font-ui:'Nunito'`
+is a rounded consumer face, every corner was 15px or a 999px pill, the menu's
+active item was a gradient, the topology sat on a radial glow, and the nine
+sidebar icons — `◈ ▤ ◇ ⇄ ➜ ⌘ ⧗ ✓ ♥` — were Unicode characters pulled from four
+different blocks, each rendering at whatever weight the fallback face happened
+to have.
 
-- `position:sticky` keeps an element inside its own grid row. Once that row's
-  bottom passed the viewport the rail travelled with the scroll, which is
-  exactly what it looked like.
-- `position:fixed` pinned them correctly on screen, but the document underneath
-  still scrolled. A full-page screenshot stitches a scrolling document and
-  paints fixed elements once, at the end — so the bar and the rail landed at
-  the bottom of the capture. On screen they were where they should be; in every
-  screenshot, and in the feel of the page, they were not.
+The handoff brief offered three directions, all framed as *which enterprise
+tool do we look like*: SmartConsole, AlgoSec/Tufin, or the current shell with
+the purple taken out. Three previews were built and all three were rejected,
+correctly: imitating a competitor is not a point of view. The direction that
+shipped comes from what this tool actually claims about itself.
 
-An application shell settles both at once. The page is exactly one viewport
-tall and never scrolls; the bar and the rail sit in normal flow inside it and
-therefore **cannot** move; the only scrollable thing is the work column.
+**One rule governs colour: the chrome carries no brand hue.** There are three
+colours in the system and each one is a verdict — allowed, denied, not
+provable. Emphasis in the chrome (primary action, current section, focus ring)
+is ink, the inverse of the ground. The consequence is that anything coloured on
+screen is worth looking at, which is the property the tool has been claiming in
+prose since v4.20 and had never once expressed visually.
 
-Measured, rather than asserted:
+The clearest gain is the network map. It used to be a five-colour rainbow
+*before* a trace was run — violet gateways, green management, amber networks —
+so when a trace did run, `--good`/`--warn`/`--bad` had to shout over five
+decorative colours to be seen. Node role is now drawn with fill and stroke
+weight, and the traced path is the only coloured thing on the map.
 
-```
-document scrollable                     false
-bar / rail top, at rest                 0px / 61px
-bar / rail top, after the work column
-  scrolls 830px                         0px / 61px
-```
-
-Consequences worth knowing:
-
-- Sticky table headers now stick to the work column rather than to the window,
-  which is where a reader of a long rulebase expects them.
-- Toasts moved from `top:18px` to `top:74px` so they no longer land on the
-  context bar.
-- `.app:before`, the strip that used to paint the rail's column behind a sticky
-  element, is gone — the rail is a real grid cell now and paints itself.
-- Below 900px the shell releases: the document scrolls normally and the bar goes
-  back to sticky, because a phone has no room for a fixed rail.
-
----
-
-## v4.30.2 — pinned chrome, per-rule detail, and a way out
-
-Six things found by using it.
-
-**The rail is pinned, not sticky.** `position:sticky` keeps an element inside
-its own grid row, so on a page taller than the viewport the rail travelled with
-the scroll the moment that row's bottom went past — which is exactly what it
-looked like. It is `position:fixed` now; the grid column still reserves its
-width so nothing else moves, and `body.rail` narrows both the column and the
-element together. The context bar is pinned the same way.
-
-Both being out of flow left the work column as the grid's only in-flow child,
-which put it in column 1 at 238px wide. It is placed explicitly now.
-
-**Expand is per rule, not per page.** Collapsing a whole results card was the
-wrong unit — nobody wants to hide the rulebase, they want to stop reading nine
-columns of object names at once. Each rule is one line: number, name, the
-source→destination·service scope on a summary line, action, hits, state. Click
-it and everything the API returned about **that rule** opens under it: the full
-object lists unabbreviated, layer and layer path, section, parent rule, VPN,
-track, install-on, inline layer, hits, last hit, comment.
-
-Two notes appear in the detail where they apply, and only where they apply: a
-never-hit rule says that is what the rulebase reports and not proof it is
-unnecessary, and a rule with an object that did not resolve says any coverage
-answer depending on it is unverified rather than a pass.
-
-**The dashboard reads in bands.** Three columns meant the shortest ended two
-screens above the longest and left a void beside it. Now: the counts across the
-top, then the estate beside the score that grades it, then the findings beside
-the traffic that explains them, then the trend, the per-rule bars and the read's
-own provenance. Each question sits next to the answer it needs.
-
-**The global controls live in the context bar.** Test Connection, Refresh
-Metadata and the package and layer selectors were a panel of loose buttons at
-the top of every page; they are the *context*, so they belong in the bar that
-states it. The status line is a strip under the bar rather than a box inside a
-panel. Both selectors also declare `color-scheme`, which is the only way to stop
-the OS dropping a white option list out of a dark bar.
-
-**The loading overlay has a Cancel.** Every in-flight read registers its
-`AbortController`, and Cancel — or Escape — aborts them and drops the whole
-busy stack. The wording is careful: cancelling stops *this browser* waiting, it
-cannot un-send a request, and the request in question is a `show-*` call that
-changes nothing either way. A cancelled read is reported as cancelled, not as an
-error, and not as the timeout it shares an exception type with.
-
-```
-python -m pytest -q            690 passed
-node tests/js/scope_check.mjs  22 renderers, 158 element ids
-```
-
-`test_v43_inline_hierarchy` was the one test that went red: it pinned the words
-"under Parent Rule". An inline rule still names the rule it hangs under — on the
-row's summary line now, where it is visible without expanding — so the assertion
-moved to the reference rather than the phrasing.
-
----
-
-## v4.30.1 — put it away, and a trend that is actually a reading
-
-Five things the first Aurora build got wrong or left out, all from using it.
-
-**The collapsed rail did not look locked.** It always *was* — the choice went
-to `localStorage` and came back on reload — but once the animation finished a
-collapsed rail and an expanded one gave the toggle the same appearance, so
-there was nothing on screen that said the state had been kept. The control now
-reports its own state with `aria-pressed`, and lights up when it is holding the
-rail closed. Nothing about the persistence changed; what changed is that you
-can see it.
-
-**Everything was expanded, always.** Nine pages of tables open at once is a
-wall, not an interface. Every heavy region is foldable now — the dashboard's
-six cards and each page's results region — with the state saved per region and
-restored on every render, keyed by a stable id so inserting a panel above one
-you collapsed does not silently reopen it. The animation runs on a CSS grid row
-(`1fr` → `0fr`) rather than on `max-height`, so a panel opens to exactly the
-height its contents need instead of to a guess that clips long tables.
-
-The whole header is the hit target, not just the 26px chevron — that is a small
-thing to ask someone to hit forty times a day.
-
-**Quick Actions overflowed its column**, so it is a dial now: one control in the
-corner that fans its seven actions out on a stagger, with a blurred scrim, a
-rotation on the button, Escape to close and focus returned to where it started.
-Closed, it costs one 56px circle instead of half a column.
-
-**Hits over time — a real line, drawn from real readings.**
-
-This was refused in v4.30.0 on the grounds that the Management API reports a
-running total and a last-hit date, never a time series, so any daily trend
-would be invented. That was the right objection and the wrong conclusion: this
-application already takes snapshots, each one dated and holding every rule's
-hit count. Comparing them *is* a reading.
-
-`list_snapshots()` now carries `total_hits`, `hit_counted_rules` and
-`zero_hit_rules`, and the dashboard plots the last seven snapshots of the
-selected package. Two rules keep it honest, and both have tests:
-
-- A rule that reports **no** hit count is left out of the total rather than
-  counted as zero — counting it would drag every trend downward for a reason
-  that has nothing to do with traffic.
-- A snapshot with no hit data anywhere reports `total_hits: null`, not `0`.
-  "Zero hits" and "this rulebase does not report hits" are different claims,
-  and drawing the second as the first invents a collapse in traffic that never
-  happened.
-
-Fewer than two snapshots is **not a flat line** — it is no line, and the card
-says so and offers to take one. The horizontal per-rule bars stay: they answer
-"which rules carry the traffic", the line answers "is it growing", and neither
-substitutes for the other.
-
-**Motion, where it says something.** Cards settle in on a short stagger the
-first time a page is shown; the trend line draws itself once; the dial fans out
-from the button rather than six items appearing at once; the FAB carries one
-slow halo rather than a pulse in the corner of someone's eye for eight hours.
-All of it is off under `prefers-reduced-motion`.
-
-```
-python -m pytest -q            690 passed (+2: the snapshot hit-total rules)
-node tests/js/scope_check.mjs  22 renderers, 159 element ids
-```
-
-No route changed, no verb changed, the Gaia allowlist is untouched, and
-`list_snapshots()` reads files this application had already written.
-
----
-
-## v4.30.0 — Aurora: glass over a teal aura, and neon that means something
-
-The old frontend looked generated, and the CSS said why: `--purple:#8b5cf6` is
-Tailwind's `violet-500` to the digit, `--font-ui:'Nunito'` is a rounded consumer
-face, every corner was 15px or a 999px pill, the active menu item was a
-gradient, the topology sat on a violet radial glow, and the nine sidebar icons —
-`◈ ▤ ◇ ⇄ ➜ ⌘ ⧗ ✓ ♥` — were Unicode characters from four different blocks, each
-rendering at whatever weight the fallback face happened to have.
-
-Two rebuilds were rejected before this one. The first followed the handoff
-brief's three directions, all framed as *which enterprise tool do we imitate*;
-the second answered that by removing colour almost entirely, which was correct
-about the diagnosis and wrong about the cure — a NetOps tool that says nothing
-with colour is not restrained, it is mute. Aurora keeps the colour and spends
-it deliberately.
-
-### The system
-
-**Glass over one light source.** Two soft radial lights are fixed behind
-everything (`body::before`), with a faint 52px grid masked away from the edges.
-Panels are translucent with `backdrop-filter: blur(14px)` and a hairline teal
-edge, so depth comes from what is behind the glass rather than from a shadow
-stamped on every block.
-
-**Glow means live.** Teal `#2DD4BF` and cyan `#22D3EE` mark what is current: the
-selected section, the primary action, the connection dot, a node the tool is
-actually reading. Everything that glows is something happening now.
-
-**Colour still means a verdict.** Green accept, red drop, amber unproven. Those
-three are never spent on decoration, so a coloured cell in the rulebase is
-always worth reading. Verdicts are drawn as a word plus a glowing bar — a shape
-as well as a hue — because principle 6 has to survive a monochrome screenshot
-and colour-blind vision, which is the same reason the trace overlay carries
-dash patterns.
-
-**Both themes, properly.** Dark is a deep teal graphite for the ops room; light
-is a mint-tinted paper with the same glass, the accents darkened to hold 4.5:1.
-Every colour is a token defined in both.
+Structure is carried by hairline rules on a shared baseline rather than by
+nested rounded cards, which is what a rulebase is: a numbered document. The
+rule number gets a gutter with a real vertical rule beside it instead of being
+one more equal column.
 
 ### The certainty vocabulary
 
-Principle 6 (tri-state matching) and principle 12 (silence is not health) lived
-only in sentences. They are now a mark, used identically wherever the app makes
-a claim:
+Principle 6 says traffic matching is tri-state and that `unknown` must never be
+rounded up. Principle 12 says silence is not health. Until now those lived in
+sentences. They are now a mark, used identically wherever the app makes a claim:
 
 | Mark | Means |
 |---|---|
@@ -223,58 +50,33 @@ a claim:
 | dotted underline | derived by this app |
 | dashed underline, amber | could not be proven |
 
+Each mark is a **line style as well as a hue**, for the same reason the trace
+overlay uses dash patterns: it has to survive a monochrome screenshot and a
+reader who cannot separate the two colours.
+
 ### Also
 
-- **Typography.** Outfit for display numerals and titles, IBM Plex Sans for the
-  UI, IBM Plex Sans Thai for Thai without loops, IBM Plex Mono only for values
-  that are measurements — addresses, ports, counts, timestamps, rule numbers.
+- **Typography.** IBM Plex Sans across headings, labels, controls and body;
+  IBM Plex Sans Thai for Thai without loops, sharing the same skeleton; IBM
+  Plex Mono only for values that are measurements — addresses, ports, counts,
+  timestamps. Not as a costume for "technical".
 - **Icons.** One drawn SVG set at one stroke weight, defined once in a sprite
   and referenced by `<use>`. `emptyState()` takes a symbol id now, not a
-  character, so empty states match the icons beside them.
+  character, so the empty states match the icons beside them.
 - **Browser surfaces.** Selection, scrollbars and focus rings are themed from
   the palette. An unthemed scrollbar is the cheapest tell that a page was
   assembled rather than built.
-- **Zero hits is a finding.** `never hit` is drawn as a mark rather than an
-  unremarkable `0`, and "not reported" stays distinct from it.
+- **Density is the operator's call.** Compact / Normal / Tall on the Access
+  Policy toolbar, remembered per browser. Which room the tool is in — a dim ops
+  room at 3 a.m. or a projector in a review meeting — is their knowledge, not
+  ours, so the brief's compact-vs-roomy question became a control rather than a
+  guess.
+- **Zero hits is a finding.** `never hit` is drawn as a mark rather than
+  rendering as an unremarkable `0`, and "not reported" is kept distinct from it.
 - **Inner Layer is not a verdict.** It defers the decision to a child layer, so
-  it is cyan with a broken bar rather than a third verdict colour.
-- **A layer name is not a verdict either** — it lost the Accept green it had
-  been borrowing since v4.3.
-- **The traced path is the loudest thing on the map** and it animates, because
-  it is the one thing on that screen that is a claim about right now.
-
-### The Dashboard was rebuilt around what a read actually produced
-
-Three columns, and nothing on any of them exists before a read:
-
-- **Policy Health Score** — a semicircular gauge over a red→amber→teal arc.
-  The score is a heuristic of *this app's own findings*, deducting in
-  proportion to how much of the rulebase each finding touches, so one shadowed
-  rule in four does not read like one in four hundred. The card says out loud
-  that it is not a Check Point score, and `policyHealthScore()` returns `null`
-  before an analysis has run: a 100 drawn from no data would be the worst thing
-  this page could say. Under it, the four figures the score is made of, each
-  one a link to where it came from.
-- **Network Topology preview** — drawn from the very same `buildTopoGraph()`
-  model the Network Mapping page uses (`node.name`, `node.role`, `link.kind`),
-  never a second shape invented for the dashboard, so the preview cannot
-  disagree with the page it previews. Route edges keep their own dashed
-  treatment and their own legend entry: a subnet link follows a configured
-  interface address, a route was read at one instant.
-- **Traffic Path** — the last trace replayed as a timeline, each hop keeping
-  the confidence the trace gave it. An `unknown` NAT hop is drawn amber and
-  labelled `unknown`; it is never redrawn as an exact one.
-- **Where the hits are** — real counts from the loaded rulebase, log-scaled
-  because 2,527,032 and 16 do not share a linear axis usefully. A zero-hit rule
-  is drawn in its own amber state and labelled `never`, not left as an absent
-  bar. There is deliberately **no daily trend line**: the Management API gives
-  a running total and a last-hit date, not a time series, and inventing one
-  would be the prettiest lie on the page.
-- A **context bar** across the top restates the package, the layer, the
-  management address and the time of the read that every figure came from.
-- `--purple` / `--purple2` are gone (`--accent` / `--accent-2`); the pill class
-  `purple` is now `neutral`.
-- The rail and its painted backing layer were 250px and 238px apart, which read
+  it is neutral with a broken bar rather than a third coloured pill.
+- `--purple` / `--purple2` are gone; the pill class `purple` is now `neutral`.
+- Rail and its painted backing layer were 250px and 222px apart, which showed
   as a colour seam down the work area. They are one number now, and a test
   asserts they agree.
 
@@ -285,27 +87,29 @@ switches and live routing are not inferred"*, *"…which is not the same as
 producing none"*, *"not monitoring — one reading at one instant"*, the
 `data_quality()` banner, both Traffic Path confidence badges, the map legend's
 separate `Route (read at one instant)` entry, and **Read-only · Management API**
-at the foot of the rail — now with the same green dot the connection badge uses
-when it is genuinely live. No route changed, no verb changed, the Gaia allowlist
-is untouched.
+at the foot of the rail. No route changed, no verb changed, and the Gaia
+allowlist is untouched.
 
 > If the new design were prettier but said less, we rebuilt it wrong.
 
 ### Tests: pinned intent, not characters
 
-Thirteen tests went red. Every one had pinned a literal that was never the
-contract, so each was rewritten to assert the requirement instead:
+Thirteen tests went red. Every one of them had pinned a literal that was never
+the contract, so each was rewritten to assert the requirement instead — which
+is the direction the handoff asked for, and leaves the suite stronger:
 
 - `--glass:rgba(14,13,19,.62)` → both themes define `--glass`, both are
   translucent, and they differ from each other.
-- `outline:2px solid var(--purple2)` → focus draws a real ring from a token, and
+- `outline:2px solid var(--purple2)` → focus draws a real ring from a token and
   `outline:none` appears nowhere.
 - `family=Nunito` → whatever face each stack names first is a face the page
-  actually loads. This catches a silent fallback, which the old test could not.
+  actually loads (this catches a silent fallback, which the old test could not).
 - `--font-mono:'JetBrains Mono'` → the mono token names a mono face and tabular
   figures are on.
 - `data-icon="⇄"` → the rail shows an icon, hides the label, keeps the label for
   the tooltip, and none of the nine glyphs survives anywhere in the source.
+- `body.rail .icon-btn{...width:44px;height:38px}` → `flex:0 0 auto` with a
+  height that has not collapsed.
 - `grid-template-columns:74px` → the rail column and its painted layer are the
   same number, and smaller than the expanded rail.
 - `i.enabled?'good':(i.configured?'bad':'purple')` → the three-way decision
@@ -313,11 +117,12 @@ contract, so each was rewritten to assert the requirement instead:
 - `rgba(96,165,250` on `.pill.inline` → an Inline Layer badge is structure and
   must not borrow `--good`, `--bad` or `--warn`, or readers learn to read
   hierarchy as risk.
-- `"▤ Access Policy"` (x3) → the item is identified by its words and its
+- `"▤ Access Policy"` (×3) → the item is identified by its words and its
   `data-page`, never by the character in front of it.
+- `"under Parent Rule"` → an inline row still names the rule it hangs under.
 
 ```
-python -m pytest -q            688 passed (was 687; one font test split in two)
+python -m pytest -q            688 passed (was 687; one test split in two)
 node tests/js/scope_check.mjs  22 renderers, 112 element ids
 ```
 

@@ -46,19 +46,19 @@ class TestBlurOverlay:
     def test_overlay_uses_backdrop_blur_and_transparency(self):
         """The overlay must dim and blur what is behind it, not hide it.
 
-        The literal rgba the token happened to hold was never the contract - it
+        The literal rgba the token happened to hold is not the contract - it
         changed with the v4.30 palette. The contract is that the token exists,
         is translucent, and is what the overlay paints with.
         """
         assert "backdrop-filter:blur(9px)" in SRC
         assert "-webkit-backdrop-filter:blur(9px)" in SRC
         assert "background:var(--glass);" in SRC
-        first = SRC.split("--glass:")[1].split(";")[0]
-        assert first.startswith("rgba("), first
-        assert 0.4 < float(first.rstrip(")").split(",")[-1]) < 0.9, first
+        dark = SRC.split("--glass:")[1].split(";")[0]
+        assert dark.startswith("rgba("), dark
+        assert 0.4 < float(dark.rstrip(")").split(",")[-1]) < 0.9, dark
 
     def test_light_theme_has_its_own_glass(self):
-        """A dark scrim over a light theme reads as a bug, so the light theme
+        """A dark scrim over a paper theme reads as a bug, so the light theme
         redefines the token rather than inheriting the dark one."""
         panes = SRC.split("--glass:")
         assert len(panes) >= 3, "both themes must define --glass"
@@ -228,9 +228,9 @@ class TestMotion:
     def test_focus_is_visible_for_keyboard_users(self):
         """Keyboard focus must draw a real ring in a theme-aware colour.
 
-        This pinned one variable name. What it protects is that focus is
-        visible at all and takes its colour from a token, so it survives a
-        palette change - which is exactly what v4.30 was.
+        This used to pin one variable name. What it protects is that focus is
+        visible at all and takes its colour from a token, so it keeps working
+        when the palette changes - which is exactly what v4.30 did.
         """
         ring = SRC.split(":focus-visible{")[1].split("}")[0]
         assert "outline:2px solid var(--" in ring, ring

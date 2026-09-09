@@ -36,8 +36,15 @@ class TestSidebarFooter:
 
     def test_stacked_buttons_do_not_collapse(self):
         """`flex:1 1 0` sizes the main axis, so switching the row to a column
-        made flex-basis apply to height and the buttons shrank to 19px."""
-        assert "body.rail .icon-btn{flex:0 0 auto;width:44px;height:38px}" in SRC
+        made flex-basis apply to height and the buttons shrank to 19px.
+
+        The fix is `flex:0 0 auto` plus an explicit height, whatever the
+        chosen sizes are; the 44x38 of v4.13 was not the contract.
+        """
+        rule = SRC.split("body.rail .icon-btn{")[1].split("}")[0]
+        assert "flex:0 0 auto" in rule, rule
+        height = int(rule.split("height:")[1].split("px")[0])
+        assert height >= 28, f"stacked rail buttons collapsed to {height}px"
 
     def test_the_icons_are_svg_not_font_glyphs(self):
         """Glyphs like ☀/☾ depend on the font stack and rendered wrong in the
@@ -71,11 +78,11 @@ class TestRailAlignment:
         """Collapsed, each menu item must still be identifiable.
 
         Until v4.30 the icon was a Unicode glyph injected through
-        `content:attr(data-icon)`, and this test pinned the ⇄ character. That
-        set came from four different Unicode blocks and rendered at whatever
-        weight the fallback face had, so it was replaced by one drawn SVG set.
-        The behaviour is unchanged: in the rail the item shows its icon, drops
-        its label, and keeps the label for the tooltip.
+        `content:attr(data-icon)`, and this test pinned the ⇄ character. The
+        glyph set came from four different Unicode blocks and rendered at
+        whatever weight the fallback face had, so it was replaced by one drawn
+        SVG set. The behaviour under test is unchanged: in the rail the item
+        shows its icon, drops its label, and keeps the label for the tooltip.
         """
         assert "body.rail .menu button .mlabel{display:none}" in SRC
         assert "body.rail .menu button .ico{" in SRC

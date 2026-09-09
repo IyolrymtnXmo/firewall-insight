@@ -48,7 +48,7 @@ def test_nat_scalar_fields_do_not_false_duplicate():
 def test_sidebar_access_policy_entry_exists():
     # label via ui_text() so an HTML formatter's line wrap cannot fail a
     # test about the menu entry existing; attribute via the raw source.
-    # Identified by its words and its data-page, never by the glyph that used
-    # to stand in for its icon (see v4.30).
+    # The entry is identified by its words and its data-page, never by the
+    # glyph that used to stand in for its icon (see v4.30).
     assert "Access Policy" in ui_text()
     assert 'data-page="browser"' in app_source()

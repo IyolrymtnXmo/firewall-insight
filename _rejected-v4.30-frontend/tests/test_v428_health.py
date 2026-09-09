@@ -245,9 +245,9 @@ class TestTheRouteAndPage:
         """down-but-configured is a fault; down-and-unconfigured is not.
 
         The three-way choice is the contract. v4.30 renamed the neutral pill
-        class from 'purple' to 'neutral' when the palette lost its violet, so
-        the assertion is on the shape of the decision rather than on the class
-        name that happened to be third.
+        class from 'purple' to 'neutral' when the palette lost its brand hue,
+        so the assertion is now on the shape of the decision rather than on
+        the class name that happened to be third.
         """
         assert "i.enabled?'good':(i.configured?'bad':" in self.ui
         neutral = self.ui.split("i.enabled?'good':(i.configured?'bad':")[1]

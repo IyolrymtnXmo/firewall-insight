@@ -135,6 +135,40 @@ class TestTheStore:
         assert rows[0]["taken_at"] > rows[1]["taken_at"]
         assert rows[1]["access_rules"] == 1
 
+    def test_the_listing_carries_hit_totals_and_says_what_they_cover(self, tmp_path):
+        """A trend can only be drawn from readings that happened.
+
+        The Management API reports a running total and a last-hit date, never a
+        time series, so the only honest source for "hits over time" is the
+        snapshots the user took. The listing therefore carries the total, and
+        `hit_counted_rules` says how many rules that total actually covers - a
+        rule that reports no count is left out rather than counted as zero,
+        which would silently drag every trend downwards.
+        """
+        rules = [access_rule("a", 1, "A"), access_rule("b", 2, "B"),
+                 access_rule("c", 3, "C")]
+        rules[0]["hits"] = {"value": 500}
+        rules[1]["hits"] = {"value": 0}
+        rules[2].pop("hits")            # this rule reports no count at all
+        save_snapshot(build_snapshot(tree(rules), None, "P",
+                                     taken_at="2026-09-01T00:00:00"), base=tmp_path)
+        row = list_snapshots(base=tmp_path)[0]
+        assert row["total_hits"] == 500
+        assert row["hit_counted_rules"] == 2, "the uncounted rule must not be a zero"
+        assert row["zero_hit_rules"] == 1
+
+    def test_a_snapshot_with_no_hit_data_reports_no_total_rather_than_zero(self, tmp_path):
+        """Zero hits and "this rulebase does not report hits" are different
+        claims, and a chart that draws the second as the first invents a
+        collapse in traffic that never happened."""
+        mute = access_rule("a", 1, "A")
+        mute.pop("hits")
+        save_snapshot(build_snapshot(tree([mute]), None, "P",
+                                     taken_at="2026-09-02T00:00:00"), base=tmp_path)
+        row = list_snapshots(base=tmp_path)[0]
+        assert row["total_hits"] is None
+        assert row["hit_counted_rules"] == 0
+
     @pytest.mark.parametrize("bad", ["../secrets", "a/b", "..", "", "x" * 200, "a\\b"])
     def test_a_path_is_refused_not_sanitised(self, bad, tmp_path):
         assert not SAFE_ID.match(bad)

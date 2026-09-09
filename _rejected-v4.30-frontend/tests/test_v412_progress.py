@@ -253,40 +253,26 @@ class TestSidebarAndFonts:
         from pathlib import Path
         cls.SRC = app_source()
 
-    def test_toasts_are_top_right_and_clear_of_the_context_bar(self):
-        """Toasts belong in the top-right corner, below the bar, never over it.
-
-        This pinned `top:18px`, which was the right number only while nothing
-        was fixed above it. v4.30 put a 61px context bar there, so 18px landed
-        a toast on top of the package selector. The requirement is the corner
-        and the clearance, not the number: pinned, right-aligned, and starting
-        below whatever the bar's height is.
-        """
-        import re
-        block = self.SRC.split("#toasts{")[1].split("}")[0]
-        assert "position:fixed" in block, block
-        assert "right:18px" in block, block
-        assert "bottom:" not in block, "toasts stack down from the top, not up from the bottom"
-        top = int(re.search(r"top:(\d+)px", block).group(1))
-        # .topbar is declared in more than one rule; take the one that sets the
-        # height, which is the one the toast has to clear.
-        bar = max(int(m) for m in
-                  re.findall(r"\.topbar\{[^}]*?height:(\d+)px", self.SRC, re.S))
-        assert top >= bar, f"a toast at {top}px lands on the {bar}px context bar"
+    def test_toasts_are_top_right(self):
+        assert "#toasts{\n  position:fixed;right:18px;top:18px;" in self.SRC
+        assert "bottom:18px;z-index:9500" not in self.SRC
 
     def test_sidebar_collapses_to_a_rail(self):
         """Collapsing narrows the sidebar column and the layer painted behind it.
 
-        Both numbers must agree: the sidebar is a sticky element inside a grid
-        column, and a separate fixed layer paints that column full-height. The
-        exact pixel count is not the contract - that the two agree, and are
-        smaller than the expanded rail, is.
+        The two widths must agree: the sidebar is a sticky element inside a
+        grid column, and a separate fixed layer paints that column full-height.
+        When they disagreed by 28px in v4.30 the rail colour bled into the work
+        area as a seam. The exact pixel count is not the contract - the fact
+        that both numbers are the same, and smaller than the expanded rail, is.
         """
         assert "function toggleRail(" in self.SRC
         assert 'id="railToggle"' in self.SRC
-        railed = int(self.SRC.split("body.rail .app{grid-template-columns:")[1].split("px")[0])
+        railed = int(self.SRC.split("body.rail .app{grid-template-columns:")[1]
+                     .split("px")[0])
         painted = int(self.SRC.split("body.rail .app:before{width:")[1].split("px")[0])
-        expanded = int(self.SRC.split(".app:before{\n  content:")[1].split("width:")[1].split("px")[0])
+        expanded = int(self.SRC.split(".app:before{\n  content:")[1]
+                       .split("width:")[1].split("px")[0])
         assert railed == painted, f"rail column {railed}px, painted {painted}px"
         assert railed < expanded
 
@@ -302,18 +288,16 @@ class TestSidebarAndFonts:
         assert "ev.key.toLowerCase() === 'b'" in self.SRC
 
     def test_the_loaded_faces_match_the_declared_stacks(self):
-        """Whatever the faces are, the <link> must actually fetch them.
+        """Whatever the UI face is, the <link> must actually fetch it.
 
-        Before v4.30 this pinned Nunito + Anuphan + JetBrains Mono by name. The
-        rebuild changed all three, and a name-pinned test would have gone red
-        without saying anything true. What matters is that the first family
-        named in each stack is one the page actually loads - a silent fallback
-        to Segoe UI is the failure this catches.
+        Before v4.30 this pinned Nunito + Anuphan + JetBrains Mono by name.
+        The rebuild changed all three, and a name-pinned test would have gone
+        red without saying anything true. What matters is that the first
+        family named in each stack is one the page actually loads - a silent
+        fallback to Segoe UI is the failure this catches.
         """
-        for var in ("--font-ui:", "--font-display:", "--font-mono:"):
+        for var in ("--font-ui:", "--font-mono:"):
             first = self.SRC.split(var)[1].split(",")[0].strip().strip("'")
-            if first.startswith("var("):
-                continue
             assert first.replace(" ", "+") in self.SRC, (
                 f"{var}{first} is declared but never loaded")
 

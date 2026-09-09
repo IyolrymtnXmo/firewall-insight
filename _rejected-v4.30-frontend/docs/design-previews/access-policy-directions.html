@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html{color-scheme:light dark}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Access Policy Direction Study</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;450;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<style>
+/* ============================================================
+   Firewall Insight — Access Policy · direction study
+   Three candidate visual worlds for the v4.30 frontend rebuild.
+   Data: External-FW snapshot 2026-09-08T06:24:57+00:00 (13 rules).
+   ============================================================ */
+
+/* ---- preview harness (deliberately NOT part of any direction) ---- */
+:root{
+  --hz-bg:#e8eaec; --hz-fg:#20262c; --hz-line:#c6ccd2; --hz-panel:#f6f7f8; --hz-mut:#5f6b76;
+}
+:root:not([data-theme="light"]){}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ --hz-bg:#15181b; --hz-fg:#dfe4e8; --hz-line:#2c3238; --hz-panel:#1d2126; --hz-mut:#8a949e; }
+}
+:root[data-theme="dark"]{ --hz-bg:#15181b; --hz-fg:#dfe4e8; --hz-line:#2c3238; --hz-panel:#1d2126; --hz-mut:#8a949e; }
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--hz-bg); color:var(--hz-fg);
+  font-family:'IBM Plex Sans','IBM Plex Sans Thai',system-ui,-apple-system,'Segoe UI',sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.hz{
+  display:flex; align-items:baseline; gap:18px; flex-wrap:wrap;
+  padding:14px 20px 13px; border-bottom:1px solid var(--hz-line); background:var(--hz-panel);
+  position:sticky; top:0; z-index:60;
+}
+.hz-title{font-size:12.5px;font-weight:600;letter-spacing:.02em}
+.hz-title b{font-weight:600}
+.hz-sub{font-size:11.5px;color:var(--hz-mut);letter-spacing:.01em}
+.hz-tabs{display:flex;gap:0;margin-left:auto;border:1px solid var(--hz-line);border-radius:3px;overflow:hidden}
+.hz-tabs button{
+  appearance:none;border:0;border-right:1px solid var(--hz-line);background:transparent;
+  color:var(--hz-mut);font:inherit;font-size:11.5px;font-weight:500;letter-spacing:.02em;
+  padding:7px 15px;cursor:pointer;white-space:nowrap;
+}
+.hz-tabs button:last-child{border-right:0}
+.hz-tabs button:hover{color:var(--hz-fg)}
+.hz-tabs button[aria-selected="true"]{background:var(--hz-fg);color:var(--hz-bg)}
+.hz-tabs button:focus-visible{outline:2px solid #2f6f9f;outline-offset:-2px}
+
+.hz-note{
+  padding:11px 20px;font-size:11.5px;line-height:1.55;color:var(--hz-mut);
+  border-bottom:1px solid var(--hz-line);background:var(--hz-panel);
+}
+.hz-note strong{color:var(--hz-fg);font-weight:600}
+
+.stage{padding:20px; display:flex; justify-content:center}
+.stage > .fi{width:100%;max-width:1460px}
+
+/* ============================================================
+   SHARED APP STRUCTURE — one markup, three worlds.
+   Every color below comes from a token redefined per direction.
+   ============================================================ */
+.fi{
+  --r:3px;
+  --row-h:30px; --cell-y:6px; --cell-x:10px; --tsize:12.5px;
+  border:1px solid var(--line);
+  background:var(--bg); color:var(--text);
+  border-radius:var(--r);
+  overflow:hidden;
+  box-shadow:0 1px 2px rgba(8,14,20,.10), 0 8px 24px -12px rgba(8,14,20,.22);
+  font-size:13px;
+}
+.fi ::selection{background:var(--sel);color:var(--text)}
+.fi *{scrollbar-color:var(--scroll) transparent;scrollbar-width:thin}
+.fi *::-webkit-scrollbar{width:11px;height:11px}
+.fi *::-webkit-scrollbar-thumb{background:var(--scroll);border:3px solid var(--bg);border-radius:6px}
+.fi *::-webkit-scrollbar-track{background:transparent}
+.fi :focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+.shell{display:grid;grid-template-columns:var(--nav-w,214px) minmax(0,1fr);min-height:660px}
+
+/* ---- side navigation ---- */
+.nav{background:var(--nav);border-right:1px solid var(--line);display:flex;flex-direction:column;min-width:0}
+.nav-brand{
+  display:flex;align-items:center;gap:9px;
+  padding:0 14px;height:var(--bar-h,42px);border-bottom:1px solid var(--line);
+  font-weight:600;font-size:13px;letter-spacing:-.005em;color:var(--text);
+}
+.nav-brand svg{color:var(--accent);flex:none}
+.nav-brand em{font-style:normal;color:var(--muted);font-weight:450}
+.nav-group{padding:12px 8px 4px;font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+.nav ul{list-style:none;margin:0;padding:0 6px;display:flex;flex-direction:column;gap:1px}
+.nav a{
+  display:flex;align-items:center;gap:9px;
+  padding:0 8px;height:var(--nav-h,28px);border-radius:2px;
+  color:var(--muted);text-decoration:none;font-size:12.5px;font-weight:450;
+  border-left:2px solid transparent;
+}
+.nav a svg{flex:none;color:var(--faint)}
+.nav a:hover{background:var(--hover);color:var(--text)}
+.nav a[aria-current="page"]{background:var(--nav-on);color:var(--text);font-weight:500;border-left-color:var(--accent)}
+.nav a[aria-current="page"] svg{color:var(--accent)}
+.nav-foot{margin-top:auto;border-top:1px solid var(--line);padding:9px 12px;display:flex;align-items:center;gap:7px}
+.nav-foot svg{color:var(--good);flex:none}
+.nav-foot span{font-size:10.5px;letter-spacing:.02em;color:var(--muted)}
+
+/* ---- main column ---- */
+.main{display:flex;flex-direction:column;min-width:0;background:var(--bg)}
+
+.topbar{
+  height:var(--bar-h,42px);border-bottom:1px solid var(--line);background:var(--chrome);
+  display:flex;align-items:center;gap:10px;padding:0 12px;min-width:0;
+}
+.crumbs{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);min-width:0}
+.crumbs b{font-weight:600;color:var(--text)}
+.crumbs svg{color:var(--faint)}
+.ctx{display:flex;align-items:center;gap:6px;margin-left:auto;min-width:0}
+.field{
+  display:flex;align-items:center;gap:6px;height:26px;padding:0 8px;
+  border:1px solid var(--line);border-radius:2px;background:var(--input);
+  font-size:12px;color:var(--text);white-space:nowrap;
+}
+.field .k{color:var(--faint);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase}
+.field svg{color:var(--faint)}
+.conn{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);padding-left:4px}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--good);box-shadow:0 0 0 3px var(--good-soft);flex:none}
+
+/* ---- page head ---- */
+.head{padding:14px 16px 0;display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.head h1{margin:0;font-size:16px;font-weight:600;letter-spacing:-.01em}
+.head p{margin:4px 0 0;font-size:12px;color:var(--muted);max-width:66ch;line-height:1.5}
+.counts{margin-left:auto;display:flex;gap:0;border:1px solid var(--line);border-radius:2px;overflow:hidden;background:var(--panel)}
+.counts div{padding:6px 13px;border-right:1px solid var(--line);min-width:74px}
+.counts div:last-child{border-right:0}
+.counts dt{font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);margin:0}
+.counts dd{margin:2px 0 0;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;font-family:'IBM Plex Mono',ui-monospace,monospace}
+.counts .flag dd{color:var(--warn)}
+
+/* ---- notice (data_quality) ---- */
+.notice{
+  margin:13px 16px 0;display:flex;gap:9px;align-items:flex-start;
+  border:1px solid var(--warn-line);background:var(--warn-soft);
+  border-radius:2px;padding:9px 11px;
+}
+.notice svg{color:var(--warn);flex:none;margin-top:1px}
+.notice p{margin:0;font-size:12px;line-height:1.55;color:var(--text)}
+.notice b{font-weight:600}
+.notice code{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:11.5px;background:var(--code);padding:0 3px;border-radius:2px}
+
+/* ---- toolbar ---- */
+.tools{
+  margin:13px 0 0;padding:0 16px 11px;display:flex;align-items:center;gap:7px;flex-wrap:wrap;
+  border-bottom:1px solid var(--line);
+}
+.btn{
+  display:inline-flex;align-items:center;gap:6px;height:27px;padding:0 10px;
+  border:1px solid var(--line);border-radius:2px;background:var(--input);color:var(--text);
+  font:inherit;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;
+}
+.btn svg{color:var(--faint)}
+.btn:hover{background:var(--hover);border-color:var(--line-str)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.pri svg{color:currentColor;opacity:.85}
+.btn.pri:hover{background:var(--accent-hi);border-color:var(--accent-hi)}
+.search{position:relative;flex:1;min-width:190px;max-width:330px}
+.search svg{position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--faint);pointer-events:none}
+.search input{
+  width:100%;height:27px;padding:0 9px 0 28px;border:1px solid var(--line);border-radius:2px;
+  background:var(--input);color:var(--text);font:inherit;font-size:12px;
+}
+.search input::placeholder{color:var(--faint)}
+.sel{
+  height:27px;padding:0 24px 0 9px;border:1px solid var(--line);border-radius:2px;
+  background:var(--input) no-repeat right 8px center;color:var(--text);font:inherit;font-size:12px;
+  appearance:none;
+  background-image:linear-gradient(45deg,transparent 50%,var(--faint) 50%),linear-gradient(135deg,var(--faint) 50%,transparent 50%);
+  background-position:right 12px center,right 8px center;background-size:4px 4px,4px 4px;background-repeat:no-repeat;
+}
+.spacer{flex:1}
+.rowcount{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* ---- table ---- */
+.grid{overflow:auto;max-height:var(--grid-h,404px)}
+table{border-collapse:separate;border-spacing:0;width:100%;min-width:1240px;font-size:var(--tsize)}
+thead th{
+  position:sticky;top:0;z-index:4;
+  background:var(--thead);color:var(--faint);
+  font-size:10px;font-weight:600;letter-spacing:.075em;text-transform:uppercase;
+  text-align:left;padding:0 var(--cell-x);height:var(--head-h,27px);white-space:nowrap;
+  border-bottom:1px solid var(--line-str);
+}
+tbody td{
+  padding:var(--cell-y) var(--cell-x);vertical-align:top;line-height:1.42;
+  border-bottom:1px solid var(--line);
+}
+tbody tr:hover td{background:var(--hover)}
+.mono{font-family:'IBM Plex Mono',ui-monospace,'Cascadia Mono',monospace;font-variant-numeric:tabular-nums}
+.num{text-align:right;font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+.dim{color:var(--faint)}
+.sub{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+
+/* rule gutter */
+.c-rule{width:1%;white-space:nowrap;border-right:1px solid var(--line);background:var(--gutter)}
+.c-rule .n{font-family:'IBM Plex Mono',ui-monospace,monospace;font-weight:600;font-variant-numeric:tabular-nums}
+.c-name{min-width:130px}
+.c-obj{min-width:186px}
+.c-svc{min-width:170px}
+.c-hits{text-align:right}
+
+/* action encoded in form as well as color */
+.act{display:inline-flex;align-items:center;gap:6px;font-weight:500;white-space:nowrap}
+.act::before{content:"";width:3px;height:11px;border-radius:1px;background:currentColor;flex:none}
+.act.accept{color:var(--good)}
+.act.drop{color:var(--bad)}
+.act.inner{color:var(--link)}
+.act.inner::before{background:repeating-linear-gradient(to bottom,currentColor 0 2px,transparent 2px 4px)}
+
+.tag{
+  display:inline-block;padding:1px 6px;border:1px solid var(--line-str);border-radius:2px;
+  font-size:10.5px;font-weight:500;letter-spacing:.02em;color:var(--muted);background:var(--panel);
+  white-space:nowrap;
+}
+.tag.inline{color:var(--link);border-color:var(--link-line);background:var(--link-soft)}
+.tag.zero{color:var(--warn);border-color:var(--warn-line);background:var(--warn-soft)}
+.tag.partial{color:var(--warn);border-color:var(--warn-line);background:var(--warn-soft)}
+
+/* inline-layer hierarchy */
+tr.parent td{background:var(--parent)}
+tr.parent .c-rule{box-shadow:inset 2px 0 0 var(--link)}
+tr.child td{background:var(--child)}
+tr.child .c-rule{box-shadow:inset 2px 0 0 var(--link)}
+tr.child .c-rule .n{padding-left:15px;position:relative;display:inline-block}
+tr.child .c-rule .n::before{
+  content:"";position:absolute;left:4px;top:-7px;bottom:50%;width:1px;background:var(--link-line);
+}
+tr.child .c-rule .n::after{
+  content:"";position:absolute;left:4px;top:50%;width:7px;height:1px;background:var(--link-line);
+}
+tr.child-last .c-rule .n::before{bottom:50%}
+
+/* ---- status bar ---- */
+.statusbar{
+  margin-top:auto;border-top:1px solid var(--line);background:var(--chrome);
+  height:29px;display:flex;align-items:center;gap:14px;padding:0 12px;
+  font-size:11.5px;color:var(--muted);
+}
+.statusbar .mono{font-size:11px}
+.statusbar .right{margin-left:auto;display:flex;align-items:center;gap:14px}
+.statusbar .ok{color:var(--good);display:inline-flex;align-items:center;gap:5px}
+
+/* ============================================================
+   DIRECTION A — "Operator"
+   The 3 a.m. NOC screen. SmartConsole density, one dark world,
+   colour reserved entirely for rule state.
+   ============================================================ */
+.fi.a{
+  --bg:#0c1116; --nav:#0a0e13; --nav-on:#141c24; --chrome:#0a0e13; --panel:#111921;
+  --thead:#0e151c; --gutter:#0a1017; --input:#0a0f14; --code:#141c24;
+  --line:#1b2530; --line-str:#293643; --hover:#141d26;
+  --text:#ced9e3; --muted:#8494a3; --faint:#5d6d7c;
+  --accent:#5d93c4; --accent-hi:#74a5d2; --on-accent:#08121b; --sel:#1c3040;
+  --scroll:#26323e;
+  --good:#4aa87a; --good-soft:rgba(74,168,122,.20); --bad:#d1687a; --warn:#c79a45;
+  --warn-line:#3c3018; --warn-soft:#1a160c;
+  --link:#5d93c4; --link-line:#2b4a66; --link-soft:#101c27;
+  --parent:#0f161d; --child:#0b1218;
+  --row-h:26px; --cell-y:4px; --cell-x:9px; --tsize:11.5px; --nav-h:26px; --bar-h:38px;
+  --head-h:24px; --nav-w:200px; --r:2px; --grid-h:398px;
+  border-color:#1b2530;
+}
+.fi.a .head h1{font-size:15px}
+.fi.a tbody td{border-bottom-color:#161f28}
+.fi.a table{min-width:1200px}
+.fi.a .counts dd{font-size:14px}
+.fi.a .nav-brand{letter-spacing:.01em}
+
+/* ============================================================
+   DIRECTION B — "Console"
+   Daylight enterprise SaaS. Paper-white grid, slate chrome,
+   one deep steel accent; breathing room without losing the row count.
+   ============================================================ */
+.fi.b{
+  --bg:#ffffff; --nav:#f4f6f8; --nav-on:#e6ecf1; --chrome:#fbfcfd; --panel:#f7f9fa;
+  --thead:#f4f6f8; --gutter:#fafbfc; --input:#ffffff; --code:#eef2f5;
+  --line:#dde4ea; --line-str:#c3cdd6; --hover:#f2f6f9;
+  --text:#15202b; --muted:#54646f; --faint:#7d8c98;
+  --accent:#1f5f8b; --accent-hi:#19506f; --on-accent:#ffffff; --sel:#cfe1ee;
+  --scroll:#c6d0d9;
+  --good:#1f7a4d; --good-soft:rgba(31,122,77,.16); --bad:#b4232f; --warn:#8a5a08;
+  --warn-line:#e6d2a8; --warn-soft:#fdf7e8;
+  --link:#1f5f8b; --link-line:#b7cfe0; --link-soft:#f0f6fa;
+  --parent:#fafcfd; --child:#f6f9fb;
+  --row-h:36px; --cell-y:8px; --cell-x:12px; --tsize:12.5px; --nav-h:30px; --bar-h:46px;
+  --head-h:31px; --nav-w:222px; --r:4px; --grid-h:430px;
+}
+.fi.b{box-shadow:0 1px 2px rgba(21,32,43,.06),0 14px 34px -18px rgba(21,32,43,.24)}
+.fi.b .head{padding-top:17px}
+.fi.b .head h1{font-size:17px}
+.fi.b .btn,.fi.b .sel,.fi.b .search input,.fi.b .field{border-radius:3px;height:29px}
+.fi.b .counts{border-radius:3px}
+.fi.b .nav a{border-radius:3px}
+
+/* ============================================================
+   DIRECTION C — "Restrained"
+   The current shell, told the truth. Same layout the team knows,
+   with the violet, the gradients and the round corners removed.
+   Ships light and dark, because this one has to live in both.
+   ============================================================ */
+.fi.c{
+  --bg:#ffffff; --nav:#f6f7f9; --nav-on:#eceff3; --chrome:#fcfcfd; --panel:#f8f9fb;
+  --thead:#f6f7f9; --gutter:#fbfbfc; --input:#ffffff; --code:#eff1f4;
+  --line:#e0e3e8; --line-str:#c8cdd5; --hover:#f4f6f8;
+  --text:#1b1f26; --muted:#5a626d; --faint:#828b96;
+  --accent:#39699a; --accent-hi:#2e5883; --on-accent:#ffffff; --sel:#d5e3f0;
+  --scroll:#ccd2da;
+  --good:#26734d; --good-soft:rgba(38,115,77,.16); --bad:#a72b38; --warn:#8a6012;
+  --warn-line:#e5d5ac; --warn-soft:#fdf8ec;
+  --link:#39699a; --link-line:#bdd0e2; --link-soft:#f2f6fa;
+  --parent:#fbfcfd; --child:#f7f9fb;
+  --row-h:32px; --cell-y:7px; --cell-x:11px; --tsize:12.5px; --nav-h:29px; --bar-h:42px;
+  --head-h:28px; --nav-w:214px; --r:3px; --grid-h:414px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .fi.c{
+    --bg:#14171b; --nav:#101317; --nav-on:#1c2127; --chrome:#101317; --panel:#191d22;
+    --thead:#161a1f; --gutter:#12161a; --input:#101317; --code:#1c2127;
+    --line:#252b32; --line-str:#343c45; --hover:#1b2026;
+    --text:#d5dae0; --muted:#8a949f; --faint:#67717c;
+    --accent:#6b9ac9; --accent-hi:#82abd6; --on-accent:#0c1116; --sel:#22333f;
+    --scroll:#2e353d;
+    --good:#4ea77c; --good-soft:rgba(78,167,124,.20); --bad:#d0697a; --warn:#c69a4a;
+    --warn-line:#3a3018; --warn-soft:#191610;
+    --link:#6b9ac9; --link-line:#31485e; --link-soft:#141c24;
+    --parent:#171b20; --child:#12161a;
+  }
+}
+:root[data-theme="dark"] .fi.c{
+  --bg:#14171b; --nav:#101317; --nav-on:#1c2127; --chrome:#101317; --panel:#191d22;
+  --thead:#161a1f; --gutter:#12161a; --input:#101317; --code:#1c2127;
+  --line:#252b32; --line-str:#343c45; --hover:#1b2026;
+  --text:#d5dae0; --muted:#8a949f; --faint:#67717c;
+  --accent:#6b9ac9; --accent-hi:#82abd6; --on-accent:#0c1116; --sel:#22333f;
+  --scroll:#2e353d;
+  --good:#4ea77c; --good-soft:rgba(78,167,124,.20); --bad:#d0697a; --warn:#c69a4a;
+  --warn-line:#3a3018; --warn-soft:#191610;
+  --link:#6b9ac9; --link-line:#31485e; --link-soft:#141c24;
+  --parent:#171b20; --child:#12161a;
+}
+
+/* ---- direction rationale card under each stage ---- */
+.why{
+  max-width:1460px;margin:16px auto 34px;padding:0 2px;
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0;
+  border:1px solid var(--hz-line);border-radius:3px;overflow:hidden;background:var(--hz-panel);
+}
+.why section{padding:12px 15px;border-right:1px solid var(--hz-line)}
+.why section:last-child{border-right:0}
+.why h3{margin:0 0 5px;font-size:10px;font-weight:600;letter-spacing:.085em;text-transform:uppercase;color:var(--hz-mut)}
+.why p{margin:0;font-size:12px;line-height:1.6}
+.why .swatches{display:flex;gap:0;margin-top:8px;border:1px solid var(--hz-line);border-radius:2px;overflow:hidden;width:max-content}
+.why .swatches i{display:block;width:26px;height:18px}
+
+.panelhide{display:none}
+@media (max-width:760px){
+  .shell{grid-template-columns:1fr}
+  .nav{display:none}
+  .hz{position:static}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <g id="i-gauge"><path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4.2-5"/></g>
+    <g id="i-rows"><rect x="3.2" y="4.6" width="17.6" height="14.8" rx="1"/><path d="M3.2 9.5h17.6M3.2 14.5h17.6"/></g>
+    <g id="i-scan"><path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16"/><path d="M4 12h16"/></g>
+    <g id="i-swap"><path d="M4 8.5h13.5M14 5l3.5 3.5L14 12"/><path d="M20 15.5H6.5M10 12l-3.5 3.5L10 19"/></g>
+    <g id="i-route"><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><path d="M8.2 6h5.3a3 3 0 0 1 0 6h-3a3 3 0 0 0 0 6h5.3"/></g>
+    <g id="i-map"><rect x="9.4" y="3.6" width="5.2" height="4.2" rx=".6"/><rect x="3" y="16.2" width="5.2" height="4.2" rx=".6"/><rect x="15.8" y="16.2" width="5.2" height="4.2" rx=".6"/><path d="M12 7.8v4.4M5.6 16.2v-2.6h12.8v2.6M12 12.2v1.4"/></g>
+    <g id="i-diff"><path d="M4 6.5h9M4 12h6M4 17.5h9"/><path d="M17 5.5v13M14 8.5l3-3 3 3"/></g>
+    <g id="i-check"><rect x="3.6" y="4" width="16.8" height="16" rx="1.2"/><path d="M8 12.2l2.6 2.6L16 9.4"/></g>
+    <g id="i-pulse"><path d="M3 12.5h4l2.2-5 3.6 9 2.4-4h5.8"/></g>
+    <g id="i-shield"><path d="M12 3.4l7 2.6v5.4c0 4.2-2.9 7.6-7 9.2-4.1-1.6-7-5-7-9.2V6z"/><path d="M9 12.2l2.2 2.2L15.4 10"/></g>
+    <g id="i-search"><circle cx="10.8" cy="10.8" r="6"/><path d="M15.2 15.2L20 20"/></g>
+    <g id="i-down"><path d="M12 4v11M8 11.4l4 4 4-4"/><path d="M4.5 19.5h15"/></g>
+    <g id="i-refresh"><path d="M19.5 12a7.5 7.5 0 1 1-2.3-5.4"/><path d="M19.8 4.6v4.2h-4.2"/></g>
+    <g id="i-alert"><path d="M12 4.6L21 19.4H3z"/><path d="M12 10v4.2M12 16.8v.2"/></g>
+    <g id="i-lock"><rect x="4.8" y="10.4" width="14.4" height="9.2" rx="1.4"/><path d="M8.2 10.4V7.8a3.8 3.8 0 0 1 7.6 0v2.6"/></g>
+    <g id="i-chev"><path d="M9.5 6l6 6-6 6"/></g>
+    <g id="i-layers"><path d="M12 3.6L3.6 8 12 12.4 20.4 8z"/><path d="M3.6 12.6L12 17l8.4-4.4"/></g>
+  </defs>
+</svg>
+
+<header class="hz">
+  <div>
+    <div class="hz-title"><b>Firewall Insight</b> — Access Policy, three directions</div>
+    <div class="hz-sub">Real External-FW snapshot · 9 top-level + 4 inline rules · taken 8 Sep 2026 06:24 UTC</div>
+  </div>
+  <div class="hz-tabs" role="tablist" aria-label="Design direction">
+    <button role="tab" aria-selected="true"  data-dir="a" id="tab-a" aria-controls="stage">A · Operator</button>
+    <button role="tab" aria-selected="false" data-dir="b" id="tab-b" aria-controls="stage">B · Console</button>
+    <button role="tab" aria-selected="false" data-dir="c" id="tab-c" aria-controls="stage">C · Restrained</button>
+  </div>
+</header>
+
+<div class="hz-note" id="hznote"></div>
+
+<div class="stage" id="stage" role="tabpanel" aria-labelledby="tab-a">
+  <div class="fi a" id="fi">
+
+    <div class="shell">
+      <!-- ================= navigation ================= -->
+      <nav class="nav" aria-label="Sections">
+        <div class="nav-brand">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><use href="#i-shield"/></svg>
+          Firewall <em>Insight</em>
+        </div>
+        <div class="nav-group">Policy</div>
+        <ul>
+          <li><a href="#"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-gauge"/></svg>Dashboard</a></li>
+          <li><a href="#" aria-current="page"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-rows"/></svg>Access Policy</a></li>
+          <li><a href="#"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-scan"/></svg>Analyze</a></li>
+          <li><a href="#"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-swap"/></svg>NAT Policy</a></li>
+        </ul>
+        <div class="nav-group">Verify</div>
+        <ul>
+          <li><a href="#"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-route"/></svg>Traffic Path</a></li>
+          <li><a href="#"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-map"/></svg>Network Mapping</a></li>
+          <li><a href="#"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-diff"/></svg>Policy Diff</a></li>
+          <li><a href="#"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check"/></svg>Compliance</a></li>
+          <li><a href="#"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pulse"/></svg>Gateway Health</a></li>
+        </ul>
+        <div class="nav-foot">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-lock"/></svg>
+          <span>Read-only · Management API</span>
+        </div>
+      </nav>
+
+      <!-- ================= main ================= -->
+      <div class="main">
+        <div class="topbar">
+          <div class="crumbs">
+            <span>External-FW</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><use href="#i-chev"/></svg>
+            <b>Access Policy</b>
+          </div>
+          <div class="ctx">
+            <div class="field"><span class="k">MGMT</span><span class="mono">172.23.31.180</span></div>
+            <div class="field"><span class="k">Package</span><span>External-FW</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(90deg)"><use href="#i-chev"/></svg>
+            </div>
+            <div class="field"><span class="k">Layer</span><span>External-FW Network</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(90deg)"><use href="#i-chev"/></svg>
+            </div>
+            <div class="conn"><span class="dot"></span>Session live</div>
+          </div>
+        </div>
+
+        <div class="head">
+          <div>
+            <h1>Access Policy</h1>
+            <p>The configured Access Control policy as the Management Server returns it. Nothing here is evaluated against traffic — that is Traffic Path.</p>
+          </div>
+          <dl class="counts">
+            <div><dt>Top-level</dt><dd>9</dd></div>
+            <div><dt>Inline</dt><dd>4</dd></div>
+            <div class="flag"><dt>Unresolved</dt><dd>1</dd></div>
+          </dl>
+        </div>
+
+        <div class="notice">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert"/></svg>
+          <p><b>One service object did not resolve completely.</b> <code>AD-Services</code> on rule 4 came back with 11 port atoms and <code>complete: false</code> after 6 hydration rounds. Coverage answers that depend on rule 4 are reported as unverified, not as pass.</p>
+        </div>
+
+        <div class="tools">
+          <button class="btn pri">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-refresh"/></svg>
+            Load policy
+          </button>
+          <button class="btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-down"/></svg>
+            Export CSV
+          </button>
+          <div class="search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-search"/></svg>
+            <input type="search" placeholder="Filter by rule, object, service or action" aria-label="Filter rules">
+          </div>
+          <select class="sel" aria-label="Action"><option>All actions</option><option>Accept</option><option>Drop</option><option>Inner Layer</option></select>
+          <select class="sel" aria-label="Layer"><option>All layers</option><option>External-FW Network</option><option>VPN InternetLayer</option></select>
+          <span class="spacer"></span>
+          <span class="rowcount">13 of 13 rules</span>
+        </div>
+
+        <div class="grid">
+          <table>
+            <thead>
+              <tr>
+                <th class="c-rule">Rule</th>
+                <th>Layer</th>
+                <th>Section</th>
+                <th class="c-name">Name</th>
+                <th class="c-obj">Source</th>
+                <th class="c-obj">Destination</th>
+                <th>VPN</th>
+                <th class="c-svc">Service</th>
+                <th>Action</th>
+                <th>Track</th>
+                <th>Install on</th>
+                <th class="c-hits">Hits</th>
+                <th>Enabled</th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="statusbar">
+          <span class="ok">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><use href="#i-lock"/></svg>
+            13 GET calls · no write command exists in this build
+          </span>
+          <span class="right">
+            <span>Snapshot <span class="mono">External-FW-20260908062457</span></span>
+            <span>Read at <span class="mono">06:24:57 UTC</span></span>
+            <span class="mono dim">v4.30.0-dev</span>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="why" id="why"></div>
+
+<script>
+/* Real rows from snapshots/External-FW-20260908062457.json — text field verbatim. */
+const RULES = [
+  {r:"1",  kind:"top",  layer:"External-FW Network", name:"—", src:"VPN-GW (172.23.33.179), VPN_10.130.56.0/24 (10.130.56.0/24)", dst:"Any", svc:"Any", act:"Accept", hits:128, last:"7 Sep 14:07"},
+  {r:"2",  kind:"top",  layer:"External-FW Network", name:"Admin-Access", src:"Any", dst:"External-Cluster (172.23.34.179), External-GW01 (172.23.31.177), External-GW02 (172.23.31.178), Internal-GW01 (172.23.31.176)", svc:"https (TCP/443), http (TCP/80), ssh (TCP/22), icmp-requests", act:"Accept", hits:120036, last:"8 Sep 13:20"},
+  {r:"3",  kind:"top",  layer:"External-FW Network", name:"Lab-Device-Mgmt", src:"Admin-Networks", dst:"ESXi-NUC_192.168.10.2 (192.168.10.2), VDX-LAB_172.23.31.199 (172.23.31.199)", svc:"https (TCP/443), ssh (TCP/22)", act:"Accept", hits:470, last:"4 Sep 16:03"},
+  {r:"4",  kind:"top",  layer:"External-FW Network", name:"VLAN20-to-AD", src:"LAB-VLAN20 (192.168.20.0/24), Net-Corp-172.23.10.0 (172.23.10.0/23), Vlan33_Devsec (172.23.33.0/24)", dst:"AD-Server_192.168.10.10 (192.168.10.10)", svc:"AD-Services", svcFlag:"partial", act:"Accept", hits:696, last:"7 Sep 06:33"},
+  {r:"5",  kind:"top",  layer:"External-FW Network", name:"Access-to-RDP", src:"LAB-VLAN10 (192.168.10.0/24), Net-Corp-172.23.10.0 (172.23.10.0/23), Vlan33_Devsec (172.23.33.0/24)", dst:"RDP-Server_192.168.20.100 (192.168.20.100), NAT-RDP-34-180 (172.23.34.180)", svc:"Remote_Desktop_Protocol (TCP/3389), ssh (TCP/22)", act:"Accept", hits:89, last:"4 Sep 14:23"},
+  {r:"6",  kind:"top",  layer:"External-FW Network", name:"Access-to-Web", src:"Admin-Networks, LAB-Internal-Nets", dst:"Web-Server_192.168.20.20 (192.168.20.20)", svc:"http (TCP/80), https (TCP/443)", act:"Accept", hits:16, last:"1 Sep 17:15"},
+  {r:"7",  kind:"top",  layer:"External-FW Network", name:"Lab-Troubleshoot-ICMP", src:"Admin-Networks, LAB-Internal-Nets", dst:"LAB-Internal-Nets, Net-VLAN31-Infra (172.23.31.0/24)", svc:"icmp-requests", act:"Accept", hits:562219, last:"8 Sep 12:45"},
+  {r:"8",  kind:"parent", layer:"External-FW Network", name:"Lab-Outbound", src:"LAB-Internal-Nets", dst:"All_Internet", svc:"http (TCP/80), https (TCP/443), dns, ntp", act:"Inner Layer", inner:"VPN InternetLayer", hits:95271, last:"8 Sep 13:12"},
+  {r:"8.1", kind:"child", layer:"VPN InternetLayer", name:"Allow-Web", src:"LAB-Internal-Nets", dst:"All_Internet", svc:"https (TCP/443), http (TCP/80)", act:"Accept", hits:25172, last:"8 Sep 13:09"},
+  {r:"8.2", kind:"child", layer:"VPN InternetLayer", name:"Allow-DNS", src:"LAB-Internal-Nets", dst:"All_Internet", svc:"dns", act:"Accept", hits:64146, last:"8 Sep 11:02"},
+  {r:"8.3", kind:"child", layer:"VPN InternetLayer", name:"Allow-NTP", src:"LAB-Internal-Nets", dst:"All_Internet", svc:"ntp", act:"Accept", hits:5818, last:"8 Sep 11:14"},
+  {r:"8.4", kind:"child", layer:"VPN InternetLayer", name:"Block-Rest", src:"Any", dst:"Any", svc:"Any", act:"Drop", hits:0, last:null, lastChild:true},
+  {r:"9",  kind:"top",  layer:"External-FW Network", name:"Cleanup rule", src:"Any", dst:"Any", svc:"Any", act:"Drop", hits:2527032, last:"8 Sep 12:31"}
+];
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const actClass = a => a === 'Accept' ? 'accept' : a === 'Drop' ? 'drop' : 'inner';
+const fmt = n => n.toLocaleString('en-US');
+
+document.getElementById('tbody').innerHTML = RULES.map(d => {
+  const trc = d.kind === 'parent' ? 'parent' : d.kind === 'child' ? ('child' + (d.lastChild ? ' child-last' : '')) : '';
+  const layerCell = d.kind === 'child'
+    ? `<span class="tag inline">${esc(d.layer)}</span><span class="sub">under rule 8</span>`
+    : `${esc(d.layer)}${d.kind === 'parent' ? '<span class="sub">4 inline rules attached</span>' : ''}`;
+  const svcCell = esc(d.svc) + (d.svcFlag === 'partial'
+    ? '<span class="sub"><span class="tag partial">partially resolved</span></span>' : '');
+  const hitsCell = d.hits === 0
+    ? `<span class="tag zero">0</span>`
+    : `${fmt(d.hits)}<span class="sub mono">${esc(d.last)}</span>`;
+  const actCell = `<span class="act ${actClass(d.act)}">${esc(d.act)}</span>` +
+    (d.inner ? `<span class="sub">→ ${esc(d.inner)}</span>` : '');
+  return `<tr class="${trc}">
+    <td class="c-rule"><span class="n">${esc(d.r)}</span></td>
+    <td>${layerCell}</td>
+    <td class="dim">—</td>
+    <td class="c-name">${d.name === '—' ? '<span class="dim">—</span>' : esc(d.name)}</td>
+    <td class="c-obj">${esc(d.src)}</td>
+    <td class="c-obj">${esc(d.dst)}</td>
+    <td class="dim">Any</td>
+    <td class="c-svc">${svcCell}</td>
+    <td>${actCell}</td>
+    <td class="dim">—</td>
+    <td class="dim">Policy Targets</td>
+    <td class="c-hits num">${hitsCell}</td>
+    <td><span class="tag">Enabled</span></td>
+  </tr>`;
+}).join('');
+
+const NOTES = {
+  a: '<strong>A · Operator.</strong> Built for the person who stares at this eight hours a day looking for the one wrong row. 26px rows, 11.5px type, a hard rule gutter, and colour spent only on Accept / Drop / Inner Layer. One dark world — no light mode, because the use scene is a dim ops room, not a laptop on a train.',
+  b: '<strong>B · Console.</strong> The daylight enterprise tool — AlgoSec / Tufin territory. Paper-white grid on slate chrome, 36px rows, a single deep steel accent for the primary action and the current section. Reads well in a meeting, on a projector, and in a PDF sent to a customer.',
+  c: '<strong>C · Restrained.</strong> The shell your team already knows, told the truth: same sidebar, same two-theme toggle, with the violet, the gradients, the 15px corners and Nunito taken out. Lowest-risk path — the 102 UI assertions mostly survive because the structure never moves.'
+};
+const WHY = {
+  a: [
+    ['Palette', 'Near-black slate with a blue bias, one steel accent at #5D93C4. Every other colour in the interface means a rule state and nothing else.', ['#0c1116','#111921','#5d93c4','#4aa87a','#d1687a','#c79a45']],
+    ['Type', 'IBM Plex Sans at 11.5px for chrome, IBM Plex Mono for every address, port and hit count. Tabular figures so 2,527,032 lines up under 128.', null],
+    ['Density', '26px rows, 24px header, 200px rail — 13 rules with no scroll, roughly 34 on a 1080p screen. Matches what SmartConsole shows in the same space.', null],
+    ['Risk', 'Highest. Single-theme means the light-mode toggle and its tests come out; density means the summary cards and metric type get rebuilt.', null]
+  ],
+  b: [
+    ['Palette', 'White table on #F4F6F8 chrome, deep steel #1F5F8B for the primary action and current section. Semantic green/red/amber are kept separate from the accent.', ['#ffffff','#f4f6f8','#1f5f8b','#1f7a4d','#b4232f','#8a5a08']],
+    ['Type', 'IBM Plex Sans 12.5px, Plex Mono for data. Uppercase 10px column labels with 0.075em tracking — the only place tracking is used.', null],
+    ['Density', '36px rows, 30px nav items. About 22 rules per 1080p screen. Trades roughly a third of the row count for readability at arm\'s length.', null],
+    ['Risk', 'Medium. Structure holds, but every dark-mode assertion and colour string in the tests has to be re-pointed at the light palette.', null]
+  ],
+  c: [
+    ['Palette', 'Neutral greys carrying a faint blue bias, accent #39699A. Ships light and dark from one token set, the way the current app already does.', ['#ffffff','#f6f7f9','#39699a','#26734d','#a72b38','#8a6012']],
+    ['Type', 'IBM Plex Sans replacing Nunito — same legibility at small sizes, none of the rounded consumer warmth. Plex Mono replaces JetBrains Mono for family coherence.', null],
+    ['Density', '32px rows — a middle setting. About 26 rules per 1080p screen, up from roughly 18 today.', null],
+    ['Risk', 'Lowest. This is a `:root` rewrite plus an icon pass. Start here, measure how many of the 102 assertions actually go red, then decide about A or B.', null]
+  ]
+};
+
+const fi = document.getElementById('fi');
+const note = document.getElementById('hznote');
+const why = document.getElementById('why');
+const tabs = [...document.querySelectorAll('.hz-tabs button')];
+
+function show(dir){
+  fi.className = 'fi ' + dir;
+  note.innerHTML = NOTES[dir];
+  why.innerHTML = WHY[dir].map(([h, p, sw]) => `<section>
+    <h3>${h}</h3><p>${p}</p>
+    ${sw ? `<div class="swatches">${sw.map(c => `<i style="background:${c}"></i>`).join('')}</div>` : ''}
+  </section>`).join('');
+  tabs.forEach(t => t.setAttribute('aria-selected', String(t.dataset.dir === dir)));
+  document.getElementById('stage').setAttribute('aria-labelledby', 'tab-' + dir);
+}
+tabs.forEach(t => t.addEventListener('click', () => show(t.dataset.dir)));
+show('a');
+</script>
+
+</body>
+</html>

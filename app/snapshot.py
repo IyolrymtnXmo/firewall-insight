@@ -227,6 +227,15 @@ def list_snapshots(base: Path | None = None) -> list[dict[str, Any]]:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (ValueError, OSError):
             continue
+        # Hit totals per snapshot, so a trend over time can be drawn from
+        # readings that actually happened. The Management API reports a running
+        # total and a last-hit date, never a time series - the only honest way
+        # to get one is to compare snapshots the user took. A rule that reports
+        # no count at all is excluded from the total rather than counted as 0,
+        # and `hit_counted_rules` says how many rules the total covers.
+        rules = ((data.get("access") or {}).get("rules")) or []
+        counted = [r for r in rules
+                   if isinstance(r, dict) and isinstance(r.get("hits"), int)]
         out.append({
             "id": data.get("id") or path.stem,
             "package": data.get("package"),
@@ -234,6 +243,9 @@ def list_snapshots(base: Path | None = None) -> list[dict[str, Any]]:
             "app_version": data.get("app_version"),
             "access_rules": (data.get("summary") or {}).get("access_rules"),
             "nat_rules": (data.get("summary") or {}).get("nat_rules"),
+            "total_hits": sum(r["hits"] for r in counted) if counted else None,
+            "hit_counted_rules": len(counted),
+            "zero_hit_rules": sum(1 for r in counted if r["hits"] == 0),
             "bytes": path.stat().st_size,
         })
     return sorted(out, key=lambda x: str(x.get("taken_at") or ""), reverse=True)

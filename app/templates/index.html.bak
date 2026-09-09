@@ -65,7 +65,6 @@
       <g id="ic-server"><rect x="4" y="4" width="16" height="7" rx="1.6"/><rect x="4" y="13" width="16" height="7" rx="1.6"/><path d="M7.5 7.5h.01M7.5 16.5h.01"/></g>
       <g id="ic-hub"><circle cx="12" cy="12" r="3"/><path d="M12 3v6M12 15v6M3 12h6M15 12h6"/></g>
       <g id="ic-fail"><circle cx="12" cy="12" r="8.4"/><path d="M9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6"/></g>
-      <g id="ic-settings"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></g>
     </defs>
   </svg>
   <div class="app">
@@ -105,8 +104,6 @@
         <button class="" data-page="diff" data-label="Policy Diff" onclick="showPage('diff',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-diff"/></svg><span class="mlabel">Policy Diff</span></button>
         <button class="" data-page="compliance" data-label="Compliance" onclick="showPage('compliance',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-compliance"/></svg><span class="mlabel">Compliance</span></button>
         <button class="" data-page="health" data-label="Gateway Health" onclick="showPage('health',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-health"/></svg><span class="mlabel">Gateway Health</span></button>
-        <div class="menu-sep"></div>
-        <button class="" data-page="settings" data-label="Settings" onclick="showPage('settings',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-settings"/></svg><span class="mlabel">Settings</span></button>
       </div>
 
       <div class="sidebar-bottom">
@@ -198,83 +195,10 @@
             </div>
           </div>
 
-          <!-- band B — estate and findings on the left, score and trace on the right -->
+          <!-- band B — the estate, beside the score that grades it -->
           <div class="band band-b">
             <div class="stack">
-<div class="card flush fold" data-fold="dash-topo">
-            <div class="card-h">
-            <div>
-            <h3>Network Topology</h3>
-            <p>Read at one instant. Physical cabling, switches and live routing are not inferred.</p>
-            </div>
-            <div class="r"><button onclick="goTo('mapping')" style="height:32px;font-size:12px">Open full map</button></div>
-            </div>
-            <div class="topo-preview">
-            <div class="tp-legend">
-            <span><i style="background:var(--accent-2)"></i>Route (read at one instant)</span>
-            <span><i style="background:var(--accent)"></i>Configured link</span>
-            </div>
-            <svg id="topoPreview" viewBox="0 0 900 220" preserveAspectRatio="xMidYMid meet" aria-label="Gateway topology preview"></svg>
-            <div class="tp-empty" id="topoPreviewEmpty">
-            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-map"/></svg>
-            The map is drawn from gateways the Management API returns.
-            <button onclick="goTo('mapping')" style="height:32px;font-size:12px">Load the topology</button>
-            </div>
-            </div>
-
-            </div>
-              <div class="card flush fold" data-fold="dash-findings">
-              <div class="card-h">
-              <div><h3>Optimization Findings</h3><p>Latest Access analysis</p></div>
-              <div class="r"><span id="dNatDup" class="pill neutral">Duplicate NAT &mdash;</span></div>
-              </div>
-              <div id="dashFindings" class="table-wrap">
-              <table style="min-width:520px">
-              <thead>
-              <tr><th>Finding</th><th>Count</th><th>Meaning</th></tr>
-              </thead>
-              <tbody>
-              <tr><td>Shadow / Redundant</td><td>&mdash;</td><td>Run Access analysis to populate.</td></tr>
-              <tr><td>Duplicate Access</td><td>&mdash;</td><td>Run Access analysis to populate.</td></tr>
-              <tr><td>Any / Any / Any</td><td>&mdash;</td><td>Run Access analysis to populate.</td></tr>
-              </tbody>
-              </table>
-              </div>
-              </div>
-              <div id="inlineAnalysisSummary" class="inline-findings-card" style="display:none">
-              <div class="section-title">
-              <h3>Inline Layer Analysis</h3>
-              <span class="hint">Included in the overall Access analysis</span>
-              </div>
-              <div class="inline-findings-grid">
-              <div class="inline-mini">
-              <div class="hint">Inline Layers</div>
-              <div id="diLayers" class="v">0</div>
-              </div>
-              <div class="inline-mini">
-              <div class="hint">Inline Rules Inspected</div>
-              <div id="diRules" class="v">0</div>
-              </div>
-              <div class="inline-mini drill-card" onclick="drillTo('access','shadow')"
-              title="Open inline Shadow / Redundant findings">
-              <div class="hint">Shadow / Redundant</div>
-              <div id="diShadow" class="v">0</div>
-              </div>
-              <div class="inline-mini drill-card" onclick="drillTo('access','duplicates')"
-              title="Open inline Duplicate findings">
-              <div class="hint">Duplicate Groups</div>
-              <div id="diDup" class="v">0</div>
-              </div>
-              <div class="inline-mini drill-card" onclick="drillTo('access','any')"
-              title="Open inline Any / Any / Any findings">
-              <div class="hint">Any / Any / Any</div>
-              <div id="diAny" class="v">0</div>
-              </div>
-              </div>
-              </div>
-            </div>
-            <div class="stack">
-<div class="card flush">
+              <div class="card flush">
               <div class="card-h">
               <div>
               <h3>Policy Health Score</h3>
@@ -331,7 +255,90 @@
               <div><h3>Analysis Summary</h3></div>
               <div class="r"><span class="badge-soft">CORRELATED</span></div>
               </div>
-              <div class="card flush fold" data-fold="dash-trace">
+              <div class="finding-note">
+              <p class="quote" id="dashNote">Nothing has been read yet. Pick a Policy Package and run the analysis;
+              every number on this page comes from that read and from nothing else.</p>
+              </div>
+              </div>
+            </div>
+            <div class="card flush fold" data-fold="dash-topo">
+            <div class="card-h">
+            <div>
+            <h3>Network Topology</h3>
+            <p>Read at one instant. Physical cabling, switches and live routing are not inferred.</p>
+            </div>
+            <div class="r"><button onclick="goTo('mapping')" style="height:32px;font-size:12px">Open full map</button></div>
+            </div>
+            <div class="topo-preview">
+            <div class="tp-legend">
+            <span><i style="background:var(--accent-2)"></i>Route (read at one instant)</span>
+            <span><i style="background:var(--accent)"></i>Configured link</span>
+            </div>
+            <svg id="topoPreview" viewBox="0 0 900 300" preserveAspectRatio="xMidYMid meet" aria-label="Gateway topology preview"></svg>
+            <div class="tp-empty" id="topoPreviewEmpty">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-map"/></svg>
+            The map is drawn from gateways the Management API returns.
+            <button onclick="goTo('mapping')" style="height:32px;font-size:12px">Load the topology</button>
+            </div>
+            </div>
+
+            </div>
+          </div>
+
+          <!-- band C — what is wrong, beside what actually happens -->
+          <div class="band band-c">
+            <div class="stack">
+              <div class="card flush fold" data-fold="dash-findings">
+              <div class="card-h">
+              <div><h3>Optimization Findings</h3><p>Latest Access analysis</p></div>
+              <div class="r"><span id="dNatDup" class="pill neutral">Duplicate NAT &mdash;</span></div>
+              </div>
+              <div id="dashFindings" class="table-wrap">
+              <table style="min-width:520px">
+              <thead>
+              <tr><th>Finding</th><th>Count</th><th>Meaning</th></tr>
+              </thead>
+              <tbody>
+              <tr><td>Shadow / Redundant</td><td>&mdash;</td><td>Run Access analysis to populate.</td></tr>
+              <tr><td>Duplicate Access</td><td>&mdash;</td><td>Run Access analysis to populate.</td></tr>
+              <tr><td>Any / Any / Any</td><td>&mdash;</td><td>Run Access analysis to populate.</td></tr>
+              </tbody>
+              </table>
+              </div>
+              </div>
+              <div id="inlineAnalysisSummary" class="inline-findings-card" style="display:none">
+              <div class="section-title">
+              <h3>Inline Layer Analysis</h3>
+              <span class="hint">Included in the overall Access analysis</span>
+              </div>
+              <div class="inline-findings-grid">
+              <div class="inline-mini">
+              <div class="hint">Inline Layers</div>
+              <div id="diLayers" class="v">0</div>
+              </div>
+              <div class="inline-mini">
+              <div class="hint">Inline Rules Inspected</div>
+              <div id="diRules" class="v">0</div>
+              </div>
+              <div class="inline-mini drill-card" onclick="drillTo('access','shadow')"
+              title="Open inline Shadow / Redundant findings">
+              <div class="hint">Shadow / Redundant</div>
+              <div id="diShadow" class="v">0</div>
+              </div>
+              <div class="inline-mini drill-card" onclick="drillTo('access','duplicates')"
+              title="Open inline Duplicate findings">
+              <div class="hint">Duplicate Groups</div>
+              <div id="diDup" class="v">0</div>
+              </div>
+              <div class="inline-mini drill-card" onclick="drillTo('access','any')"
+              title="Open inline Any / Any / Any findings">
+              <div class="hint">Any / Any / Any</div>
+              <div id="diAny" class="v">0</div>
+              </div>
+              </div>
+              </div>
+            </div>
+            <div class="card flush fold" data-fold="dash-trace">
             <div class="card-h">
             <div><h3>Traffic Path</h3><p id="tracePreviewSub">No trace run in this session</p></div>
             <div class="r"><span id="tracePreviewVerdict" class="pill neutral">&mdash;</span></div>
@@ -346,7 +353,6 @@
             <div class="card-foot">
             Simulated from configuration &mdash; it never sends a packet.
             <button onclick="goTo('traffic')" style="height:30px;font-size:12px;margin-left:auto">Trace</button>
-            </div>
             </div>
             </div>
           </div>
@@ -752,129 +758,6 @@
           </div>
           <div id="inventory" class="map hidden"></div>
           <p id="mapNote" class="hint"></p>
-        </div>
-      </section>
-
-      <section id="settings" class="page">
-        <div class="page-head">
-          <div>
-            <h2>Settings</h2>
-            <p>Manage connection credentials for Check Point APIs. Credentials are encrypted at rest.</p>
-          </div>
-        </div>
-
-        <div class="panel">
-          <!-- Check Point Management API -->
-          <div class="card flush" id="cpCredCard">
-            <div class="card-h">
-              <div>
-                <h3>Check Point Management API</h3>
-                <p>Credentials for the Management Server REST API (read-only).</p>
-              </div>
-              <div class="r"><span id="cpCredStatus" class="pill neutral">Checking…</span></div>
-            </div>
-            <div class="cred-form" style="padding: var(--space-md) var(--space-lg) var(--space-lg)">
-              <div class="form-grid">
-                <label for="cpMgmt">Management Server</label>
-                <input id="cpMgmt" type="url" placeholder="https://10.10.10.10" autocomplete="off">
-
-                <label for="cpUser">Username</label>
-                <input id="cpUser" type="text" placeholder="api_user" autocomplete="off">
-
-                <label for="cpPass">Password</label>
-                <div class="pass-wrap">
-                  <input id="cpPass" type="password" placeholder="••••••••" autocomplete="new-password">
-                  <button type="button" class="pass-toggle" onclick="togglePassVis('cpPass',this)" title="Show password">Show</button>
-                </div>
-
-                <label for="cpDomain">Domain <span class="hint">(optional)</span></label>
-                <input id="cpDomain" type="text" placeholder="" autocomplete="off">
-              </div>
-              <div class="cred-actions">
-                <button class="secondary" onclick="testCred('checkpoint')">Test Connection</button>
-                <button class="primary" onclick="saveCred('checkpoint')">Save</button>
-                <button class="danger-ghost" onclick="deleteCred('checkpoint')">Delete</button>
-              </div>
-              <div id="cpTestResult" class="test-result" style="display:none"></div>
-            </div>
-          </div>
-
-          <!-- Gaia API -->
-          <div class="card flush" id="gaiaCredCard">
-            <div class="card-h">
-              <div>
-                <h3>Gaia API (Gateway Health)</h3>
-                <p>Credentials for Gaia REST API on each gateway (routing, interfaces, cluster state).</p>
-              </div>
-              <div class="r"><span id="gaiaCredStatus" class="pill neutral">Checking…</span></div>
-            </div>
-            <div class="cred-form" style="padding: var(--space-md) var(--space-lg) var(--space-lg)">
-              <div class="form-grid">
-                <label for="gaiaEnabled">Gaia Enabled</label>
-                <label class="toggle-switch">
-                  <input id="gaiaEnabled" type="checkbox">
-                  <span class="toggle-slider"></span>
-                </label>
-
-                <label for="gaiaUser">Username</label>
-                <input id="gaiaUser" type="text" placeholder="admin" autocomplete="off">
-
-                <label for="gaiaPass">Password</label>
-                <div class="pass-wrap">
-                  <input id="gaiaPass" type="password" placeholder="••••••••" autocomplete="new-password">
-                  <button type="button" class="pass-toggle" onclick="togglePassVis('gaiaPass',this)" title="Show password">Show</button>
-                </div>
-
-                <label for="gaiaHosts">Gateway Hosts <span class="hint">(comma-separated)</span></label>
-                <input id="gaiaHosts" type="text" placeholder="172.23.31.177, 172.23.31.178" autocomplete="off">
-              </div>
-              <div class="cred-actions">
-                <button class="secondary" onclick="testCred('gaia')">Test Connection</button>
-                <button class="primary" onclick="saveCred('gaia')">Save</button>
-                <button class="danger-ghost" onclick="deleteCred('gaia')">Delete</button>
-              </div>
-              <div id="gaiaTestResult" class="test-result" style="display:none"></div>
-            </div>
-          </div>
-
-          <!-- Advanced Settings -->
-          <div class="card flush fold" data-fold="settings-advanced">
-            <div class="card-h">
-              <div><h3>Advanced Settings</h3><p>Timeouts, rate limits and caching behaviour</p></div>
-            </div>
-            <div class="cred-form" style="padding: var(--space-md) var(--space-lg) var(--space-lg)">
-              <div class="form-grid">
-                <label for="cpVerifySsl">SSL Verification</label>
-                <label class="toggle-switch">
-                  <input id="cpVerifySsl" type="checkbox">
-                  <span class="toggle-slider"></span>
-                </label>
-
-                <label for="cpTimeout">Timeout (seconds)</label>
-                <input id="cpTimeout" type="number" value="90" min="5" max="600" step="1">
-
-                <label for="cpInterval">Rate Limit Interval</label>
-                <input id="cpInterval" type="number" value="0.55" min="0" max="10" step="0.05">
-
-                <label for="cpCacheTtl">Cache TTL (seconds)</label>
-                <input id="cpCacheTtl" type="number" value="300" min="0" max="3600" step="10">
-              </div>
-            </div>
-          </div>
-
-          <!-- Encryption Status -->
-          <div class="card flush">
-            <div class="card-h">
-              <div><h3>Encryption Status</h3></div>
-              <div class="r"><span class="pill good">AES-128-CBC</span></div>
-            </div>
-            <div style="padding: var(--space-sm) var(--space-lg) var(--space-lg); font-size: 12.5px; color: var(--muted); line-height: 1.7">
-              Credentials are encrypted with <b>Fernet</b> (AES-128-CBC + HMAC-SHA256).<br>
-              Key file: <code>.credential_key</code> (auto-generated, gitignored)<br>
-              Encrypted store: <code>credentials.enc</code><br>
-              <span class="hint">Fallback: <code>.env</code> values are used if no encrypted credentials are saved.</span>
-            </div>
-          </div>
         </div>
       </section>
 

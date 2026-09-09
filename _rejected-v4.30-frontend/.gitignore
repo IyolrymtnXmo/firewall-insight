@@ -3,8 +3,6 @@
 .env.local
 *.pem
 *.key
-.credential_key
-credentials.enc
 
 # Python
 .venv/
@@ -36,5 +34,5 @@ internal-fw.json
 gaia-probe.json
 health-baselines/
 
-# design skills installed locally (ui-ux-pro-max, impeccable)
+# third-party design skills (installed locally, not part of the app)
 .claude/

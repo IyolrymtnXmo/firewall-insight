@@ -1,5 +1,5 @@
 const S=document.getElementById('status'), L=document.getElementById('layer'), P=document.getElementById('pkg');
-let browserData=null,accessData=null,natData=null,mapData=null,lastTrace=null;
+let browserData=null,accessData=null,natData=null,mapData=null;
 
 function renderDataQuality(id,dq){
   const el=document.getElementById(id);
@@ -197,20 +197,10 @@ function busyHide(){
   const ov = document.getElementById('busyOverlay');
   if(ov) ov.classList.remove('on');
 }
-/* Cancel drops the whole stack: a nested task whose parent was called off has
-   nothing left to wait for, and leaving the scrim up would be a dead screen. */
-function busyHideAll(){
-  uxBusyDepth = 0;
-  clearInterval(uxBusyTimer);
-  const ov = document.getElementById('busyOverlay');
-  if(ov) ov.classList.remove('on');
-}
 
 /* ---------- error normalisation ---------- */
 function describeError(e){
   const raw = String((e && e.message) || e || 'Unknown error');
-  if(e && e.name === 'AbortError' && uxCancelled)
-    return {title:'Cancelled', hint:'This browser stopped waiting for the read. Nothing was changed — the call it had sent is a show-* call.'};
   if(e && e.name === 'AbortError')
     return {title:'Request timed out', hint:'The Management API did not answer in time. It may be busy loading a large policy — try again, or raise CHECKPOINT_TIMEOUT.'};
   if(/failed to fetch|networkerror|load failed/i.test(raw))
@@ -265,11 +255,6 @@ async function task(key, label, fn, opts={}){
     }
     return out;
   }catch(e){
-    if(isAbort(e) && uxCancelled){
-      uxCancelled = false;
-      busyHideAll();
-      throw e;                       // callers still stop; the status already says why
-    }
     fail(e, label);
     throw e;
   }finally{
@@ -292,9 +277,10 @@ function skeletonCards(n=5){
     + '<div class="skel skel-line" style="width:72%"></div></div>'}`.repeat(1)
     + '</div>';
 }
-/* `icon` is a symbol id in the sprite at the top of index.html, not a glyph.
-   The empty states used to reuse the sidebar's Unicode characters, so they
-   inherited the same problem: four Unicode blocks, four apparent weights. */
+/* `icon` is the id of a symbol in the sprite at the top of index.html, not a
+   character. The empty states used to reuse the sidebar's Unicode glyphs, so
+   they inherited the same problem: four Unicode blocks, four apparent weights,
+   nothing that matched the SVG icons beside them. */
 function stateIcon(id){
   return `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-${esc(id)}"/></svg>`;
 }
@@ -342,10 +328,6 @@ function toggleRail(force){
     // The arrow is mirrored in CSS, so only the wording changes here.
     b.title = on ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)';
     b.setAttribute('aria-label', b.title);
-    // The control is a toggle, so it reports its own state: collapsed used to
-    // look identical to expanded once the animation finished, which is why it
-    // read as "not locked" even though the choice had been saved all along.
-    b.setAttribute('aria-pressed', on ? 'true' : 'false');
   }
 }
 
@@ -385,33 +367,12 @@ document.addEventListener('keydown', ev => {
   if(ev.key === 'Escape'){
     document.querySelectorAll('#toasts .toast .x').forEach(b => b.click());
     toggleNav(false);
-    try{ toggleDial(false); }catch(_){}
-    if(uxAbortable.size) cancelBusy();
   }
 });
-
-/* Every in-flight read is registered here so the overlay can call it off.
-   Cancelling stops this browser waiting; it cannot un-send a request, and the
-   request in question is a show-* call that changes nothing either way - which
-   is what the overlay says rather than implying the server was stopped. */
-const uxAbortable = new Set();
-let uxCancelled = false;
-function cancelBusy(){
-  if(!uxAbortable.size){ busyHideAll(); return; }
-  uxCancelled = true;
-  for(const c of [...uxAbortable]){ try{ c.abort(); }catch(_){} }
-  uxAbortable.clear();
-  setStatus('Cancelled. Nothing was changed — the call was a read.','warn');
-  notify('warn','Cancelled','This browser stopped waiting. The show-* call it had already sent changes nothing.');
-}
-function isAbort(e){
-  return !!e && (e.name === 'AbortError' || String(e.message||'').includes('aborted'));
-}
 
 async function api(u){
   uxRequestStart();
   const ctl=new AbortController();
-  uxAbortable.add(ctl);
   const to=setTimeout(()=>ctl.abort(),UX_TIMEOUT_MS);
   try{
     const r=await fetch(u,{signal:ctl.signal});
@@ -422,7 +383,6 @@ async function api(u){
     return d;
   }finally{
     clearTimeout(to);
-    uxAbortable.delete(ctl);
     uxRequestEnd();
   }
 }
@@ -500,13 +460,11 @@ function drillTo(page,tab=null){
   if(page==='browser' && typeof browserData!=='undefined' && browserData){
     renderPolicyBrowser(browserData.rules);
   }
-  try{ initFolds(); }catch(_){}
 }
 window.addEventListener('DOMContentLoaded',()=>{
   try{ if(localStorage.getItem('fw-rail')==='1') toggleRail(true); }catch(_){}
+  restoreRowDensity();
   primeEmptyStates();
-  try{ initFolds(); }catch(_){}
-  try{refreshAuroraDashboard()}catch(_){}
   setStatus('Ready. No API calls are made automatically \u2014 pick a Policy Package and run an analysis.','info');
   notify('info','Read-only tool',
     'Firewall Insight only issues show-* Management API calls. It never publishes or installs policy.',
@@ -558,496 +516,6 @@ function alertValue(label,value){
   }
   return esc(value);
 }
-
-/* ============================================================
-   Aurora dashboard (v4.30)
-
-   Every figure below is derived from a read that already happened. Before a
-   read there is no number, and the page says so rather than showing a zero:
-   principle 12 applies to the dashboard as much as to Gateway Health.
-   ============================================================ */
-
-/* The score is a heuristic of this application's own findings. It is NOT a
-   Check Point score, the card says so, and it refuses to exist before an
-   analysis has run — a 100 drawn from no data would be the worst possible
-   thing this page could say. */
-function policyHealthScore(){
-  if(!accessData) return null;
-  const s = accessData.summary || {};
-  const rules = Number(s.analyzed_rules ?? s.total_rules ?? 0);
-  if(!rules) return null;
-
-  const shadow = Number(s.potential_shadowed_or_redundant || 0);
-  const dup    = Number(s.duplicate_groups || 0);
-  const anyAny = Number(s.any_any_any_rules || 0);
-  const cold   = Number(s.zero_hit_rules ?? coldRuleCount() ?? 0);
-
-  // Each deduction is proportional to how much of the rulebase it touches, so
-  // one shadowed rule in 400 does not read the same as one in four.
-  let score = 100;
-  score -= Math.min(34, (shadow / rules) * 100 * 0.9);
-  score -= Math.min(22, (dup    / rules) * 100 * 0.8);
-  score -= Math.min(26, anyAny * 9);
-  score -= Math.min(12, (cold / rules) * 100 * 0.35);
-  if(unresolvedObjectCount() > 0) score -= 6;   // an unproven object caps confidence
-  return Math.max(0, Math.round(score));
-}
-function coldRuleCount(){
-  if(!browserData || !Array.isArray(browserData.rules)) return null;
-  return browserData.rules.filter(r => Number(r.hits) === 0).length;
-}
-/* data_quality() reports two ways a read can be incomplete: an Inline Layer
-   that would not load, and object hydration that stopped early. Either one
-   means a finding below it is unproven, so both count here. */
-function unresolvedObjectCount(){
-  const dq = (accessData && accessData.data_quality) || {};
-  return Number(dq.failed_inline_layers || 0) + (dq.object_hydration_truncated ? 1 : 0);
-}
-function dataQualityComplete(){
-  const dq = (accessData && accessData.data_quality) || null;
-  return dq ? dq.complete !== false : null;
-}
-function scoreCaption(v){
-  if(v >= 90) return 'Excellent';
-  if(v >= 75) return 'Good';
-  if(v >= 55) return 'Needs review';
-  return 'Poor';
-}
-
-const GAUGE_LENGTH = 302;   // pi * r, r = 96
-function renderHealthGauge(){
-  const arc = document.getElementById('gaugeArc');
-  const val = document.getElementById('gaugeValue');
-  const of  = document.getElementById('gaugeOf');
-  const cap = document.getElementById('gaugeCaption');
-  const live= document.getElementById('healthLive');
-  if(!arc) return;
-
-  const score = policyHealthScore();
-  if(score === null){
-    arc.style.strokeDashoffset = GAUGE_LENGTH;
-    val.textContent = '—';
-    of.textContent  = '';
-    cap.textContent = 'Not analysed yet';
-    if(live) live.hidden = true;
-    return;
-  }
-  arc.style.strokeDashoffset = GAUGE_LENGTH * (1 - score / 100);
-  of.textContent  = '/100';
-  cap.textContent = scoreCaption(score);
-  if(live) live.hidden = false;
-  countUp(val, score);
-}
-
-/* One easing, used by every figure that animates in. Honours the OS setting,
-   because a number that counts is decoration and decoration is optional. */
-function countUp(el, to, dec = 0){
-  if(!el) return;
-  const fmt = v => dec ? v.toFixed(dec) : Math.round(v).toLocaleString('en-US');
-  if(window.matchMedia && matchMedia('(prefers-reduced-motion:reduce)').matches){
-    el.textContent = fmt(to); return;
-  }
-  const t0 = performance.now(), D = 900;
-  (function step(t){
-    const k = Math.min(1, (t - t0) / D);
-    el.textContent = fmt(to * (1 - Math.pow(1 - k, 3)));
-    if(k < 1) requestAnimationFrame(step);
-  })(t0);
-}
-
-function renderHealthRows(){
-  const set = (id, v, findingWhenPositive = false) => {
-    const el = document.getElementById(id);
-    if(!el) return;
-    el.textContent = (v === null || v === undefined) ? '—'
-      : (typeof v === 'number' ? v.toLocaleString('en-US') : String(v));
-    const row = el.closest('.stat-row');
-    if(!row) return;
-    row.classList.toggle('is-finding', findingWhenPositive && Number(v) > 0);
-    row.classList.toggle('is-clean',  findingWhenPositive && Number(v) === 0);
-  };
-  const s = (accessData && accessData.summary) || null;
-  set('hRules',  s ? Number(s.analyzed_rules ?? s.total_rules ?? 0) : null);
-  set('hShadow', s ? Number(s.potential_shadowed_or_redundant || 0) : null, true);
-  set('hCold',   s ? Number(s.zero_hit_rules ?? coldRuleCount() ?? 0) : coldRuleCount(), true);
-
-  const objEl = document.getElementById('hObjects');
-  if(objEl){
-    const bad = unresolvedObjectCount();
-    objEl.textContent = accessData ? (bad ? `${bad} incomplete` : 'complete') : '—';
-    const row = objEl.closest('.stat-row');
-    if(row){
-      row.classList.toggle('is-finding', !!accessData && bad > 0);
-      row.classList.toggle('is-clean',   !!accessData && bad === 0);
-    }
-  }
-}
-
-/* The note states the single most useful true thing available right now, and
-   never more than the read supports. */
-function renderDashNote(){
-  const el = document.getElementById('dashNote');
-  if(!el) return;
-  if(!accessData){
-    el.innerHTML = 'Nothing has been read yet. Pick a Policy Package and run the analysis; every number on '
-      + 'this page comes from that read and from nothing else.';
-    return;
-  }
-  const s = accessData.summary || {};
-  const shadow = Number(s.potential_shadowed_or_redundant || 0);
-  const anyAny = Number(s.any_any_any_rules || 0);
-  const cold   = Number(s.zero_hit_rules ?? coldRuleCount() ?? 0);
-  const bad    = unresolvedObjectCount();
-  const bits = [];
-  if(bad)    bits.push(`<b>This read is incomplete.</b> ${esc(bad)} part(s) of the policy could not be loaded, so findings that depend on them are reported as unverified rather than as a pass.`);
-  if(anyAny) bits.push(`<b>${esc(anyAny)} rule(s) match any source to any destination on any service.</b> Anything below such a rule can never be reached.`);
-  if(shadow) bits.push(`<b>${esc(shadow)} rule(s) are fully covered by a rule above them.</b> They can be reviewed for removal once a log confirms it.`);
-  if(cold)   bits.push(`<b>${esc(cold)} rule(s) have never matched.</b> That is what the rulebase reports, not proof they are unnecessary.`);
-  el.innerHTML = bits.length ? bits[0]
-    : 'No shadowing, duplication or any/any/any rule was found in this read. That is what these checks cover — it is not a statement that the policy is correct.';
-}
-
-/* Real hit counts, log-scaled because 2,527,032 and 16 do not share a linear
-   axis usefully. Zero is drawn as its own state, never as an absent bar. */
-function renderHitBars(){
-  const box = document.getElementById('hitBars');
-  if(!box) return;
-  const rows = (browserData && Array.isArray(browserData.rules)) ? browserData.rules : null;
-  if(!rows || !rows.length){
-    box.innerHTML = '<p class="hint" style="margin:4px 0 8px">Load the Access Policy to see which rules carry the traffic.</p>';
-    return;
-  }
-  const withHits = rows.filter(r => r.hits !== null && r.hits !== undefined);
-  if(!withHits.length){
-    box.innerHTML = '<p class="hint" style="margin:4px 0 8px">This rulebase does not report hit counts.</p>';
-    return;
-  }
-  const top = withHits.slice().sort((a,b) => Number(b.hits) - Number(a.hits)).slice(0,8);
-  const scale = v => Math.log10(Number(v) + 1);
-  const max = Math.max(...top.map(r => scale(r.hits)), 1);
-  const scopeEl = document.getElementById('hitsScope');
-  if(scopeEl) scopeEl.textContent = `Top ${top.length} of ${withHits.length}`;
-
-  box.innerHTML = top.map((r,i) => {
-    const n = Number(r.hits);
-    const kind = n === 0 ? 'cold'
-      : (String(r.action||'').toLowerCase().includes('drop') ? 'drop' : '');
-    const pct = n === 0 ? 3 : Math.max(4, (scale(n) / max) * 100);
-    const label = r.name ? `${r.display_rule||r.rule} · ${r.name}` : `Rule ${r.display_rule||r.rule}`;
-    return `<div class="bar-row ${kind}" title="${esc(label)}">
-      <span class="rn">${esc(r.display_rule||r.rule)}</span>
-      <span class="track"><i class="fill" style="width:${pct.toFixed(1)}%;animation-delay:${i*60}ms"></i></span>
-      <span class="n">${n === 0 ? 'never' : esc(n.toLocaleString('en-US'))}</span>
-    </div>`;
-  }).join('');
-}
-
-/* The dashboard's map is the gateway estate, drawn from the same objects the
-   full Network Mapping page uses. A gateway that did not answer is drawn as
-   unreachable rather than left out — silence is not health. */
-/* The dashboard's map is the gateway estate, drawn from the very same
-   buildTopoGraph() model the full Network Mapping page uses — node.name,
-   node.role and link.kind, not a second shape invented here, so the preview
-   can never disagree with the page it previews.
-
-   A route edge stays visually distinct from a subnet edge for the reason the
-   full map gives: a subnet link follows a configured interface address and
-   holds as long as the config does, while a route was read at one instant and
-   can change before the next packet. */
-const TP_GLYPH = {management:'ic-server', cluster:'ic-fw', 'cluster-member':'ic-fw',
-                  gateway:'ic-fw', device:'ic-switch', network:'ic-hub',
-                  'routed-network':'ic-hub'};
-function renderTopoPreview(){
-  const svg   = document.getElementById('topoPreview');
-  const empty = document.getElementById('topoPreviewEmpty');
-  if(!svg) return;
-  const g = (typeof TOPO !== 'undefined' && TOPO && TOPO.graph) ? TOPO.graph : null;
-  const all = (g && Array.isArray(g.nodes)) ? g.nodes : [];
-  if(!all.length){
-    svg.innerHTML = '';
-    if(empty) empty.hidden = false;
-    return;
-  }
-  if(empty) empty.hidden = true;
-
-  // Devices first, then subnets: the preview is about the estate, and a map
-  // that drops the gateways to fit ten subnets previews nothing useful.
-  const rank = n => (n.role === 'management' ? 0 : n.kind === 'device' ? 1 : 2);
-  const nodes = all.slice().sort((x,y) => rank(x) - rank(y)).slice(0, 10);
-  const keep = new Map(nodes.map(n => [n.id, n]));
-
-  const links = (Array.isArray(g.links) ? g.links : [])
-    .map(l => ({from: (l.a && l.a.id) || l.from, to: (l.b && l.b.id) || l.to, kind: l.kind}))
-    .filter(l => keep.has(l.from) && keep.has(l.to));
-
-  const cols = Math.min(5, Math.max(2, Math.ceil(nodes.length / 2)));
-  const span = 700 / Math.max(1, cols - 1);
-  const pos = {};
-  nodes.forEach((n,i) => {
-    const c = i % cols, r = Math.floor(i / cols);
-    pos[n.id] = {x: 100 + c * span, y: r === 0 ? 96 : 214};
-  });
-  const curve = (a,b) => { const m = (a.x + b.x) / 2;
-    return `M${a.x} ${a.y} C${m} ${a.y} ${m} ${b.y} ${b.x} ${b.y}`; };
-
-  svg.innerHTML =
-    links.map(l => {
-      const a = pos[l.from], b = pos[l.to];
-      if(!a || !b) return '';
-      return `<path class="tp-link ${l.kind === 'route' ? 'flow' : 'up'}" d="${curve(a,b)}"/>`;
-    }).join('') +
-    nodes.map(n => {
-      const p = pos[n.id];
-      const cls = n.role === 'management' ? 'mgmt' : '';
-      const glyph = TP_GLYPH[n.role] || TP_GLYPH[n.kind] || 'ic-fw';
-      const label = String(n.name || n.id);
-      return `<g class="tp-node ${cls}">
-        <title>${esc(label)}${n.sub ? ' — ' + esc(n.sub) : ''}</title>
-        <circle class="halo" cx="${p.x}" cy="${p.y}" r="30"/>
-        <circle class="ring" cx="${p.x}" cy="${p.y}" r="17"/>
-        <g class="gl" transform="translate(${p.x-8} ${p.y-8}) scale(0.667)"><use href="#${glyph}"/></g>
-        <text x="${p.x}" y="${p.y+32}">${esc(label.length > 17 ? label.slice(0,16) + '…' : label)}</text>
-      </g>`;
-    }).join('');
-}
-
-/* The last trace, replayed as a timeline. Each hop keeps the confidence the
-   trace gave it: an unverified hop is never redrawn as an exact one. */
-const TL_TONE = {match:['exact','ic-badge','good'], accept:['exact','ic-badge','good'],
-                 'no-match':['stop','ic-fail','bad'], drop:['stop','ic-fail','bad'],
-                 unknown:['unknown','ic-alert','warn']};
-function renderTracePreview(){
-  const box = document.getElementById('tracePreview');
-  const sub = document.getElementById('tracePreviewSub');
-  const vd  = document.getElementById('tracePreviewVerdict');
-  if(!box) return;
-  const t = (typeof lastTrace !== 'undefined') ? lastTrace : null;
-  if(!t || !Array.isArray(t.steps) || !t.steps.length){
-    box.innerHTML = `<div class="tl-step">
-      <span class="dot"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-trace"/></svg></span>
-      <div class="txt"><b>Nothing traced yet</b>
-        <small>Enter a source, a destination and a port on Traffic Path.</small></div></div>`;
-    if(sub) sub.textContent = 'No trace run in this session';
-    if(vd){ vd.textContent = '—'; vd.className = 'pill neutral'; }
-    return;
-  }
-  if(sub) sub.textContent = t.label || '';
-  if(vd){
-    const v = String(t.verdict || '').toLowerCase();
-    vd.textContent = t.verdict || '—';
-    vd.className = 'pill ' + (v.includes('accept') ? 'good' : v.includes('drop') ? 'bad' : 'warn');
-  }
-  box.innerHTML = t.steps.slice(0,7).map(st => {
-    const [cls, icon, tone] = TL_TONE[String(st.state||'').toLowerCase()] || ['here','ic-route','neutral'];
-    return `<div class="tl-step ${cls}">
-      <span class="dot"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#${icon}"/></svg></span>
-      <div class="txt"><b>${esc(st.title||'')}</b><small>${esc(st.detail||'')}</small></div>
-      ${st.state ? `<span class="pill ${tone}">${esc(st.state)}</span>` : ''}
-    </div>`;
-  }).join('');
-}
-
-/* The context bar restates what every figure on screen was read from. */
-function renderContextChips(){
-  const put = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
-  put('ctxPackage', (P && P.value) ? P.value : 'Not selected');
-  put('ctxLayer',   (L && L.value) ? (L.options[L.selectedIndex]?.text || L.value) : 'Not selected');
-  const api = document.getElementById('dashApi');
-  put('ctxApi', api ? api.textContent : 'Not tested');
-  put('ctxRead', lastReadLabel || 'No call yet');
-}
-let lastReadLabel = '';
-
-/* The dial is the Quick Actions card, folded into one control. Escape closes
-   it, the scrim closes it, and focus returns to the button that opened it. */
-function toggleDial(force){
-  const dial=document.getElementById('actionDial');
-  const scrim=document.getElementById('dialScrim');
-  if(!dial)return;
-  const on = force !== undefined ? force : !dial.classList.contains('on');
-  dial.classList.toggle('on', on);
-  if(scrim) scrim.classList.toggle('on', on);
-  const fab=document.getElementById('dialFab');
-  if(fab){
-    fab.setAttribute('aria-expanded', on?'true':'false');
-    fab.title = on ? 'Close quick actions' : 'Quick actions';
-  }
-  // Stagger the fan-out from the button outwards, so the motion reads as one
-  // gesture rather than six independent ones.
-  dial.querySelectorAll('.dial-item').forEach((el,i,list)=>{
-    el.style.transitionDelay = on ? `${(list.length-1-i)*32}ms` : '0ms';
-    el.tabIndex = on ? 0 : -1;
-  });
-  if(!on && fab) fab.focus({preventScroll:true});
-}
-function dialGo(page){ toggleDial(false); goTo(page); }
-
-function refreshAuroraDashboard(){
-  loadHitTrend();
-  renderHealthGauge();
-  renderHealthRows();
-  renderDashNote();
-  renderHitBars();
-  renderTopoPreview();
-  renderTracePreview();
-  renderContextChips();
-}
-
-/* ============================================================
-   Fold: every heavy region can be put away, and stays put away.
-
-   The state is keyed by a stable id on the card, never by index, so inserting
-   a panel above one the user collapsed does not silently unfold it - and the
-   key survives a re-render, because the fold is applied from storage every
-   time the region is (re)built.
-   ============================================================ */
-const FOLD_KEY='fw-folded';
-function foldedSet(){
-  try{ return new Set(JSON.parse(localStorage.getItem(FOLD_KEY)||'[]')); }
-  catch(_){ return new Set(); }
-}
-function saveFolded(set){
-  try{ localStorage.setItem(FOLD_KEY, JSON.stringify([...set])); }catch(_){}
-}
-function toggleFold(key, force){
-  const host=document.querySelector(`[data-fold="${key}"]`);
-  if(!host)return;
-  const on = force !== undefined ? force : !host.classList.contains('is-folded');
-  host.classList.toggle('is-folded', on);
-  const btn=host.querySelector('.fold-btn');
-  if(btn){
-    btn.setAttribute('aria-expanded', on ? 'false' : 'true');
-    btn.title = on ? 'Expand this section' : 'Collapse this section';
-  }
-  const body=host.querySelector('.fold-body');
-  if(body) body.setAttribute('aria-hidden', on ? 'true' : 'false');
-  const set=foldedSet();
-  on ? set.add(key) : set.delete(key);
-  saveFolded(set);
-}
-
-/* Wrap a region's body once, add the chevron, and restore its saved state.
-   Runs on every page show so regions rendered later still get folded. */
-function initFolds(root){
-  const set=foldedSet();
-  (root||document).querySelectorAll('[data-fold]').forEach(host=>{
-    const key=host.dataset.fold;
-    if(!host.dataset.foldReady){
-      const head=host.querySelector('.card-h, .section-title');
-      if(!head)return;
-      const nodes=[...host.children].filter(n=>n!==head);
-      if(nodes.length){
-        const body=document.createElement('div');
-        body.className='fold-body';
-        const inner=document.createElement('div');
-        inner.className='fold-inner';
-        nodes.forEach(n=>inner.appendChild(n));
-        body.appendChild(inner);
-        host.appendChild(body);
-      }
-      let slot=head.querySelector('.r');
-      if(!slot){ slot=document.createElement('div'); slot.className='r'; head.appendChild(slot); }
-      const btn=document.createElement('button');
-      btn.className='fold-btn'; btn.type='button';
-      btn.setAttribute('aria-expanded','true');
-      btn.innerHTML='<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-chev"/></svg>';
-      btn.addEventListener('click',ev=>{ev.stopPropagation();toggleFold(key)});
-      slot.appendChild(btn);
-      // The whole header is the target: a 26px chevron is a small thing to ask
-      // someone to hit forty times a day.
-      head.addEventListener('click',ev=>{
-        if(ev.target.closest('button,a,select,input')&&!ev.target.closest('.fold-btn'))return;
-        if(ev.target.closest('.fold-btn'))return;
-        toggleFold(key);
-      });
-      host.dataset.foldReady='1';
-    }
-    toggleFold(key, set.has(key));
-  });
-}
-
-/* ============================================================
-   Hit trend, drawn from snapshots and from nothing else.
-
-   The Management API reports a running total and a last-hit date, never a
-   time series. The only honest source for "hits over time" is the snapshots
-   the user took, so this reads /api/snapshots and plots the total each one
-   recorded. Fewer than two snapshots of a package is not a flat line - it is
-   no line, and the card says so.
-   ============================================================ */
-let trendCache=null;
-async function loadHitTrend(force){
-  const box=document.getElementById('trendBox');
-  if(!box)return;
-  if(trendCache && !force){ renderHitTrend(trendCache); return; }
-  try{
-    const d=await api('/api/snapshots');
-    trendCache=(d.snapshots||[]);
-    renderHitTrend(trendCache);
-  }catch(e){
-    box.innerHTML=`<div class="trend-empty">Could not read the snapshot folder.
-      <span class="muted">${esc(String(e.message||e))}</span></div>`;
-  }
-}
-function renderHitTrend(rows){
-  const box=document.getElementById('trendBox');
-  const meta=document.getElementById('trendMeta');
-  if(!box)return;
-  const pkg=(P&&P.value)||null;
-  let pts=(rows||[])
-    .filter(r=>(!pkg||r.package===pkg) && typeof r.total_hits==='number')
-    .slice().sort((a,b)=>String(a.taken_at).localeCompare(String(b.taken_at)))
-    .slice(-7);
-  if(meta) meta.textContent = pts.length ? `${pts.length} snapshot${pts.length===1?'':'s'}` : 'no data';
-
-  if(pts.length<2){
-    box.innerHTML=`<div class="trend-empty">
-      <b style="color:var(--text);font-weight:500">A trend needs at least two snapshots.</b>
-      The Management API reports a running hit total, not a time series, so this line is
-      drawn from readings you took${pkg?` of <span class="mono">${esc(pkg)}</span>`:''} — nothing here is interpolated.
-      <button onclick="goTo('diff')" style="height:32px;font-size:12px">Take a snapshot</button>
-    </div>`;
-    return;
-  }
-
-  const W=320,H=158,pl=40,pr=12,pt=14,pb=26;
-  const vals=pts.map(p=>p.total_hits);
-  const lo=Math.min(...vals), hi=Math.max(...vals);
-  const pad=(hi-lo)||Math.max(1,hi*0.1);
-  const min=Math.max(0,lo-pad*0.35), max=hi+pad*0.35;
-  const X=i=>pl+(pts.length===1?0:i*(W-pl-pr)/(pts.length-1));
-  const Y=v=>pt+(1-(v-min)/((max-min)||1))*(H-pt-pb);
-  const short=n=>n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?Math.round(n/1e3)+'k':String(n);
-  const day=s=>{const d=new Date(s);return isNaN(d)?'?':`${d.getDate()}/${d.getMonth()+1}`};
-
-  const line=pts.map((p,i)=>`${i?'L':'M'}${X(i).toFixed(1)} ${Y(p.total_hits).toFixed(1)}`).join(' ');
-  const area=line+` L${X(pts.length-1)} ${Y(min)} L${X(0)} ${Y(min)} Z`;
-  const grid=[min,(min+max)/2,max].map(v=>
-    `<line class="trend-grid" x1="${pl}" y1="${Y(v).toFixed(1)}" x2="${W-pr}" y2="${Y(v).toFixed(1)}"/>
-     <text class="trend-ax" x="${pl-7}" y="${(Y(v)+3).toFixed(1)}" text-anchor="end">${short(Math.round(v))}</text>`).join('');
-  const last=pts.length-1;
-  // The callout sits over the newest point, which is also the right-hand edge,
-  // so it has to be clamped or half of it renders outside the card.
-  const tipX=Math.min(W-pr-32, Math.max(pl+32, X(last)));
-
-  box.innerHTML=`<div class="trend"><svg viewBox="0 0 ${W} ${H}" role="img"
-      aria-label="Total access-rule hits recorded by the last ${pts.length} snapshots">
-    <defs><linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="var(--accent)" stop-opacity=".38"/>
-      <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
-    ${grid}
-    <path d="${area}" fill="url(#trendFill)"/>
-    <path class="trend-line trend-draw" style="--len:1200" d="${line}" stroke="var(--accent)"/>
-    ${pts.map((p,i)=>`<circle class="trend-dot" cx="${X(i).toFixed(1)}" cy="${Y(p.total_hits).toFixed(1)}"
-        r="${i===last?4.5:3}" stroke="var(--accent)"><title>${esc(String(p.taken_at||''))} · ${esc(p.total_hits.toLocaleString('en-US'))} hits across ${esc(p.hit_counted_rules)} rule(s)</title></circle>`).join('')}
-    <g class="trend-tip" transform="translate(${tipX.toFixed(1)} ${(Y(pts[last].total_hits)-19).toFixed(1)})">
-      <rect x="-30" y="-11" width="60" height="20" rx="7"/>
-      <text y="3">${short(pts[last].total_hits)} hits</text>
-    </g>
-    ${pts.map((p,i)=>`<text class="trend-ax" x="${X(i).toFixed(1)}" y="${H-7}" text-anchor="middle">${day(p.taken_at)}</text>`).join('')}
-  </svg></div>`;
-}
-
 function setDashboardMetric(el,value,isFinding=false){
   if(!el)return;
   const n=Number(value);
@@ -1075,7 +543,6 @@ async function loadPolicyBrowser(){
 
   try{
     browserData=await api('/api/package-policy-browser?package='+encodeURIComponent(P.value));
-    lastReadLabel=new Date().toLocaleTimeString();
     browserCount.textContent=browserData.total_rules+' access rules';
     metricCards(browserSummary,[
       ['Access Rules',browserData.total_rules],
@@ -1102,17 +569,6 @@ async function loadPolicyBrowser(){
     delete browserBtn.dataset.busy;
   }
 }
-
-/* A verdict is drawn as a word plus a shape, never as colour alone: a printed
-   screenshot and a colour-blind reader must both tell Accept from Drop.
-   Same reason the trace overlay carries dash patterns. */
-function policyActionClass(action){
-  const a=String(action||'').toLowerCase();
-  if(a.includes('accept'))return 'good';
-  if(a.includes('drop')||a.includes('reject'))return 'bad';
-  return 'inner';
-}
-
 
 function hierarchyKey(layer,rule){
   return `${String(layer||'')}::${String(rule??'')}`;
@@ -1173,104 +629,84 @@ function renderInlineDashboardSummary(s){
   setDashboardMetric(diAny,s.inline_any_any_any_rules||0,true);
 }
 
-/* One line per rule: what it does, and nothing else. Everything the API
-   returned for that rule - the full object lists, the layer path, the
-   timestamps - opens under that row, for that rule alone.
+/* Action is drawn as a word plus a shape, never as colour alone: a printed
+   screenshot and a colour-blind reader must both be able to tell Accept from
+   Drop. Same reason the trace overlay uses dash patterns. */
+function policyActionShape(action){
+  const a=String(action||'').toLowerCase();
+  if(a.includes('accept'))return 'allow';
+  if(a.includes('drop')||a.includes('reject'))return 'deny';
+  return 'into';
+}
 
-   Collapsing the whole table was the wrong unit. Nobody wants to hide the
-   rulebase; they want to stop reading nine columns of object names at once. */
-function rbShort(text, n = 42){
-  const t = String(text || '').trim();
-  if(!t) return '—';
-  return t.length > n ? t.slice(0, n - 1) + '…' : t;
-}
-function rbField(label, value, cls){
-  return `<div class="rb-field${cls ? ' ' + cls : ''}"><dt>${esc(label)}</dt>
-    <dd>${value || '<span class="muted">—</span>'}</dd></div>`;
-}
-function toggleRuleRow(key){
-  const row = document.querySelector(`tr.rb-row[data-rule="${key}"]`);
-  const det = document.querySelector(`tr.rb-detail[data-rule="${key}"]`);
-  if(!row || !det) return;
-  const open = !row.classList.contains('open');
-  row.classList.toggle('open', open);
-  det.classList.toggle('open', open);
-  row.setAttribute('aria-expanded', open ? 'true' : 'false');
+/* 0 is not "no data" - it is the strongest thing the rulebase can say about a
+   rule, so it gets its own mark instead of rendering as an unremarkable 0. */
+function policyHitCell(row){
+  const n=row.hits;
+  if(n===0)return '<span class="chip cold">never hit</span>';
+  if(n===null||n===undefined)return '<span class="muted">not reported</span>';
+  const last=row.last_hit?`<span class="sub">${esc(String(row.last_hit))}</span>`:'';
+  return `<span class="mono">${esc(Number(n).toLocaleString('en-US'))}</span>${last}`;
 }
 
 function renderPolicyBrowser(rows){
   if(!rows)rows=[];
-  try{refreshAuroraDashboard()}catch(_){}
   rows=accessHierarchyRows(rows);
-  /* The card around this region already carries the heading; a second one here
-     was the same title printed twice. */
-  const sub=document.querySelector('[data-fold="pg-browser"] .card-h p');
-  if(sub) sub.textContent =
-    `${browserData?.top_level_rules??0} top-level + ${browserData?.inline_rules??0} inline rule(s) · click a rule for everything the API returned about it`;
   browserResults.innerHTML=`
-    <div class="table-wrap" style="margin:0 16px 16px">
+    <div class="section-title">
+      <h3>Configured Rulebase</h3>
+      <span class="hint">${browserData?.top_level_rules??0} top-level + ${browserData?.inline_rules??0} inline rule(s)</span>
+    </div>
+    <div class="table-wrap" style="margin-top:12px">
       <table class="ledger">
         <thead>
           <tr>
-            <th style="width:1%">Rule</th>
-            <th>Name &amp; scope</th>
-            <th style="width:1%">Action</th>
-            <th style="width:1%;text-align:right">Hits</th>
-            <th style="width:1%">State</th>
+            <th class="c-rule">Rule</th>
+            <th>Layer</th><th>Section</th><th>Name</th><th>Source</th>
+            <th>Destination</th><th>VPN</th><th>Service</th><th>Action</th>
+            <th>Track</th><th>Install On</th><th class="right">Hits</th><th>Enabled</th>
           </tr>
         </thead>
         <tbody>
-          ${rows.map((r,i)=>{
-            const key = esc(String(r.display_rule ?? r.rule ?? i));
-            const inline = r._row_kind==='inline';
-            const scope = `${r.source||'—'} → ${r.destination||'—'} · ${r.service||'—'}`;
-            const partial = r.source_complete===false || r.destination_complete===false || r.service_complete===false;
-            return `<tr class="rb-row ${inline?'inline-child-row':(r._inline_count?'inline-parent-row':'')}"
-                        data-rule="${key}" role="button" tabindex="0" aria-expanded="false"
-                        onclick="toggleRuleRow('${key}')"
-                        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleRuleRow('${key}')}">
-              <td>
-                <span class="rb-lead">
-                  <span class="rb-caret"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-chev"/></svg></span>
-                  <span class="rule-no">${inline?'↳ ':''}${key}</span>
-                </span>
-              </td>
-              <td>
-                ${r.name?esc(r.name):'<span class="muted">unnamed</span>'}
-                ${r._inline_count?`<span class="pill inline" style="margin-left:8px">${esc(r._inline_count)} inline</span>`:''}
-                ${partial?'<span class="pill warn" style="margin-left:8px">partial</span>':''}
-                <span class="rb-sum">${r.parent_rule!=null?`under rule ${esc(r.parent_rule)} · `:''}${esc(rbShort(scope, 78))}</span>
-              </td>
-              <td><span class="act ${policyActionClass(r.action)}">${esc(r.action||'—')}</span></td>
-              <td class="right">${r.hits===0
-                 ? '<span class="pill warn">never</span>'
-                 : (r.hits==null ? '<span class="muted">—</span>'
-                                 : `<span class="mono">${esc(Number(r.hits).toLocaleString('en-US'))}</span>`)}</td>
-              <td>${r.enabled?'<span class="pill neutral">Enabled</span>':'<span class="pill bad">Disabled</span>'}</td>
-            </tr>
-            <tr class="rb-detail" data-rule="${key}">
-              <td colspan="5"><div class="rb-body"><div><div class="rb-grid">
-                ${rbField('Layer', esc(r.layer||'—') + (r.layer_path?`<span class="sub">${esc(r.layer_path)}</span>`:''))}
-                ${rbField('Section', r.section?esc(r.section):null)}
-                ${rbField('Parent rule', r.parent_rule!=null?`Rule ${esc(r.parent_rule)}`:null)}
-                ${rbField('Source', `<span class="mono">${esc(r.source||'—')}</span>`, 'wide')}
-                ${rbField('Destination', `<span class="mono">${esc(r.destination||'—')}</span>`, 'wide')}
-                ${rbField('Service', `<span class="mono">${esc(r.service||'—')}</span>`, 'wide')}
-                ${rbField('VPN', esc(r.vpn||'—'))}
-                ${rbField('Track', r.track?esc(r.track):null)}
-                ${rbField('Install on', esc(r.install_on||'—'))}
-                ${rbField('Inline layer', r.inline_layer?esc(r.inline_layer):null)}
-                ${rbField('Hits', r.hits==null?null:`<span class="mono">${esc(Number(r.hits).toLocaleString('en-US'))}</span>`)}
-                ${rbField('Last hit', r.last_hit?`<span class="mono">${esc(String(r.last_hit))}</span>`:null)}
-                ${r.comments?rbField('Comment', esc(r.comments), 'wide'):''}
-                ${r.hits===0?'<div class="rb-note">This rule has never matched. That is what the rulebase reports — it is not proof the rule is unnecessary.</div>':''}
-                ${partial?'<div class="rb-note">At least one object on this rule did not resolve completely, so any coverage answer that depends on it is reported as unverified rather than as a pass.</div>':''}
-              </div></div></div></td>
-            </tr>`;
-          }).join('')}
+          ${rows.map(r=>`<tr class="${r._row_kind==='inline'?'inline-child-row':(r._inline_count?'inline-parent-row':'')}">
+            <td class="c-rule"><span class="rule-no">${esc(r.display_rule||r.rule)}</span>${r.parent_rule!=null?`<span class="sub">under rule ${esc(r.parent_rule)}</span>`:''}</td>
+            <td>${r._row_kind==='inline'
+              ? `<span class="inline-layer-name"><span class="pill inline">${esc(r.layer||'Inline Layer')}</span></span>${r.layer_path?`<span class="sub">${esc(r.layer_path)}</span>`:''}`
+              : `${esc(r.layer||'Access Layer')}<span class="sub">${r._inline_count?`${esc(r._inline_count)} inline rule(s) attached`:'Top-level'}</span>`
+            }</td>
+            <td>${r.section?esc(r.section):'<span class="muted">—</span>'}</td>
+            <td>${r.name?esc(r.name):'<span class="muted">unnamed</span>'}</td>
+            <td>${esc(r.source||'—')}</td>
+            <td>${esc(r.destination||'—')}</td>
+            <td>${esc(r.vpn||'—')}</td>
+            <td>${esc(r.service||'—')}</td>
+            <td><span class="act ${policyActionShape(r.action)}">${esc(r.action||'—')}</span>${r.inline_layer?`<span class="sub">→ ${esc(r.inline_layer)}</span>`:''}</td>
+            <td>${r.track?esc(r.track):'<span class="muted">—</span>'}</td>
+            <td>${esc(r.install_on||'—')}</td>
+            <td class="right">${policyHitCell(r)}</td>
+            <td>${r.enabled?'<span class="pill neutral">Enabled</span>':'<span class="pill bad">Disabled</span>'}</td>
+          </tr>`).join('')}
         </tbody>
       </table>
     </div>`;
+}
+
+/* Compact suits the 3 a.m. hunt through a few hundred rules; tall suits a
+   projector in a review meeting. Which room the tool is in is the operator's
+   knowledge, not ours, so it is a control rather than a guess. */
+const ROW_DENSITY={compact:'4px',normal:'7px',tall:'10px'};
+function setRowDensity(mode,btn){
+  const pad=ROW_DENSITY[mode]||ROW_DENSITY.normal;
+  document.documentElement.style.setProperty('--cell-y',pad);
+  const group=btn&&btn.parentElement;
+  if(group)[...group.children].forEach(b=>b.setAttribute('aria-pressed',String(b===btn)));
+  try{localStorage.setItem('fw-density',mode)}catch(e){}
+}
+function restoreRowDensity(){
+  let mode='normal';
+  try{mode=localStorage.getItem('fw-density')||'normal'}catch(e){}
+  const btn=document.querySelector(`[data-density="${mode}"]`);
+  if(btn)setRowDensity(mode,btn);
 }
 
 function filterPolicyBrowser(){
@@ -1312,7 +748,6 @@ async function runAccess(){
    metricCards(accessCards,[['Access Rules',s.total_rules],['Inline Rules Analyzed',s.inline_rules],['Inline Layers',s.inline_layers],['Total Rules Inspected',s.analyzed_rules],['Shadow / Redundant',s.potential_shadowed_or_redundant],['Duplicate Groups',s.duplicate_groups],['Any / Any / Any',s.any_any_any_rules],['Optimizer Score',s.optimization_score+'%']]);
    setDashboardMetric(dAccess,s.total_rules,false);dAccessDetail.textContent=`SmartConsole: ${s.top_level_rules} parent/top-level rule(s) · ${s.inline_rules} inline rule(s) analyzed`;setDashboardMetric(dShadow,s.potential_shadowed_or_redundant,true);setDashboardMetric(dDup,s.duplicate_groups,true);renderInlineDashboardSummary(s);
    dashLayer.textContent=(accessData?.root_layers||[]).join(', ')||'Resolved from package';
-   lastReadLabel=new Date().toLocaleTimeString();refreshAuroraDashboard();
    dashFindings.innerHTML=`<table style="min-width:650px"><thead><tr><th>Finding</th><th>Count</th><th>Meaning</th></tr></thead><tbody>
      <tr class="drill-row" onclick="drillTo('access','shadow')" title="Open Shadow / Redundant findings"><td>Shadow / Redundant</td><td>${s.potential_shadowed_or_redundant?`<span class="alert-count">${esc(s.potential_shadowed_or_redundant)}</span>`:esc(s.potential_shadowed_or_redundant)}</td><td>${esc(s.top_level_shadow_findings||0)} top-level + ${esc(s.inline_shadow_findings||0)} inline finding(s).</td></tr>
      <tr class="drill-row" onclick="drillTo('access','duplicates')" title="Open Duplicate Access findings"><td>Duplicate Access</td><td>${s.duplicate_groups?`<span class="alert-count">${esc(s.duplicate_groups)}</span>`:esc(s.duplicate_groups)}</td><td>${esc(s.top_level_duplicate_groups||0)} top-level + ${esc(s.inline_duplicate_groups||0)} inline group(s).</td></tr>
@@ -1336,7 +771,7 @@ async function runAccess(){
    throw e;
  }
 }
-function accessTabs(kind){let d=accessData;return `<div class="tabs" style="padding: var(--space-md) var(--space-lg) 0"><button class="${kind==='shadow'?'active':''}" onclick="renderAccess('shadow')">Shadow / Redundant</button><button class="${kind==='duplicates'?'active':''}" onclick="renderAccess('duplicates')">Duplicate Rules (${d.findings.duplicates.length})</button><button class="${kind==='any'?'active':''}" onclick="renderAccess('any')">Any Rules (${(d.findings.any_any_any_rules||[]).length})</button><button class="${kind==='unused'?'active':''}" onclick="renderAccess('unused')">Unused Rules (${deadRules(d).length})</button></div>`}
+function accessTabs(kind){let d=accessData;return `<div class="tabs"><button class="${kind==='shadow'?'active':''}" onclick="renderAccess('shadow')">Shadow / Redundant</button><button class="${kind==='duplicates'?'active':''}" onclick="renderAccess('duplicates')">Duplicate Rules (${d.findings.duplicates.length})</button><button class="${kind==='any'?'active':''}" onclick="renderAccess('any')">Any Rules (${(d.findings.any_any_any_rules||[]).length})</button><button class="${kind==='unused'?'active':''}" onclick="renderAccess('unused')">Unused Rules (${deadRules(d).length})</button></div>`}
 
 /* Zero-hit and disabled rules have been computed since v4.0 - with layer,
    display rule and hit counts - and were never rendered anywhere. They are the
@@ -1347,7 +782,7 @@ function deadRules(d){
   const zero=(d.findings.zero_hit_rules||[]).map(x=>({...x,reason:'Zero hits'}));
   const off=(d.findings.disabled_rules||[]).map(x=>({...x,reason:'Disabled'}));
   const seen=new Set(),out=[];
-  for(const r of [...off,...zero]){
+  for(const r of [...off,...zero]){                 // disabled wins the label
     const key=(r.layer||'')+'::'+(r.rule??'');
     if(seen.has(key))continue;
     seen.add(key);out.push(r);
@@ -1358,18 +793,19 @@ function renderAccess(kind){
  if(!accessData)return;let d=accessData,t=accessTabs(kind);
  if(kind==='shadow'){
    let sh=d.findings.shadowing||[];
-   accessFindings.innerHTML=t+'<div style="padding: 0 var(--space-lg) var(--space-lg)"><div class="section-title" style="margin-bottom:var(--space-md)"><h3>Shadow / Redundant Findings</h3><span class="hint">'+sh.length+' finding(s)</span></div>'+
+   accessFindings.innerHTML=t+'<div class="section-title"><h3>Shadow / Redundant Findings</h3><span class="hint">'+sh.length+' finding(s)</span></div>'+
    (sh.length?`<div class="table-wrap"><table><thead><tr><th>Layer</th><th>Rule</th><th>Covered By</th><th>Class</th><th>Action</th><th>Source Match</th><th>Destination Match</th><th>Service Match</th></tr></thead><tbody>${
      sh.map(x=>`<tr><td><span class="pill ${Number(x.depth||0)>0?'neutral':'good'}">${esc(x.layer||'')}</span></td><td><span class="rule-no">Rule ${esc(x.display_rule||x.rule)}</span><br><span class="muted">${esc(x.rule_name)}</span></td><td><span class="rule-no">Rule ${esc(x.covered_by)}</span><br><span class="muted">${esc(x.covered_by_name)}</span></td><td><span class="pill ${x.risk==='High'?'bad':'warn'}">${esc(x.classification)} · ${esc(x.risk)}</span></td><td>${esc(x.earlier_action)} → ${esc(x.later_action)}</td><td>${friendly(x.source_reason)}</td><td>${friendly(x.destination_reason)}</td><td>${friendly(x.service_reason)}</td></tr>`).join('')
-   }</tbody></table></div>`:'<p style="margin:0">No conservative findings.</p>')+'</div>';
+   }</tbody></table></div>`:'<p>No conservative findings.</p>');
  }else if(kind==='duplicates'){
    let gs=d.findings.duplicates||[];
-   accessFindings.innerHTML=t+'<div style="padding: 0 var(--space-lg) var(--space-lg)"><div class="section-title" style="margin-bottom:var(--space-md)"><h3>Duplicate Rules</h3></div>'+(gs.length?gs.map(g=>`<div class="card" style="margin:12px 0"><div class="section-title"><b>Duplicate Group ${esc(g.group)} <span class="pill neutral">Exact Duplicate</span></b><span class="hint">${esc(g.recommendation)}</span></div><div class="table-wrap"><table><tr><th>Layer</th><th>Rule</th><th>Name</th><th>Source</th><th>Destination</th><th>Service</th><th>Action</th></tr>${g.members.map(m=>`<tr><td><span class="pill neutral">${esc(m.layer||g.layer||'')}</span></td><td><span class="rule-no">Rule ${esc(m.display_rule||m.rule)}</span></td><td>${esc(m.name)}</td><td>${esc(m.source)}</td><td>${esc(m.destination)}</td><td>${esc(m.service)}</td><td>${esc(m.action)}</td></tr>`).join('')}</table></div></div>`).join(''):'<p style="margin:0">No exact duplicate groups found.</p>')+'</div>';
+   accessFindings.innerHTML=t+'<h3>Duplicate Rules</h3>'+(gs.length?gs.map(g=>`<div class="card" style="margin:12px 0"><div class="section-title"><b>Duplicate Group ${esc(g.group)} <span class="pill neutral">Exact Duplicate</span></b><span class="hint">${esc(g.recommendation)}</span></div><div class="table-wrap"><table><tr><th>Layer</th><th>Rule</th><th>Name</th><th>Source</th><th>Destination</th><th>Service</th><th>Action</th></tr>${g.members.map(m=>`<tr><td><span class="pill neutral">${esc(m.layer||g.layer||'')}</span></td><td><span class="rule-no">Rule ${esc(m.display_rule||m.rule)}</span></td><td>${esc(m.name)}</td><td>${esc(m.source)}</td><td>${esc(m.destination)}</td><td>${esc(m.service)}</td><td>${esc(m.action)}</td></tr>`).join('')}</table></div></div>`).join(''):'<p>No exact duplicate groups found.</p>');
  }else if(kind==='unused'){
    const rows=deadRules(d);
    const byRule=new Map((d.rules||[]).map(r=>[(r.layer||'')+'::'+(r.rule??''),r]));
-   accessFindings.innerHTML=t+'<div style="padding: 0 var(--space-lg) var(--space-lg)"><div class="section-title" style="margin-bottom:var(--space-md)"><h3>Unused Rules</h3><span class="hint">'+rows.length+' zero-hit or disabled rule(s)</span></div>'+
-   (rows.length?`<div class="table-wrap"><table><thead><tr><th>Layer</th><th>Rule</th><th>Name</th><th>Why</th><th>Source</th><th>Destination</th><th>Service</th><th>Action</th><th>Hits</th><th>Last Hit</th></tr></thead><tbody>${
+   accessFindings.innerHTML=t+
+   '<div class="section-title"><h3>Unused Rules</h3><span class="hint">'+rows.length+' zero-hit or disabled rule(s)</span></div>'+
+   (rows.length?`<div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Layer</th><th>Rule</th><th>Name</th><th>Why</th><th>Source</th><th>Destination</th><th>Service</th><th>Action</th><th>Hits</th><th>Last Hit</th></tr></thead><tbody>${
      rows.map(x=>{
        const f=byRule.get((x.layer||'')+'::'+(x.rule??''))||{};
        const last=(f.last_hit&&typeof f.last_hit==='object')?f.last_hit['iso-8601']:f.last_hit;
@@ -1382,12 +818,11 @@ function renderAccess(kind){
          `<td>${esc(f.hits??'—')}</td><td>${esc(last||'never')}</td></tr>`;
      }).join('')
    }</tbody></table></div>
-   <p class="muted" style="margin-top:12px">A zero-hit rule is a candidate for review, not proof that it is safe to delete. Hit counters reset on policy install and on gateway restart, and a rule can protect a path that is simply idle. Confirm against the gateway before removing anything.</p></div>`
-   :'<p style="margin:0">No unused or zero-hit rules identified.</p></div>');
+   <p class="muted" style="margin-top:12px">A zero-hit rule is a candidate for review, not proof that it is safe to delete. Hit counters reset on policy install and on gateway restart, and a rule can protect a path that is simply idle. Confirm against the gateway before removing anything.</p>`
+   :'<p>No zero-hit or disabled rules found.</p>');
  }else{
    let rs=d.findings.any_any_any_rules||[];
-   accessFindings.innerHTML=t+'<div style="padding: 0 var(--space-lg) var(--space-lg)"><div class="section-title" style="margin-bottom:var(--space-md)"><h3>Any / Any / Any Rules</h3><span class="hint">Highly permissive matching</span></div>'+
-   (rs.length?`<div class="table-wrap"><table><tr><th>Layer</th><th>Rule</th><th>Name</th><th>Source</th><th>Destination</th><th>Service</th><th>Action</th><th>Hits</th></tr>${rs.map(r=>`<tr><td><span class="pill ${Number(r.depth||0)>0?'neutral':'good'}">${esc(r.layer||'')}</span></td><td><span class="rule-no">Rule ${esc(r.display_rule||r.rule)}</span></td><td>${esc(r.name)}</td><td>${esc(r.source)}</td><td>${esc(r.destination)}</td><td>${esc(r.service)}</td><td>${esc(r.action)}</td><td>${esc(r.hits??'N/A')}</td></tr>`).join('')}</table></div>`:'<p style="margin:0">No broadly permissive rules found.</p>')+cleanupNote(d)+'</div>';
+   accessFindings.innerHTML=t+'<h3>Any / Any / Any Rules</h3>'+(rs.length?`<div class="table-wrap"><table><tr><th>Layer</th><th>Rule</th><th>Name</th><th>Source</th><th>Destination</th><th>Service</th><th>Action</th><th>Hits</th></tr>${rs.map(r=>`<tr><td><span class="pill ${Number(r.depth||0)>0?'neutral':'good'}">${esc(r.layer||'')}</span></td><td><span class="rule-no">Rule ${esc(r.display_rule||r.rule)}</span></td><td>${esc(r.name)}</td><td>${esc(r.source)}</td><td>${esc(r.destination)}</td><td>${esc(r.service)}</td><td>${esc(r.action)}</td><td>${esc(r.hits??'N/A')}</td></tr>`).join('')}</table></div>`:'<p>No Any / Any / Any rules found.</p>')+cleanupNote(d);
  }
 }
 function cleanupNote(d){
@@ -1405,7 +840,7 @@ async function runNat(){
  try{
    natData=await api('/api/nat-analyze?package='+encodeURIComponent(P.value)); renderNatSpecialViews(natData);let s=natData.summary;
    metricCards(natCards,[['Total NAT Rules',s.total_nat_rules],['Duplicate NAT',s.duplicate_nat_groups],['Broad Any/Any/Any',s.broad_original_any_any_any],['Disabled NAT',s.disabled_nat_rules],['Possible No-Translation',s.possible_no_translation_rules],['Install-On Not Found',s.install_on_checked?s.install_on_unknown_rules:'n/a']]);
-   setDashboardMetric(dNat,s.total_nat_rules,false);setDashboardMetric(dNatDup,s.duplicate_nat_groups,true);dashPackage.textContent=P.value||'Not selected';lastReadLabel=new Date().toLocaleTimeString();refreshAuroraDashboard();natTabs.style.display='flex';renderNat(pendingNatTab||'rulebase');pendingNatTab=null;
+   setDashboardMetric(dNat,s.total_nat_rules,false);setDashboardMetric(dNatDup,s.duplicate_nat_groups,true);dashPackage.textContent=P.value||'Not selected';natTabs.style.display='flex';renderNat(pendingNatTab||'rulebase');pendingNatTab=null;
    const hits=s.nat_hits_available;
    setStatus('NAT analysis complete — '+s.total_nat_rules+' rule(s). Hit counts '+(hits?'available':'not supported by this Management API build')+'.',hits?'success':'warn');
    if(!hits) notify('info','NAT hit counts unavailable',
@@ -1421,13 +856,13 @@ function renderNat(kind,b){
  if(!natData)return;
  if(kind==='rulebase'){
    let rs=natData.rules||[];
-   natResults.innerHTML='<div style="padding: 0 var(--space-lg) var(--space-lg)"><div class="section-title" style="margin-bottom:var(--space-md)"><h3>NAT Rulebase</h3></div>'+natTable(rs)+'</div>';
+   natResults.innerHTML='<h3>NAT Rulebase</h3>'+natTable(rs);
  }else if(kind==='duplicates'){
    let gs=natData.findings.duplicates||[];
-   natResults.innerHTML='<div style="padding: 0 var(--space-lg) var(--space-lg)"><div class="section-title" style="margin-bottom:var(--space-md)"><h3>Duplicate NAT Rules</h3></div>'+(gs.length?gs.map(g=>`<div class="card" style="margin:12px 0"><div class="section-title"><b>Duplicate NAT Group ${esc(g.group)} <span class="pill neutral">Exact NAT Duplicate</span></b><span class="hint">${esc(g.recommendation)}</span></div>${natTable(g.members)}</div>`).join(''):'<p style="margin:0">No exact duplicate NAT groups found.</p>')+'</div>';
+   natResults.innerHTML='<h3>Duplicate NAT Rules</h3>'+(gs.length?gs.map(g=>`<div class="card" style="margin:12px 0"><div class="section-title"><b>Duplicate NAT Group ${esc(g.group)} <span class="pill neutral">Exact NAT Duplicate</span></b><span class="hint">${esc(g.recommendation)}</span></div>${natTable(g.members)}</div>`).join(''):'<p>No exact duplicate NAT groups found.</p>');
  }else{
    let nums=new Set(natData.findings.broad_rule_numbers||[]),rs=natData.rules.filter(r=>nums.has(r.rule));
-   natResults.innerHTML='<div style="padding: 0 var(--space-lg) var(--space-lg)"><div class="section-title" style="margin-bottom:var(--space-md)"><h3>Broad Original Any / Any / Any NAT Rules</h3></div>'+(rs.length?natTable(rs):'<p style="margin:0">No broad NAT rules found.</p>')+'</div>';
+   natResults.innerHTML='<h3>Broad Original Any / Any / Any NAT Rules</h3>'+(rs.length?natTable(rs):'<p>No broad NAT rules found.</p>');
  }
 }
 function natTable(rs){return `<div class="table-wrap"><table><thead><tr><th>Rule</th><th>Name</th><th>Original Source</th><th>Original Destination</th><th>Original Service</th><th>Translated Source</th><th>Translated Destination</th><th>Translated Service</th><th>Install On</th><th>Method</th><th>Hits</th></tr></thead><tbody>${rs.map(r=>`<tr><td><span class="rule-no">Rule ${esc(r.display_rule||r.rule)}</span></td><td>${esc(r.name)}</td><td>${esc(r.original_source)}</td><td>${esc(r.original_destination)}</td><td>${esc(r.original_service)}</td><td>${esc(r.translated_source)}</td><td>${esc(r.translated_destination)}</td><td>${esc(r.translated_service)}</td><td>${esc(r.install_on)}</td><td>${esc(r.method)}</td><td>${esc(r.hits??'N/A')}</td></tr>`).join('')}</tbody></table></div>`}
@@ -1485,27 +920,6 @@ async function trace(){
          </table>
        </div>
      </div>`:'';
-
-   /* Kept so the dashboard can replay this trace without re-running it. Each
-      hop keeps the confidence the trace gave it; an unverified hop is never
-      redrawn as an exact one. */
-   lastTrace={
-     label:`${d.query.source} → ${d.query.destination} · ${d.query.service_display||((d.query.protocol||'').toUpperCase()+'/'+d.query.port)}`,
-     verdict:(w?.action)||(confidence==='unknown'?'UNVERIFIED':'NO MATCH'),
-     steps:[
-       {title:'Source resolved',   detail:d.query.source,                       state:'match'},
-       ...(path.length?path.slice(0,3).map(x=>({
-            title:`Rule ${x.display_rule||x.rule}${x.name?' '+x.name:''}`,
-            detail:`${x.layer||''} · ${x.action||'Inline'}`,
-            state:String(x.action||'').toLowerCase().includes('drop')?'no-match':'match'})):[]),
-       {title:'Final action',      detail:`Confidence: ${confidence}`,
-        state:confidence==='unknown'?'unknown':(String(w?.action||'').toLowerCase().includes('drop')?'no-match':'match')},
-       {title:'NAT correlation',   detail:natLead?`Rule ${natLead.rule} · ${natLead.confidence||''}`:'Not checked',
-        state:(natLead&&natLead.state==='unknown')?'unknown':(natLead?'match':'unknown')},
-       {title:'Destination',       detail:d.query.destination,                  state:'match'}
-     ]
-   };
-   refreshAuroraDashboard();
 
    traceResult.innerHTML=`<div class="flow">
      <div class="step"><span class="muted">Source</span><br><b>${esc(d.query.source)}</b></div>
@@ -3535,214 +2949,3 @@ async function runHealth(ev){
       healthResult.innerHTML='<div class="card"><p>'+esc(String(e.message))+'</p></div>';
   });
 }
-
-/* ════════════════════════════════════════════════════════════════════
-   Settings / Credential Management
-   ════════════════════════════════════════════════════════════════════ */
-
-function togglePassVis(id, btn) {
-  const inp = document.getElementById(id);
-  if (!inp) return;
-  if (inp.type === 'password') { inp.type = 'text'; btn.textContent = 'Hide'; }
-  else { inp.type = 'password'; btn.textContent = 'Show'; }
-}
-
-async function loadCredentialStatus() {
-  try {
-    const r = await fetch('/api/credentials/status');
-    const d = await r.json();
-
-    // Check Point
-    const cpS = document.getElementById('cpCredStatus');
-    if (d.checkpoint && d.checkpoint.configured) {
-      if (d.checkpoint.connected) {
-        cpS.className = 'pill good'; cpS.textContent = 'Connected';
-      } else {
-        cpS.className = 'pill warn'; cpS.textContent = 'Saved';
-      }
-      document.getElementById('cpMgmt').value = d.checkpoint.mgmt || '';
-      document.getElementById('cpUser').value = d.checkpoint.user || '';
-      document.getElementById('cpDomain').value = d.checkpoint.domain || '';
-      document.getElementById('cpPass').placeholder = '••••••••  (saved)';
-      // Advanced
-      document.getElementById('cpVerifySsl').checked = d.checkpoint.verify_ssl || false;
-      document.getElementById('cpTimeout').value = d.checkpoint.timeout || 90;
-      document.getElementById('cpInterval').value = d.checkpoint.min_request_interval || 0.55;
-      document.getElementById('cpCacheTtl').value = d.checkpoint.cache_ttl || 300;
-    } else {
-      cpS.className = 'pill bad'; cpS.textContent = 'Not configured';
-    }
-
-    // Gaia
-    const gaS = document.getElementById('gaiaCredStatus');
-    if (d.gaia && d.gaia.configured) {
-      gaS.className = 'pill good'; gaS.textContent = 'Saved';
-      document.getElementById('gaiaEnabled').checked = d.gaia.enabled || false;
-      document.getElementById('gaiaUser').value = d.gaia.user || '';
-      document.getElementById('gaiaHosts').value = d.gaia.hosts || '';
-      document.getElementById('gaiaPass').placeholder = '••••••••  (saved)';
-    } else {
-      gaS.className = 'pill neutral'; gaS.textContent = 'Not configured';
-    }
-  } catch (e) {
-    console.warn('Failed to load credential status', e);
-  }
-}
-
-async function saveCred(type) {
-  const body = { type };
-  if (type === 'checkpoint') {
-    body.checkpoint = {
-      mgmt: document.getElementById('cpMgmt').value,
-      user: document.getElementById('cpUser').value,
-      password: document.getElementById('cpPass').value,
-      domain: document.getElementById('cpDomain').value,
-      verify_ssl: document.getElementById('cpVerifySsl').checked,
-      timeout: parseFloat(document.getElementById('cpTimeout').value) || 90,
-      min_request_interval: parseFloat(document.getElementById('cpInterval').value) || 0.55,
-      rate_limit_retries: 4,
-      rate_limit_base_delay: 2.0,
-      cache_ttl: parseInt(document.getElementById('cpCacheTtl').value) || 300,
-    };
-    if (!body.checkpoint.mgmt || !body.checkpoint.user) {
-      showTestResult('cpTestResult', false, 'Management Server and Username are required.');
-      return;
-    }
-    if (!body.checkpoint.password) {
-      // Keep existing password — don't send empty
-      delete body.checkpoint.password;
-    }
-  } else {
-    body.gaia = {
-      enabled: document.getElementById('gaiaEnabled').checked,
-      user: document.getElementById('gaiaUser').value,
-      password: document.getElementById('gaiaPass').value,
-      hosts: document.getElementById('gaiaHosts').value,
-      verify_ssl: false,
-      timeout: 30,
-    };
-    if (!body.gaia.password) delete body.gaia.password;
-  }
-
-  try {
-    const r = await fetch('/api/credentials', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const d = await r.json();
-    if (r.ok) {
-      const rid = type === 'checkpoint' ? 'cpTestResult' : 'gaiaTestResult';
-      showTestResult(rid, true, 'Credentials saved and encrypted successfully.');
-      loadCredentialStatus();
-    } else {
-      const rid = type === 'checkpoint' ? 'cpTestResult' : 'gaiaTestResult';
-      showTestResult(rid, false, d.detail || 'Save failed.');
-    }
-  } catch (e) {
-    showTestResult(type === 'checkpoint' ? 'cpTestResult' : 'gaiaTestResult', false, String(e));
-  }
-}
-
-async function testCred(type) {
-  const rid = type === 'checkpoint' ? 'cpTestResult' : 'gaiaTestResult';
-  showTestResult(rid, null, 'Testing connection...');
-
-  const body = { type };
-  if (type === 'checkpoint') {
-    body.checkpoint = {
-      mgmt: document.getElementById('cpMgmt').value,
-      user: document.getElementById('cpUser').value,
-      password: document.getElementById('cpPass').value,
-      domain: document.getElementById('cpDomain').value,
-      verify_ssl: document.getElementById('cpVerifySsl').checked,
-      timeout: parseFloat(document.getElementById('cpTimeout').value) || 30,
-    };
-  } else {
-    body.gaia = {
-      enabled: true,
-      user: document.getElementById('gaiaUser').value,
-      password: document.getElementById('gaiaPass').value,
-      hosts: document.getElementById('gaiaHosts').value,
-      verify_ssl: false,
-      timeout: 15,
-    };
-  }
-
-  try {
-    const r = await fetch('/api/credentials/test', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const d = await r.json();
-    let msg = d.message || '';
-    if (d.api_version) msg += `  (API v${d.api_version})`;
-    if (d.details) {
-      msg += '\n' + d.details.map(x => `  ${x.host}: ${x.ok ? 'Success' : 'Failed'} ${x.msg}`).join('\n');
-    }
-    showTestResult(rid, d.success, msg);
-  } catch (e) {
-    showTestResult(rid, false, String(e));
-  }
-}
-
-async function deleteCred(type) {
-  if (!confirm(`Delete ${type} credentials? This cannot be undone.`)) return;
-  try {
-    const r = await fetch('/api/credentials', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type }),
-    });
-    const d = await r.json();
-    const rid = type === 'checkpoint' ? 'cpTestResult' : 'gaiaTestResult';
-    if (d.status === 'deleted') {
-      showTestResult(rid, true, 'Credentials deleted.');
-      // Clear form
-      if (type === 'checkpoint') {
-        document.getElementById('cpMgmt').value = '';
-        document.getElementById('cpUser').value = '';
-        document.getElementById('cpPass').value = '';
-        document.getElementById('cpDomain').value = '';
-      } else {
-        document.getElementById('gaiaUser').value = '';
-        document.getElementById('gaiaPass').value = '';
-        document.getElementById('gaiaHosts').value = '';
-        document.getElementById('gaiaEnabled').checked = false;
-      }
-      loadCredentialStatus();
-    } else {
-      showTestResult(rid, false, 'No saved credentials to delete.');
-    }
-  } catch (e) {
-    showTestResult(type === 'checkpoint' ? 'cpTestResult' : 'gaiaTestResult', false, String(e));
-  }
-}
-
-function showTestResult(id, success, msg) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.style.display = 'block';
-  el.className = 'test-result ' + (success === null ? 'loading' : success ? 'success' : 'failure');
-  el.textContent = msg;
-  // Auto-hide after 8s for success
-  if (success) setTimeout(() => { el.style.display = 'none'; }, 8000);
-}
-
-// Load status when Settings page opens
-const _origShowPage = typeof showPage === 'function' ? showPage : null;
-if (_origShowPage) {
-  // We'll hook into the showPage function after it's defined
-}
-// Instead, just load on DOMContentLoaded if settings is visible, or on page switch
-document.addEventListener('DOMContentLoaded', () => {
-  // Patch showPage to trigger credential load
-  const origShow = window.showPage;
-  if (origShow) {
-    window.showPage = function(page, btn) {
-      origShow(page, btn);
-      if (page === 'settings') loadCredentialStatus();
-    };
-  }
-});
