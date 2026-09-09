@@ -142,13 +142,19 @@ async def save_credentials(req: SaveRequest):
         data = req.checkpoint.model_dump()
         credential_store.save("checkpoint", data)
         _apply_checkpoint(data)
-        # Force re-login with new credentials on next API call
-        if cp.sid:
-            try:
-                await cp.close()
-            except Exception:
-                pass
-            cp.sid = None
+        # Re-initialize the client to apply new IP, timeout and SSL settings
+        import httpx
+        try:
+            await cp.close()
+        except Exception:
+            pass
+        cp.base_url = settings.checkpoint_mgmt.rstrip("/")
+        cp.client = httpx.AsyncClient(
+            verify=settings.checkpoint_verify_ssl,
+            timeout=settings.checkpoint_timeout,
+            headers={"Content-Type": "application/json"}
+        )
+        cp.sid = None
         return {"status": "saved", "type": "checkpoint"}
 
     elif req.type == "gaia":
