@@ -101,15 +101,9 @@ body::before{
   transition:opacity .2s var(--ease,ease);
 }
 .light body::before,body.light::before{opacity:.85}
-/* the faint texture of an ops screen, masked so it never reaches an edge */
-body::after{
-  content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.35;
-  background-image:linear-gradient(var(--line) 1px,transparent 1px),
-                   linear-gradient(90deg,var(--line) 1px,transparent 1px);
-  background-size:52px 52px;
-  -webkit-mask-image:radial-gradient(80% 60% at 50% 40%,#000 0%,transparent 78%);
-  mask-image:radial-gradient(80% 60% at 50% 40%,#000 0%,transparent 78%);
-}
+/* The grid texture was removed because when blurred by the glass cards' backdrop-filter,
+   the 1px lines turned into thick faint bands that looked like rendering bugs. */
+body::after { display: none; }
 
 /* Browser surfaces belong to the design too. */
 html{scrollbar-color:var(--scroll) transparent;scrollbar-width:thin}
