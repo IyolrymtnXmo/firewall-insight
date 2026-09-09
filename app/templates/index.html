@@ -272,6 +272,30 @@
               </div>
               </div>
               </div>
+              <div class="card flush fold" data-fold="dash-trace">
+                <div class="card-h">
+                  <div>
+                    <h3>Traffic Path Summary</h3>
+                    <p id="tracePreviewSub">No trace run in this session</p>
+                  </div>
+                  <div class="r">
+                    <span class="badge-soft">CORRELATED</span>
+                    <span id="tracePreviewVerdict" class="pill neutral" style="margin-left:8px">&mdash;</span>
+                  </div>
+                </div>
+                <div class="timeline" id="tracePreview">
+                  <div class="tl-step">
+                    <span class="dot"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-trace"/></svg></span>
+                    <div class="txt"><b>Nothing traced yet</b>
+                      <small>Enter a source, a destination and a port on Traffic Path.</small>
+                    </div>
+                  </div>
+                </div>
+                <div class="card-foot">
+                  Simulated from configuration &mdash; it never sends a packet.
+                  <button onclick="goTo('traffic')" style="height:30px;font-size:12px;margin-left:auto">Trace</button>
+                </div>
+              </div>
             </div>
             <div class="stack">
 <div class="card flush">
@@ -326,29 +350,7 @@
               <span class="pill good">GET only</span>
               </div>
               </div>
-              <div class="card flush fold" data-fold="dash-note">
-              <div class="card-h">
-              <div><h3>Analysis Summary</h3></div>
-              <div class="r"><span class="badge-soft">CORRELATED</span></div>
               </div>
-              <div class="card flush fold" data-fold="dash-trace">
-            <div class="card-h">
-            <div><h3>Traffic Path</h3><p id="tracePreviewSub">No trace run in this session</p></div>
-            <div class="r"><span id="tracePreviewVerdict" class="pill neutral">&mdash;</span></div>
-            </div>
-            <div class="timeline" id="tracePreview">
-            <div class="tl-step">
-            <span class="dot"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-trace"/></svg></span>
-            <div class="txt"><b>Nothing traced yet</b>
-            <small>Enter a source, a destination and a port on Traffic Path.</small></div>
-            </div>
-            </div>
-            <div class="card-foot">
-            Simulated from configuration &mdash; it never sends a packet.
-            <button onclick="goTo('traffic')" style="height:30px;font-size:12px;margin-left:auto">Trace</button>
-            </div>
-            </div>
-            </div>
           </div>
 
           <!-- band D — where the traffic is, and what this was all read from -->
