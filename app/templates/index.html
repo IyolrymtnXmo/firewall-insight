@@ -862,16 +862,14 @@
             </div>
           </div>
 
-          <!-- Encryption Status -->
+          <!-- Credential Security -->
           <div class="card flush">
             <div class="card-h">
-              <div><h3>Encryption Status</h3></div>
-              <div class="r"><span class="pill good">AES-128-CBC</span></div>
+              <div><h3>Credential Security</h3><p>How saved credentials are protected</p></div>
+              <div class="r"><span class="pill good">Encrypted at rest</span></div>
             </div>
             <div style="padding: var(--space-sm) var(--space-lg) var(--space-lg); font-size: 12.5px; color: var(--muted); line-height: 1.7">
-              Credentials are encrypted with <b>Fernet</b> (AES-128-CBC + HMAC-SHA256).<br>
-              Key file: <code>.credential_key</code> (auto-generated, gitignored)<br>
-              Encrypted store: <code>credentials.enc</code><br>
+              Saved credentials are encrypted at rest using a server-side key that is auto-generated on first use and excluded from version control.<br>
               <span class="hint">Fallback: <code>.env</code> values are used if no encrypted credentials are saved.</span>
             </div>
           </div>

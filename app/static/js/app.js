@@ -3605,7 +3605,7 @@ async function saveCred(type) {
       cache_ttl: parseInt(document.getElementById('cpCacheTtl').value) || 300,
     };
     if (!body.checkpoint.mgmt || !body.checkpoint.user) {
-      showTestResult('cpTestResult', false, 'Management Server and Username are required.');
+      showTestResult('cpTestResult', false, '<span class="test-icon bad">✕</span> <strong>Management Server and Username are required.</strong>');
       return;
     }
     if (!body.checkpoint.password) {
@@ -3633,20 +3633,20 @@ async function saveCred(type) {
     const d = await r.json();
     if (r.ok) {
       const rid = type === 'checkpoint' ? 'cpTestResult' : 'gaiaTestResult';
-      showTestResult(rid, true, 'Credentials saved and encrypted successfully.');
+      showTestResult(rid, true, '<span class="test-icon good">✓</span> <strong>Credentials saved and encrypted successfully.</strong>');
       loadCredentialStatus();
     } else {
       const rid = type === 'checkpoint' ? 'cpTestResult' : 'gaiaTestResult';
-      showTestResult(rid, false, d.detail || 'Save failed.');
+      showTestResult(rid, false, '<span class="test-icon bad">✕</span> <strong>' + esc(d.detail || 'Save failed.') + '</strong>');
     }
   } catch (e) {
-    showTestResult(type === 'checkpoint' ? 'cpTestResult' : 'gaiaTestResult', false, String(e));
+    showTestResult(type === 'checkpoint' ? 'cpTestResult' : 'gaiaTestResult', false, '<span class="test-icon bad">✕</span> <strong>' + esc(String(e)) + '</strong>');
   }
 }
 
 async function testCred(type) {
   const rid = type === 'checkpoint' ? 'cpTestResult' : 'gaiaTestResult';
-  showTestResult(rid, null, 'Testing connection...');
+  showTestResult(rid, null, '<span class="spinner sm"></span> Testing connection…');
 
   const body = { type };
   if (type === 'checkpoint') {
@@ -3676,14 +3676,49 @@ async function testCred(type) {
       body: JSON.stringify(body),
     });
     const d = await r.json();
-    let msg = d.message || '';
-    if (d.api_version) msg += `  (API v${d.api_version})`;
-    if (d.details) {
-      msg += '\n' + d.details.map(x => `  ${x.host}: ${x.ok ? 'Success' : 'Failed'} ${x.msg}`).join('\n');
+
+    /* ---- Build structured per-host result ---- */
+    if (d.details && Array.isArray(d.details)) {
+      const okCount  = d.details.filter(x => x.ok).length;
+      const failCount = d.details.filter(x => !x.ok).length;
+      let html = '<div class="test-summary">';
+      if (d.success) {
+        html += '<span class="test-icon good">✓</span> ';
+        html += `<strong>All ${okCount} gateway(s) reachable</strong>`;
+      } else {
+        html += '<span class="test-icon bad">✕</span> ';
+        html += `<strong>${failCount} of ${d.details.length} gateway(s) failed</strong>`;
+      }
+      html += '</div>';
+      html += '<div class="test-hosts">';
+      d.details.forEach(x => {
+        const cls = x.ok ? 'host-ok' : 'host-fail';
+        const icon = x.ok ? '✓' : '✕';
+        const badge = x.ok ? 'good' : 'bad';
+        html += `<div class="test-host-row ${cls}">`
+          + `<span class="test-host-icon ${badge}">${icon}</span>`
+          + `<code class="test-host-ip">${esc(x.host)}</code>`
+          + `<span class="pill ${badge}">${x.ok ? 'Success' : 'Failed'}</span>`
+          + (x.msg && x.msg !== 'OK' ? `<span class="test-host-msg">${esc(x.msg)}</span>` : '')
+          + '</div>';
+      });
+      html += '</div>';
+      showTestResult(rid, d.success, html);
+    } else {
+      /* Checkpoint single-host result */
+      let html = '';
+      if (d.success) {
+        html += '<span class="test-icon good">✓</span> ';
+        html += `<strong>${esc(d.message || 'Connected')}</strong>`;
+        if (d.api_version) html += ` <span class="pill good">API v${esc(d.api_version)}</span>`;
+      } else {
+        html += '<span class="test-icon bad">✕</span> ';
+        html += `<strong>${esc(d.message || 'Connection failed')}</strong>`;
+      }
+      showTestResult(rid, d.success, html);
     }
-    showTestResult(rid, d.success, msg);
   } catch (e) {
-    showTestResult(rid, false, String(e));
+    showTestResult(rid, false, '<span class="test-icon bad">✕</span> <strong>' + esc(String(e)) + '</strong>');
   }
 }
 
@@ -3698,7 +3733,7 @@ async function deleteCred(type) {
     const d = await r.json();
     const rid = type === 'checkpoint' ? 'cpTestResult' : 'gaiaTestResult';
     if (d.status === 'deleted') {
-      showTestResult(rid, true, 'Credentials deleted.');
+      showTestResult(rid, true, '<span class="test-icon good">✓</span> <strong>Credentials deleted.</strong>');
       // Clear form
       if (type === 'checkpoint') {
         document.getElementById('cpMgmt').value = '';
@@ -3713,21 +3748,21 @@ async function deleteCred(type) {
       }
       loadCredentialStatus();
     } else {
-      showTestResult(rid, false, 'No saved credentials to delete.');
+      showTestResult(rid, false, '<span class="test-icon bad">✕</span> <strong>No saved credentials to delete.</strong>');
     }
   } catch (e) {
-    showTestResult(type === 'checkpoint' ? 'cpTestResult' : 'gaiaTestResult', false, String(e));
+    showTestResult(type === 'checkpoint' ? 'cpTestResult' : 'gaiaTestResult', false, '<span class="test-icon bad">✕</span> <strong>' + esc(String(e)) + '</strong>');
   }
 }
 
-function showTestResult(id, success, msg) {
+function showTestResult(id, success, html) {
   const el = document.getElementById(id);
   if (!el) return;
   el.style.display = 'block';
   el.className = 'test-result ' + (success === null ? 'loading' : success ? 'success' : 'failure');
-  el.textContent = msg;
-  // Auto-hide after 8s for success
-  if (success) setTimeout(() => { el.style.display = 'none'; }, 8000);
+  el.innerHTML = html;
+  // Auto-hide after 12s for success
+  if (success) setTimeout(() => { el.style.display = 'none'; }, 12000);
 }
 
 // Load status when Settings page opens

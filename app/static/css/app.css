@@ -1756,6 +1756,27 @@ tr.rb-detail.open .rb-body{grid-template-rows:1fr}
 .test-result.failure{background:var(--bad-soft);color:var(--bad);border:1px solid var(--bad)}
 .test-result.loading{background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
 
+/* per-host test rows */
+.test-summary{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:2px}
+.test-icon{font-weight:800;font-size:14px;flex:none}
+.test-icon.good{color:var(--good)}
+.test-icon.bad{color:var(--bad)}
+.test-hosts{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.test-host-row{
+  display:flex;align-items:center;gap:10px;
+  padding:8px 12px;border-radius:9px;
+  background:rgba(255,255,255,.04);border:1px solid var(--line);
+  transition:background .15s;
+}
+.test-host-row.host-ok{border-color:rgba(52,211,153,.25)}
+.test-host-row.host-fail{border-color:rgba(244,96,108,.25);background:rgba(244,96,108,.06)}
+.test-host-icon{width:18px;height:18px;display:grid;place-items:center;font-weight:800;font-size:13px;flex:none;border-radius:50%}
+.test-host-icon.good{color:var(--good);background:var(--good-soft)}
+.test-host-icon.bad{color:var(--bad);background:var(--bad-soft)}
+.test-host-ip{font-family:var(--font-mono);font-size:12.5px;font-weight:500;color:var(--text);flex:none}
+.test-host-msg{font-size:11.5px;color:var(--muted);margin-left:auto;max-width:50%;text-align:right;word-break:break-word}
+.test-result .pill{font-size:10px;height:20px;line-height:20px;padding:0 8px}
+
 /* toggle switch */
 .toggle-switch{
   position:relative;display:inline-block;width:42px;height:22px;cursor:pointer;
