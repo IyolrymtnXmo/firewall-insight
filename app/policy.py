@@ -105,6 +105,12 @@ async def access_tree(c, layer, hydrate: bool = True):
             return hydrated
 
     async with heavy_lock:
+        # Re-check under the lock: while this request queued, the request it
+        # queued behind may have populated the very entry it is waiting for.
+        cached = cache_get(key)
+        if cached is not None:
+            return cached
+
         tree = await c.show_rulebase_tree(layer)
         if hydrate:
             for node in tree.get("layers", []):
@@ -123,44 +129,55 @@ async def package_access_tree(c, package: str, hydrate: bool = True, rid: str | 
     if cached is not None:
         return cached
 
-    roots = await c.show_package_access_layers(package)
-    if not roots:
-        raise CheckPointAPIError(
-            f"Could not resolve an Access Control layer for Policy Package '{package}'."
-        )
+    # This is the expensive path the UI actually takes - package-first since
+    # v4.2 - and it was the only one of the three that did not serialise. Two
+    # browser tabs analysing the same package raced each other into the
+    # Management API rate limit, and each also paid the full hydration cost.
+    async with heavy_lock:
+        # Re-check under the lock: while this request queued, the request it
+        # queued behind may have populated the very entry it is waiting for.
+        cached = cache_get(key)
+        if cached is not None:
+            return cached
 
-    trees = []
-    for root in roots:
-        trees.append(await c.show_rulebase_tree(root["name"]))
-
-    tree = merge_package_trees(package, trees)
-
-    if hydrate:
-        layers = tree.get("layers", [])
-        for i, node in enumerate(layers, 1):
-            # Object hydration dominates first-load time. Report per-object
-            # movement so a 20s wait shows real progress, not a frozen step.
-            def report(done, total, round_no, _i=i, _name=node.get("name")):
-                if not rid:
-                    return
-                item = _progress.get(rid) or {}
-                suffix = f" · pass {round_no + 1}" if round_no else ""
-                progress_set(
-                    rid, item.get("phase", 0), item.get("label", "Loading"),
-                    item.get("total", 0),
-                    f"{_name}: resolving object {done}/{total}"
-                    f"{f' (layer {_i}/{len(layers)})' if len(layers) > 1 else ''}{suffix}",
-                )
-
-            payload, _ = await hydrate_rulebase(
-                c, node["payload"], on_progress=report if rid else None
+        roots = await c.show_package_access_layers(package)
+        if not roots:
+            raise CheckPointAPIError(
+                f"Could not resolve an Access Control layer for Policy Package '{package}'."
             )
-            node["payload"] = payload
 
-    cache_set(key, tree)
-    if hydrate:
-        cache_set(f"package-access-tree:{package}:raw", tree)
-    return tree
+        trees = []
+        for root in roots:
+            trees.append(await c.show_rulebase_tree(root["name"]))
+
+        tree = merge_package_trees(package, trees)
+
+        if hydrate:
+            layers = tree.get("layers", [])
+            for i, node in enumerate(layers, 1):
+                # Object hydration dominates first-load time. Report per-object
+                # movement so a 20s wait shows real progress, not a frozen step.
+                def report(done, total, round_no, _i=i, _name=node.get("name")):
+                    if not rid:
+                        return
+                    item = _progress.get(rid) or {}
+                    suffix = f" · pass {round_no + 1}" if round_no else ""
+                    progress_set(
+                        rid, item.get("phase", 0), item.get("label", "Loading"),
+                        item.get("total", 0),
+                        f"{_name}: resolving object {done}/{total}"
+                        f"{f' (layer {_i}/{len(layers)})' if len(layers) > 1 else ''}{suffix}",
+                    )
+
+                payload, _ = await hydrate_rulebase(
+                    c, node["payload"], on_progress=report if rid else None
+                )
+                node["payload"] = payload
+
+        cache_set(key, tree)
+        if hydrate:
+            cache_set(f"package-access-tree:{package}:raw", tree)
+        return tree
 
 
 async def analyze_package(c, package: str, rid: str | None = None):

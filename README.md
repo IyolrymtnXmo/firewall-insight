@@ -38,8 +38,24 @@ show-gateways-and-servers
 ```
 
 There is no `add-*`, `set-*`, `delete-*`, `publish`, or `install-policy` code path.
-Every HTTP route is a `GET`. This is deliberate and should be preserved: the tool is
-intended to be safe to point at a production Management Server.
+This is deliberate and should be preserved: the tool is intended to be safe to point
+at a production Management Server.
+
+### The one thing the application writes (v4.30)
+
+Every route that reads policy is a `GET`. Three routes are not, and they exist so an
+operator can manage credentials from the Settings page instead of hand-editing `.env`:
+
+| Route | What it writes |
+|---|---|
+| `POST /api/credentials` | encrypts and saves Management / Gaia credentials to `credentials.enc` |
+| `POST /api/credentials/test` | nothing — performs a `login` → `logout` and reports the result |
+| `DELETE /api/credentials` | removes a saved credential entry |
+
+Those writes land on a **local encrypted file**. None of them reaches a firewall, and
+`app/api/credentials.py` names only `login` and `logout` from the Management API.
+`tests/test_v413_structure.py` enforces both halves: no other route module may declare
+a mutating verb, and that module may not import the policy layer.
 
 ### The Gaia API needs its own guarantee (v4.27)
 
@@ -94,7 +110,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass   # Windows PowerShel
 pip install -r requirements.txt
 
 copy .env.example .env      # then edit .env with your Management details
-pytest -q                   # expect: 381 passed
+pytest -q                   # expect: 731 passed
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -120,8 +136,8 @@ docker compose up --build      # reads .env via env_file
 
 | Check | Expected |
 |---|---|
-| `pytest -q` | `381 passed` |
-| `GET /health` | `{"status":"ok","version":"4.19.1","mode":"read-only",...}` |
+| `pytest -q` | `731 passed` |
+| `GET /health` | `{"status":"ok","version":"4.31.0","mode":"read-only",...}` |
 | `GET /api/checkpoint/test` | `{"connected":true,"api_server_version":"...","read_only":true}` |
 | `GET /api/bootstrap` | lists your access layers and policy packages |
 

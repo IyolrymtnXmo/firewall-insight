@@ -1,7 +1,5 @@
 from __future__ import annotations
-from ipaddress import ip_address, ip_network
 from typing import Any
-import socket
 from .matching import (  # noqa: F401  (re-exported: importers use app.traffic)
     address_match_state,
     address_matches,

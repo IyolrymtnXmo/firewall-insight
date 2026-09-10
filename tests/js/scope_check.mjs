@@ -27,21 +27,57 @@ const source = readFileSync(`${root}/app/static/js/app.js`, "utf8");
 
 const ids = [...html.matchAll(/id="([A-Za-z_][\w-]*)"/g)].map((m) => m[1]);
 
+/* Nodes with an id are remembered, the way a document remembers them.
+ *
+ * getElementById() used to build a brand new object on every call, so nothing
+ * a renderer did to the DOM could be observed here - two calls asking for the
+ * same id got two unrelated objects. That is why the toast pile in v4.30 could
+ * not be caught: notify() appends to getElementById('toasts'), and every
+ * append landed on a different throwaway node.
+ *
+ * Children are tracked well enough to answer "what is on screen now", which
+ * is the question these checks ask. This is not a DOM implementation and is
+ * not trying to be one. */
+const NODES = new Map();
+
 const el = (id = "") => {
+  if (id && NODES.has(id)) return NODES.get(id);
   const node = {
     id, innerHTML: "", textContent: "", value: "", checked: false,
     disabled: false, selectedIndex: 0, options: [], dataset: {},
+    className: "", children: [],
     style: new Proxy({}, { get: () => "", set: () => true }),
     classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
-    appendChild() {}, removeChild() {}, remove() {}, focus() {}, blur() {},
+    appendChild(child) {
+      this.children.push(child);
+      if (child) child.parentElement = this;
+      return child;
+    },
+    removeChild(child) {
+      const i = this.children.indexOf(child);
+      if (i >= 0) this.children.splice(i, 1);
+      if (child) child.parentElement = null;
+      return child;
+    },
+    remove() { if (this.parentElement) this.parentElement.removeChild(this); },
+    focus() {}, blur() {},
     setAttribute() {}, removeAttribute() {}, getAttribute: () => null,
     addEventListener() {}, removeEventListener() {}, click() {},
-    querySelector: () => el(), querySelectorAll: () => [],
+    querySelector: () => el(),
+    querySelectorAll(sel) {
+      if (typeof sel === "string" && sel.startsWith(".")) {
+        const want = sel.slice(1);
+        return this.children.filter(
+          (c) => c && String(c.className || "").split(/\s+/).includes(want));
+      }
+      return [];
+    },
     getBoundingClientRect: () => ({ width: 800, height: 600, top: 0, left: 0,
                                     right: 800, bottom: 600 }),
     closest: () => null, insertAdjacentHTML() {}, scrollIntoView() {},
   };
   node.parentElement = null;
+  if (id) NODES.set(id, node);
   return node;
 };
 
@@ -60,10 +96,29 @@ const context = {
   console,
   setTimeout, clearTimeout, setInterval, clearInterval,
   requestAnimationFrame: () => 0,
-  fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }),
+  /* api() reads the body with r.text() and parses it itself, so a stub with
+     only json() made every call through api() throw before it ran. */
+  fetch: () => Promise.resolve({
+    ok: true, status: 200,
+    json: () => Promise.resolve({}),
+    text: () => Promise.resolve("{}"),
+  }),
   localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
   matchMedia: () => ({ matches: false, addEventListener() {} }),
   navigator: { clipboard: { writeText: () => Promise.resolve() } },
+  /* Real browser globals, stubbed because they exist everywhere the app runs.
+     The rule this stub keeps is "do not INVENT globals" - withholding one the
+     browser genuinely provides would fail a renderer that is perfectly
+     correct, which is just as misleading as missing a typo. Anything not on
+     this list still stays undefined. */
+  performance: { now: () => 0 },
+  confirm: () => true,
+  alert: () => {},
+  getComputedStyle: () => new Proxy({}, { get: () => "" }),
+  AbortController: class { constructor() { this.signal = {}; } abort() {} },
+  Blob: class { constructor(parts) { this.parts = parts; } },
+  URL: { createObjectURL: () => "blob:stub", revokeObjectURL() {} },
+  location: { href: "http://localhost/", search: "", hash: "" },
   URLSearchParams,
   Date, Math, JSON, Map, Set, Promise, Number, String, Array, Object, Error,
   encodeURIComponent, decodeURIComponent, parseInt, parseFloat, isNaN,
@@ -105,6 +160,121 @@ const NAT_DATA = {
 };
 
 const evalIn = (code) => runInContext(code, context, { filename: "check.js" });
+
+/* v4.31: the Traffic Path render, driven by real API payloads.
+ *
+ * Everything above calls a renderer directly. `trace()` is different: the
+ * render that matters lives inside it, behind an await, and it is the screen
+ * the product is judged on. Nothing executed it, which is how
+ * `${ARROW_CH}` - an identifier that does not exist - got written into the
+ * transition cell while 718 Python tests and every renderer above stayed
+ * green.
+ *
+ * `api` is a top-level function declaration, so it is a property of the
+ * context and can be replaced. `L`, `P` are top-level `const`, so they are
+ * lexical and need an expression evaluated inside the script's own scope.
+ *
+ * Captured from the lab, 2026-09-10, package External-FW.
+ */
+const TRACE_EXACT = {
+  query: { source: "192.168.10.50", destination: "8.8.8.8", protocol: "tcp",
+           port: 443, service_input: "443", service_display: "https (TCP/443)",
+           service_resolved_by: "numeric-port", service_warnings: [],
+           layer: "External-FW Network", package: "External-FW" },
+  access: {
+    matched: true, confidence: "exact", result: "Accept",
+    reason: "Terminal Access rule matched exactly.",
+    winner: { rule: 1, display_rule: "8.1", name: "Allow-Web", action: "Accept",
+              layer: "VPN InternetLayer", depth: 1, state: "match",
+              transition: "final", source_match: "LAB-Internal-Nets",
+              destination_match: "All_Internet",
+              service_match: "https (TCP/443)", vpn_state: "match" },
+    path: [
+      { rule: 8, display_rule: "8", name: "Lab-Outbound", action: "Inner Layer",
+        layer: "External-FW Network", depth: 0, state: "match",
+        transition: "inline-layer", inline_layer: "VPN InternetLayer",
+        source_match: "LAB-Internal-Nets", destination_match: "All_Internet",
+        service_match: "https (TCP/443)", vpn_state: "match" },
+      { rule: 1, display_rule: "8.1", name: "Allow-Web", action: "Accept",
+        layer: "VPN InternetLayer", depth: 1, state: "match",
+        transition: "final", source_match: "LAB-Internal-Nets",
+        destination_match: "All_Internet", service_match: "https (TCP/443)",
+        vpn_state: "match" },
+    ],
+  },
+  nat: [{ rule: 9, state: "match", confidence: "exact",
+          translated_source: "LAB-VLAN10 (192.168.10.0/24)",
+          translated_destination: "Original" }],
+  nat_error: null, map_path: null, map_path_error: null,
+  data_quality: { complete: true, warnings: [] }, limitations: [],
+};
+
+/* The defect this whole release is about, as the API actually returns it:
+   no winner, a `possible_winner` the engine refused to declare final, and a
+   later rule that does match but must not be presented as the answer. */
+const TRACE_UNVERIFIED = {
+  query: { source: "192.168.10.50", destination: "unverified-destination.invalid",
+           protocol: "tcp", port: 443, service_input: "443",
+           service_display: "https (TCP/443)", service_resolved_by: "numeric-port",
+           service_warnings: [], layer: "External-FW Network",
+           package: "External-FW" },
+  access: {
+    matched: false, confidence: "unknown", result: "UNVERIFIED",
+    reason: "Earlier Rule 2 contains condition(s) this static simulator cannot "
+          + "evaluate. Later Rule 9 matches, but cannot be declared final.",
+    winner: null,
+    possible_winner: {
+      rule: 2, display_rule: "2", name: "Admin-Access", action: "Accept",
+      layer: "External-FW Network", depth: 0, state: "unknown",
+      source_match: "Any",
+      destination_match: "unverified-destination.invalid did not resolve, so "
+                       + "membership in these objects cannot be decided "
+                       + "([Errno 11001] getaddrinfo failed)",
+      service_match: "https (TCP/443)", destination_state: "unknown",
+      vpn_state: "match",
+    },
+    later_exact_rule: { rule: 9, display_rule: "9", action: "Drop" },
+    path: [{
+      rule: 2, display_rule: "2", name: "Admin-Access", action: "Accept",
+      layer: "External-FW Network", depth: 0, state: "unknown",
+      source_match: "Any",
+      destination_match: "unverified-destination.invalid did not resolve, so "
+                       + "membership in these objects cannot be decided "
+                       + "([Errno 11001] getaddrinfo failed)",
+      service_match: "https (TCP/443)", destination_state: "unknown",
+      vpn_state: "match",
+    }],
+  },
+  nat: [{ rule: 3, state: "unknown", confidence: "unverified",
+          reason: "NAT Rule 3 uses object(s) with no static model." }],
+  nat_error: null, map_path: null, map_path_error: null,
+  data_quality: { complete: true, warnings: [] }, limitations: [],
+};
+
+const ORIGINAL_API = context.api;
+const runTrace = async (payload) => {
+  context.api = async () => payload;
+  evalIn("L.value='External-FW Network'; P.value='External-FW';"
+       + "src.value='a'; dst.value='b'; proto.value='tcp'; port.value='443';");
+  try {
+    await context.trace();
+  } finally {
+    // Put the real one back, and clear the selections this set - otherwise a
+    // later check that is gated on "a package is selected" starts running for
+    // the first time against a payload meant for the trace.
+    context.api = ORIGINAL_API;
+    evalIn("L.value=''; P.value=''; src.value=''; dst.value=''; port.value='';");
+  }
+  return context.traceResult.innerHTML || "";
+};
+
+const must = (html, needle, why) => {
+  if (!html.includes(needle)) throw new Error(`${why} (missing: ${needle})`);
+};
+const mustNot = (html, needle, why) => {
+  if (html.includes(needle)) throw new Error(`${why} (found: ${needle})`);
+};
+
 
 const ROUTED_MAP = {
   nodes: [
@@ -188,7 +358,212 @@ const checks = [
       throw new Error("route edges vanish when subnets are merged");
   }],
 
+  /* v4.31: v4.30 shipped the Aurora dashboard and a Settings page, and neither
+     was covered here. That is the newest code in the application, and Settings
+     is the one place it writes to disk and talks to a Management Server -
+     exactly the combination this harness exists for.
+
+     `browserData`, `accessData`, `lastTrace` and `TOPO` are top-level
+     `let`/`const`, so they are lexical bindings rather than properties of the
+     context object and have to be reached with an expression evaluated inside
+     the same scope. */
+
+  // Empty state first: it is what a freshly loaded page renders, so a typo on
+  // that branch is the one that reaches somebody first.
+  ["renderHealthGauge(nothing analysed)", () => evalIn("accessData=null; renderHealthGauge()")],
+  ["renderHitBars(nothing loaded)", () => evalIn("browserData=null; renderHitBars()")],
+  ["renderTopoPreview(no graph)", () => evalIn("TOPO.graph=null; renderTopoPreview()")],
+  ["renderTracePreview(nothing traced)", () => evalIn("lastTrace=null; renderTracePreview()")],
+  ["renderHealthRows(empty)", () => evalIn("renderHealthRows()")],
+  ["renderDashNote(empty)", () => evalIn("renderDashNote()")],
+  ["renderContextChips(empty)", () => evalIn("renderContextChips()")],
+
+  // Then with data, which is the branch that reads the payload fields.
+  ["renderHealthGauge(analysed)", () => evalIn(
+      "accessData={summary:{analyzed_rules:40,total_rules:40," +
+      "potential_shadowed_or_redundant:3,duplicate_groups:1,any_any_any_rules:1," +
+      "zero_hit_rules:5},findings:{}}; renderHealthGauge()")],
+  ["renderHealthRows(analysed)", () => evalIn("renderHealthRows()")],
+  ["renderDashNote(analysed)", () => evalIn("renderDashNote()")],
+  ["renderContextChips(analysed)", () => evalIn("renderContextChips()")],
+  ["renderHitBars(with hits)", () => evalIn(
+      "browserData={rules:[{rule:1,name:'a',hits:100},{rule:2,name:'b',hits:0}," +
+      "{rule:3,name:'c',hits:null}]}; renderHitBars()")],
+  ["renderHitBars(rulebase reports no hits)", () => evalIn(
+      "browserData={rules:[{rule:1,name:'a',hits:null}]}; renderHitBars()")],
+  ["renderTopoPreview(with a graph)", () => evalIn(
+      "TOPO.graph=buildTopoGraph(" + JSON.stringify(ROUTED_MAP) + "); renderTopoPreview()")],
+  ["renderTracePreview(with a trace)", () => evalIn(
+      "lastTrace={verdict:'MATCH',steps:[{rule:1,layer:'Network',action:'Accept'}]," +
+      "policy_confidence:'exact'}; renderTracePreview()")],
+  ["renderHitTrend(rows)", () => context.renderHitTrend(
+      [{ taken_at: "2026-01-01T00:00:00+00:00", total_hits: 10 },
+       { taken_at: "2026-01-02T00:00:00+00:00", total_hits: 20 }])],
+  ["renderHitTrend(empty)", () => context.renderHitTrend([])],
+  ["refreshAuroraDashboard", () => evalIn("refreshAuroraDashboard()")],
+
+  /* v4.31: notify() used to append unconditionally. The UNVERIFIED toast is
+     raised with {duration:0} so it never expires - re-running a trace stacked
+     another permanent copy each time, and on the lab screenshot two of them
+     were sitting over the NAT row. */
+  ["notify() replaces a repeated toast instead of stacking", () => {
+    const host = document.getElementById("toasts");
+    host.children.length = 0;
+    for (let i = 0; i < 3; i++)
+      context.notify("warn", "UNVERIFIED", "same message", { duration: 0 });
+    if (host.children.length !== 1)
+      throw new Error(
+        `three identical toasts left ${host.children.length} on screen`);
+  }],
+
+  ["notify() keeps toasts that say different things", () => {
+    const host = document.getElementById("toasts");
+    host.children.length = 0;
+    context.notify("warn", "UNVERIFIED", "a", { duration: 0 });
+    context.notify("warn", "NAT correlation unverified", "b", { duration: 0 });
+    if (host.children.length !== 2)
+      throw new Error(
+        `two distinct toasts collapsed to ${host.children.length}`);
+  }],
+
+  // Settings. showTestResult renders the banner every one of these ends in.
+  ["showTestResult(ok)", () => context.showTestResult("cpTestResult", true, "<b>ok</b>")],
+  ["showTestResult(fail)", () => context.showTestResult("cpTestResult", false, "<b>no</b>")],
+  ["showTestResult(pending)", () => context.showTestResult("cpTestResult", null, "...")],
+  ["togglePassVis", () => context.togglePassVis("cpPass", el("btn"))],
 ];
+
+/* The credential calls are async. A bad identifier inside one of them rejects
+   its promise instead of throwing at the call site, so a try/catch around the
+   call would report success on a broken function. They are awaited instead. */
+const asyncChecks = [
+
+  /* The honesty properties of the Traffic Path screen, asserted on the markup
+     the renderer actually produced. */
+  ["trace(exact) renders the matched path", async () => {
+    const html = await runTrace(TRACE_EXACT);
+    must(html, "Rule 8.1", "the matched rule is not shown");
+    must(html, "Matched Policy Path", "the path table lost its heading");
+    must(html, "Final rule", "the terminal rule is not marked final");
+    must(html, "All_Internet", "the match evidence is not shown");
+  }],
+
+  ["trace(unverified) never says 'No match'", async () => {
+    const html = await runTrace(TRACE_UNVERIFIED);
+    mustNot(html, "No match",
+      "the Access Rule row claims a confident non-match on an UNVERIFIED verdict");
+    must(html, "UNVERIFIED", "the verdict is not shown as UNVERIFIED");
+  }],
+
+  ["trace(unverified) never calls the unevaluated rule final", async () => {
+    const html = await runTrace(TRACE_UNVERIFIED);
+    mustNot(html, "Final rule",
+      "a rule the engine refused to evaluate is presented as the final rule");
+    must(html, "not declared final",
+      "the transition cell does not say why the rule is not final");
+  }],
+
+  ["trace(unverified) does not paint an unknown step as an outcome", async () => {
+    const html = await runTrace(TRACE_UNVERIFIED);
+    must(html, "pill warn", "the unknown step is not flagged");
+    must(html, "configured: Accept",
+      "the configured action should be shown as configuration, not as a verdict");
+  }],
+
+  ["trace(unverified) still shows the evidence it has", async () => {
+    const html = await runTrace(TRACE_UNVERIFIED);
+    /* Scope this to the Item/Result/Details table. The same text also appears
+       in the path table's Match Details further down, so asserting on the
+       whole document passed even with the Destination row blanked out. */
+    const summary = html.split("Policy Path")[0];
+    must(summary, "did not resolve",
+      "the Destination row hides the reason behind an em dash");
+  }],
+
+  ["trace(unverified) heading does not announce a match", async () => {
+    const html = await runTrace(TRACE_UNVERIFIED);
+    must(html, "Policy Path (unverified)", "the path table still says 'Matched'");
+  }],
+  /* v4.31: two claims the chrome makes about itself. */
+
+  ["api() records the read that just completed", async () => {
+    /* The Read chip was fed from three call sites, so a trace, a map load, a
+       compliance run and a health read all left it saying "No call yet" while
+       the network tab showed the requests. It is set in api() now, which every
+       read goes through. */
+    evalIn("lastReadLabel=''");
+    await context.api("/api/anything");
+    const stamp = evalIn("lastReadLabel");
+    if (!stamp) throw new Error("a completed read did not update the Read chip");
+  }],
+
+  ["progress polling does not retick the Read chip", () => {
+    /* trackProgress() calls fetch directly rather than api(), which is what
+       keeps a 50-second analysis from restamping the chip twice a second. */
+    const body = source.split("function trackProgress")[1].split("\n}")[0];
+    if (body.includes("api(")) throw new Error("trackProgress now goes through api()");
+  }],
+
+  ["a successful Settings test updates the header badge", async () => {
+    /* setConn() used to be reachable only from the header's own button, so the
+       Settings page proved the connection and left the badge reading
+       "Not tested" right next to its own success message. */
+    const conn = document.getElementById("conn");
+    conn.innerHTML = "";
+    const realFetch = context.fetch;
+    context.fetch = async () => ({
+      ok: true, status: 200,
+      json: async () => ({ success: true, message: "Connected to x",
+                           api_version: "2.0.1" }),
+      text: async () => "{}",
+    });
+    try { await context.testCred("checkpoint"); }
+    finally { context.fetch = realFetch; }
+    if (!String(conn.innerHTML).includes("Connected"))
+      throw new Error("a successful connection test left the header unchanged");
+  }],
+
+  ["a failed Settings test does not claim a connection", async () => {
+    const conn = document.getElementById("conn");
+    conn.innerHTML = "";
+    const realFetch = context.fetch;
+    context.fetch = async () => ({
+      ok: true, status: 200,
+      json: async () => ({ success: false, message: "nope" }),
+      text: async () => "{}",
+    });
+    try { await context.testCred("checkpoint"); }
+    finally { context.fetch = realFetch; }
+    if (String(conn.innerHTML).includes("Connected"))
+      throw new Error("a failed test reported a connection");
+  }],
+
+  ["a Gaia test never speaks for the Management connection", async () => {
+    /* Different API, different credentials. A Gaia result says nothing about
+       whether the Management Server is reachable. */
+    const conn = document.getElementById("conn");
+    conn.innerHTML = "SENTINEL";
+    const realFetch = context.fetch;
+    context.fetch = async () => ({
+      ok: true, status: 200,
+      json: async () => ({ success: true, message: "All gateways OK", details: [] }),
+      text: async () => "{}",
+    });
+    try { await context.testCred("gaia"); }
+    finally { context.fetch = realFetch; }
+    if (String(conn.innerHTML) !== "SENTINEL")
+      throw new Error("a Gaia test rewrote the Management API badge");
+  }],
+
+  ["loadCredentialStatus", () => context.loadCredentialStatus()],
+  ["saveCred(checkpoint)", () => context.saveCred("checkpoint")],
+  ["saveCred(gaia)", () => context.saveCred("gaia")],
+  ["testCred(checkpoint)", () => context.testCred("checkpoint")],
+  ["testCred(gaia)", () => context.testCred("gaia")],
+  ["deleteCred(checkpoint)", () => context.deleteCred("checkpoint")],
+  ["dashboardRefresh", () => context.dashboardRefresh()],
+];
+
 
 const failures = [];
 for (const [name, run] of checks) {
@@ -199,8 +574,17 @@ for (const [name, run] of checks) {
   }
 }
 
+for (const [name, run] of asyncChecks) {
+  try {
+    await run();
+  } catch (error) {
+    failures.push(`${name}: ${error && error.message}`);
+  }
+}
+
 if (failures.length) {
   console.error(failures.join("\n"));
   process.exit(1);
 }
-console.log(`ok - ${checks.length} renderer(s) ran against ${ids.length} element id(s)`);
+console.log(
+  `ok - ${checks.length + asyncChecks.length} renderer(s) ran against ${ids.length} element id(s)`);

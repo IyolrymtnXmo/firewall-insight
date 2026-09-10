@@ -4,6 +4,260 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.31.0 — an audit of what v4.30 left behind
+
+v4.30 shipped the Aurora redesign and a Settings page over seven releases
+(v4.30.4 … v4.30.10) that never reached this file or `version.py` — the
+constant still read `4.30.3`. This release is a pass over the codebase rather
+than a feature, and it starts by writing down what those releases were:
+
+| Release | Subject, from the commit |
+|---|---|
+| v4.30.4 | test-connection per-host display; encryption attack surface removed |
+| v4.30.5 | Settings page redesigned to a compact 2-column layout |
+| v4.30.6 | blurry bands on glass cards caused by the background grid |
+| v4.30.7 | the global client did not pick up a URL/SSL change saved from the UI |
+| v4.30.8 | Dashboard layout: Trace card moved to the left column |
+| v4.30.9 | empty scrollbar gutter strip; redundant backdrop-filter blur |
+| v4.30.10 | async scroll lag; custom scrollbars dropped for native overlay ones |
+
+### Fixed — saving a setting destroyed the password
+
+The Settings form leaves the password blank to mean "keep the saved one", and
+the frontend drops the key from the request body to say so. The request model
+declared `password: str = ""`, so Pydantic turned the absent key back into an
+empty string, the store wrote it over the saved secret, and `_apply_checkpoint`
+pushed it into the running settings. **Changing a timeout and pressing Save
+wiped the Check Point password**, on disk and in memory, and every Management
+API call afterwards failed to log in.
+
+`password` is now `str | None`, `None` means "not supplied" and resolves to the
+stored value, and an explicit `""` still clears it. The same held for Gaia.
+
+Connectivity tests had the mirror of this problem — pressing Test after a page
+reload always authenticated with `""` — and now fall back to the stored
+password. Only for the host it was stored for: this endpoint takes its target
+URL from the request body, so an unconditional fallback would let a caller
+point it at a server they control and have this process post the saved
+password to it.
+
+### Fixed — the analysis path the UI actually uses did not serialise
+
+`access_tree()` and `analyze_nat()` held `heavy_lock`; `package_access_tree()`
+did not, and package-first has been the UI's path since v4.2. Two tabs
+analysing the same package raced each other into the Management API rate limit
+and each paid full hydration. It now takes the lock and re-checks the cache
+under it, so the second request serves what the first one loaded instead of
+repeating it. `access_tree()` gained the same re-check.
+
+### Fixed — hostname traces blocked the event loop, once per rule
+
+`address_match_state()` runs per rule per direction, and each call reached
+`socket.getaddrinfo()`. Tracing a hostname through a 200-rule policy issued
+~400 identical blocking lookups from inside `async def traffic_path`, stalling
+every other request in the process — including the `/api/progress` poll whose
+only job is to show the request is alive.
+
+Lookups are now memoised with a 60-second TTL (a cache without one would let a
+trace cite an address the name no longer points at), and `api/traffic.py`
+resolves the endpoints through `loop.getaddrinfo()` before the synchronous
+trace begins. The fallback stays in `matching.py`: the analysis modules are
+called directly by the tests and by `tools/acceptance.py`, where there is no
+event loop.
+
+### Fixed — importing the app decrypted the credential file
+
+`load_credentials_on_startup()` ran as a module-level call at the bottom of
+`api/credentials.py`, so any `import app.main` — test collection included —
+read and decrypted the operator's secrets. It moved to the application
+lifespan.
+
+### Fixed — the keyboard focus ring was suppressed on every Settings field
+
+Three rules cleared the outline on Settings inputs. Those selectors outrank the
+global `:focus-visible` rule, so keyboard users got only a tinted border and a
+12%-opacity glow. The declarations are gone; the tinted focus styling stays.
+
+### Fixed — the read-only claim had drifted from the code
+
+README stated "Every HTTP route is a `GET`" for seven releases after the
+Settings page added `POST /api/credentials`, `POST /api/credentials/test` and
+`DELETE /api/credentials`. On a tool whose pitch is that it is safe to point at
+production, a safety claim the code does not honour is worse than no claim.
+
+`TestReadOnlyIsStillStructural` asserted the same thing and had been failing.
+Deleting it would have given up the guarantee quietly, so it is restated as
+what is still true: mutating verbs live in exactly one named module, that
+module may not import the policy layer, and the only Management API verbs it
+names are `login` and `logout`. README now documents the three routes, and a
+test fails if that section and the code disagree.
+
+### Fixed — an unresolvable hostname was answered with certainty
+
+Found by tracing against the live lab, not by reading the code.
+
+`address_match_state()` resolved the endpoint and discarded the error:
+
+    resolved, _ = _domain_candidates(raw)
+
+When the name did not resolve, `ips` was empty, every containment test in the
+loop was vacuously false, and the function fell through to
+`return "no-match", "No matching object"`.
+
+That did not stay contained. With the address condition of every earlier rule
+falsely settled as a non-match, the trailing Any/Any/Any cleanup rule matched,
+and the trace reported a flow whose real path is unknown as:
+
+    result='Drop'  confidence='exact'  reason='Terminal Access rule matched exactly.'
+
+which is the exact failure the tri-state design exists to prevent. An
+unresolved name is now `unknown`, carrying the resolver's own error, and the
+UNVERIFIED machinery that was already there does the rest:
+
+    result='UNVERIFIED'  confidence='unknown'
+    reason='Earlier Rule 2 contains condition(s) this static simulator cannot
+            evaluate. Later Rule 9 matches, but cannot be declared final.'
+
+A name that resolves *outside* an object is still a plain `no-match` —
+`unknown` must not swallow a decidable answer — and IP literals are untouched.
+Both were re-checked against the lab after the change.
+
+The trace limitations now also say that a hostname is resolved by the machine
+running this application, not by the gateway, and that split-horizon DNS can
+make those two answers differ. That was never disclosed.
+
+### Fixed — the UI flattened the tri-state back into a verdict
+
+The backend answers `match` / `no-match` / `unknown` and refuses to guess. Five
+places in the Traffic Path screen then threw the third state away. Found by
+looking at a screenshot of the real thing, after the backend fix above had
+already landed and been verified.
+
+* **The Access Rule row said "No match" on an UNVERIFIED verdict.** `w` (the
+  winner) is null when the engine declines to decide, and the row's `else`
+  branch was a flat `'No match'` — a confident negative sitting directly above
+  an Action row already reading UNVERIFIED. It is the first row a firewall
+  engineer reads.
+* **A rule the engine could not evaluate was labelled "Final rule".**
+  `transition` is only ever `"inline-layer"` or `"final"`, and `traffic.py`
+  deliberately leaves it unset on the rule it could not evaluate. The UI's
+  `: 'Final rule'` fallback invented the claim the engine had refused to make.
+* **That same rule was painted with a green Accept pill.** The colour came
+  from the action text alone, so a step whose conditions were undecidable
+  looked exactly like one that matched. An `unknown` step now reads `UNKNOWN`
+  with its configured action shown underneath as configuration, not outcome.
+* **The heading still said "Matched Policy Path"** when nothing had matched.
+* **The dashboard trace preview re-coloured an unknown hop as a match.** The
+  comment directly above that code says "an unverified hop is never redrawn as
+  an exact one". The code did not read `state` at all.
+
+Also: `notify()` appended unconditionally, and the UNVERIFIED toast is raised
+with `{duration:0}` so it never expires. Re-running a trace stacked another
+permanent copy each time; two were covering the NAT row in the screenshot. A
+repeat now replaces the toast it repeats.
+
+And the Source / Destination / Service rows fell back to an em dash whenever
+there was no winner, hiding the very text that explains why the trace stopped
+— while the same text sat visible in the path table below. They now fall back
+to the rule the trace stopped on, which is what the VPN row in the same table
+had been doing all along.
+
+### Testing the frontend the way it actually runs
+
+The Node harness grew from 51 executed renderers to 59, and two limitations
+that let this class of bug through were removed:
+
+* **`trace()` is now executed** against payloads captured from the lab, and the
+  assertions are made on the markup it produces — not on strings in the file.
+  This was written after `${ARROW_CH}`, an identifier that does not exist,
+  reached the transition cell during this very release and was caught by
+  `node --check` only because it happened to be inside a template literal.
+* **The DOM stub remembers nodes by id.** `getElementById()` used to build a
+  new object per call, so two calls for the same id returned unrelated
+  objects and *no* DOM mutation could be observed. That is precisely why the
+  toast pile was invisible to the harness: `notify()` appends to
+  `getElementById('toasts')`, and every append landed on a different
+  throwaway node.
+
+Each of the six fixes was reverted individually to confirm the check that
+covers it fails, and fails with a message that names the defect.
+
+### Fixed — the chrome stated things the application did not know
+
+Three claims live in the frame around every page. All three were wrong, and all
+three were found by looking at screenshots of the running application.
+
+* **The connection badge said "Not tested" beside a successful test.**
+  `setConn()` was reachable only from the header's own test button, so pressing
+  Test Connection in Settings printed "Connected to https://172.23.31.180" in
+  the panel and left the badge two inches away still claiming nothing had been
+  tried. The Settings test now owns the badge as well — and only the Check
+  Point one does: Gaia is a different API with different credentials and says
+  nothing about whether the Management Server is reachable.
+
+  Saving credentials now retires the claim instead of leaving it stale. A save
+  rebuilds the client and drops the session, so a green "Connected" describing
+  the *previous* Management Server is no longer something this application
+  knows.
+
+* **The Read chip said "No call yet" after a page's worth of reads.**
+  `lastReadLabel` was stamped at three call sites, and Traffic Path, the
+  network map, compliance, health and diff were not among them. It is stamped
+  in `api()` now — the one function every read passes through — so a reader
+  added later cannot silently not count. It sits after the not-ok throw, so a
+  502 is not recorded as a read, and `trackProgress()` still calls `fetch`
+  directly, which is what keeps a 50-second analysis from restamping the chip
+  twice a second.
+
+* **There was no icon at all**, so every page load ended in
+  `GET /favicon.ico 404` — the only red line in the console. The application's
+  own shield is now inlined as a data URI: no file to serve, no request to
+  make, nothing to version-stamp, and it cannot 404.
+
+The Node harness grew to 64 checks and its `fetch` stub now answers `text()`,
+which `api()` reads the body with — without it, every call through `api()`
+threw before it ran, and `api()` had never actually executed in a test.
+
+### Removed
+
+- A second, identical `@router.get("/api/analyze")` in `api/access.py`.
+  FastAPI kept the first, so the duplicate had always been unreachable.
+- Imports nothing referenced: `ip_address`, `ip_network` and `socket` in
+  `traffic.py`, `data_quality` in `api/access.py`, `nat_field_values` in
+  `snapshot.py`, `asyncio` and a redundant local `import httpx` in
+  `api/credentials.py`.
+
+### Tests
+
+731 pass, from 686 passing and 4 failing out of 690. Three of those four
+failures were stale expectations, rewritten to assert current intent rather
+than deleted; the fourth was a real accessibility defect. 28 tests were added
+(23 in three new files, 5 across the structural and JS-harness suites), and
+each was verified to fail against the defect it describes before the fix went
+in.
+
+The Node renderer harness went from 22 executed renderers to 64. v4.30's own
+frontend - the Aurora dashboard and the whole Settings page - had no runtime
+coverage at all, which is the newest code and the only code that writes to disk
+and talks to a Management Server. Both defect shapes it exists to catch were
+re-injected to confirm it still catches them, including an async one that a
+try/catch at the call site would have reported as passing.
+
+Also verified against the live lab Management Server (read-only, API 2.0.1):
+login, package/layer discovery, a full analysis of a 9-rule package with a
+4-rule Inline Layer (`data_quality.complete: true`), the cache (54.9s cold,
+0.069s warm), and traffic traces through the Inline Layer. The lock fix was
+measured rather than argued: two concurrent cold analyses of the same package
+finished in 47.2s wall clock against ~55s for one load and ~110s for two, with
+no rate-limit responses, while `/api/progress` answered 93 times at a 12ms
+worst case.
+
+Not covered: no browser was opened. Layout, CSS and the visual behaviour of
+every page remain unverified, and the Node harness runs the renderers in a
+stubbed DOM rather than a real one.
+
+---
+
 ## v4.30.3 — the shell does not scroll
 
 The bar and the rail kept ending up at the bottom of the page. Two attempts had

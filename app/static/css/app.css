@@ -1720,13 +1720,19 @@ tr.rb-detail.open .rb-body{grid-template-rows:1fr}
   font-size:11.5px;color:var(--muted);font-weight:500;margin-top:8px;
 }
 .form-stack > label:first-child{margin-top:0}
+/* Settings inputs keep their tinted focus border and glow, but must NOT
+   suppress the outline: these selectors outrank the global :focus-visible
+   rule at the top of this file, so clearing the outline here removed the
+   keyboard focus ring from every field on the page. v4.11's UX test scans
+   for that suppression across the whole stylesheet - deliberately bluntly,
+   which is why this note avoids spelling the declaration out. */
 .form-stack input[type="text"],
 .form-stack input[type="url"],
 .form-stack input[type="number"],
 .form-stack input[type="password"]{
   width:100%;padding:7px 11px;border-radius:9px;border:1px solid var(--line);
   background:var(--panel);color:var(--text);font-size:13px;font-family:var(--font-mono);
-  transition:border-color .2s,box-shadow .2s;outline:none;height:34px;
+  transition:border-color .2s,box-shadow .2s;height:34px;
 }
 .form-stack input:focus{
   border-color:var(--accent);box-shadow:0 0 0 3px rgba(45,212,191,.12);
@@ -1742,7 +1748,7 @@ tr.rb-detail.open .rb-body{grid-template-rows:1fr}
 .form-stack-2col input[type="number"]{
   width:100%;padding:7px 11px;border-radius:9px;border:1px solid var(--line);
   background:var(--panel);color:var(--text);font-size:13px;font-family:var(--font-mono);
-  transition:border-color .2s,box-shadow .2s;outline:none;height:34px;
+  transition:border-color .2s,box-shadow .2s;height:34px;
 }
 @media(max-width:640px){.form-stack-2col{grid-template-columns:1fr}}
 
@@ -1755,7 +1761,7 @@ tr.rb-detail.open .rb-body{grid-template-rows:1fr}
 .form-grid input[type="password"]{
   width:100%;padding:8px 12px;border-radius:9px;border:1px solid var(--line);
   background:var(--panel);color:var(--text);font-size:13px;font-family:var(--font-mono);
-  transition:border-color .2s,box-shadow .2s;outline:none;
+  transition:border-color .2s,box-shadow .2s;
 }
 .form-grid input:focus{
   border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);

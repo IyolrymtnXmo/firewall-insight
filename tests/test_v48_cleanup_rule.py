@@ -99,8 +99,18 @@ def test_aggregate_reports_cleanup_rules_across_layers():
 
 
 def test_ui_explains_excluded_cleanup_rules():
-    from pathlib import Path
+    """The note must be defined AND actually spliced into the rendered output.
+
+    The old assertion looked for the exact text `+cleanupNote(d);` - the shape
+    the call happened to have when the statement ended there. v4.30 moved the
+    call into the middle of a template concatenation:
+
+        ...)+cleanupNote(d)+'</div>';
+
+    which is the same call doing the same job, so the test was failing on
+    punctuation while the feature worked. Assert the call, not the semicolon.
+    """
     src = app_source()
     assert "function cleanupNote(d)" in src
     assert "cleanup_rules" in src
-    assert "+cleanupNote(d);" in src
+    assert "+cleanupNote(d)" in src, "the note is defined but never rendered"

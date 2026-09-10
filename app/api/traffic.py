@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import socket
+from ipaddress import ip_address
+
 from fastapi import APIRouter, HTTPException, Query
 
 from ..path_map import trace_overlay
@@ -9,9 +13,51 @@ from ..policy import access_tree, data_quality, package_access_tree
 from ..progress import progress_done, progress_set
 from ..runtime import cache_get, cache_set, use_client
 from ..topology_map import network_map
+from ..matching import dns_cache_put
 from ..traffic import correlate_nat, resolve_service_query, trace_access_tree
 
 router = APIRouter()
+
+
+async def _prewarm_dns(*endpoints: str) -> None:
+    """Resolve hostname endpoints here, on the loop's executor, before tracing.
+
+    trace_access_tree() is deliberately synchronous and I/O-free, like every
+    analysis module. When an endpoint is a hostname rather than an address it
+    still has to be resolved, and doing that inside the trace meant calling
+    socket.getaddrinfo() from inside `async def` - which blocks the event loop
+    for the whole process, not just this request. The /api/progress poll that
+    tells the user the request is alive is the first thing to freeze.
+
+    loop.getaddrinfo() runs the same lookup in a thread, so awaiting it here
+    keeps the loop free. The answer is handed to the matching module's cache,
+    and the trace then finds it without making a call of its own.
+
+    A failure is cached as a failure: an endpoint that does not resolve is a
+    result the trace reports ("Domain not resolved/matched"), not an error that
+    should take the request down.
+    """
+    loop = asyncio.get_running_loop()
+    for raw in endpoints:
+        value = str(raw or "").strip()
+        if not value:
+            continue
+        try:
+            ip_address(value)
+            continue                       # already an address; nothing to resolve
+        except ValueError:
+            pass
+        try:
+            infos = await loop.getaddrinfo(value, None, type=socket.SOCK_STREAM)
+        except OSError as exc:
+            dns_cache_put(value, [], str(exc))
+            continue
+        ips: list[str] = []
+        for info in infos:
+            addr = info[4][0]
+            if addr not in ips:
+                ips.append(addr)
+        dns_cache_put(value, ips, None)
 
 
 @router.get("/api/traffic-path")
@@ -61,6 +107,7 @@ async def traffic_path(
             raise HTTPException(status_code=400, detail=str(exc))
 
         progress_set(rid, 2, "Walking the ordered rulebase", STEPS)
+        await _prewarm_dns(src, dst)
         access = trace_access_tree(
             tree,
             src,
@@ -118,6 +165,12 @@ async def traffic_path(
             "data_quality": data_quality(c, tree),
             "limitations": [
                 "This is a configuration-based Access Control simulation.",
+                "A hostname endpoint is resolved by the machine running this "
+                "application, not by the gateway. A name that does not resolve "
+                "here is reported as unknown rather than as a non-match, "
+                "because whether it falls inside an object cannot be decided "
+                "without an address - and split-horizon DNS can make the "
+                "gateway's answer differ from this one.",
                 "The trace now follows configured Inline Layers and Access Sections.",
                 "Identity Awareness, dynamic objects, time objects, implied rules, live gateway state, routing and kernel behavior can still make a live log differ.",
                 "A rule scoped to a VPN community is reported as unknown, not as a match: whether a flow arrives through that community is live connection state, not configuration.",

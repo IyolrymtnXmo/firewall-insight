@@ -23,10 +23,54 @@ confident wrong answer.
 from __future__ import annotations
 
 import socket
+import time
 from ipaddress import ip_address
 from typing import Any
 
 from .resolver import ObjectResolver
+
+# Name resolution is memoised for the length of one analysis, not forever.
+#
+# Two problems made this necessary. address_match_state() is called once per
+# rule per direction, so tracing a hostname through a 200-rule policy issued
+# 400 identical getaddrinfo() calls. And getaddrinfo() blocks: it is a
+# synchronous call reached from `async def traffic_path`, so an unresponsive
+# resolver stalled the whole event loop - including the /api/progress poll the
+# UI relies on to show that anything is still happening.
+#
+# The TTL keeps the answer honest. A cache with no expiry would let a trace
+# report a match against an address the name stopped pointing at.
+DNS_TTL_SECONDS = 60.0
+_dns_cache: dict[str, tuple[float, tuple[list[str], str | None]]] = {}
+
+
+def dns_cache_clear() -> None:
+    """Drop every memoised lookup. Used by tests and by the acceptance runner."""
+    _dns_cache.clear()
+
+
+def dns_cache_put(name: str, ips: list[str], error: str | None = None) -> None:
+    """Seed the cache with an answer resolved elsewhere.
+
+    `api/traffic.py` calls this after resolving the endpoints on the event
+    loop's own executor, so the synchronous trace below finds the answer
+    already present and never makes a blocking call. The lookup here stays as
+    the fallback, which is what keeps this module usable on its own - the pure
+    analysis modules do no I/O of their own by design, and the tests and the
+    acceptance runner call them directly.
+    """
+    _dns_cache[str(name or "").strip()] = (time.monotonic(), (list(ips), error))
+
+
+def _dns_cache_get(name: str) -> tuple[list[str], str | None] | None:
+    item = _dns_cache.get(name)
+    if not item:
+        return None
+    created, value = item
+    if time.monotonic() - created > DNS_TTL_SECONDS:
+        _dns_cache.pop(name, None)
+        return None
+    return value
 
 
 def _domain_candidates(text: str) -> tuple[list[str], str | None]:
@@ -37,6 +81,10 @@ def _domain_candidates(text: str) -> tuple[list[str], str | None]:
     except ValueError:
         pass
 
+    hit = _dns_cache_get(value)
+    if hit is not None:
+        return list(hit[0]), hit[1]
+
     ips = []
     try:
         for info in socket.getaddrinfo(value, None, type=socket.SOCK_STREAM):
@@ -44,7 +92,9 @@ def _domain_candidates(text: str) -> tuple[list[str], str | None]:
             if addr not in ips:
                 ips.append(addr)
     except OSError as exc:
+        _dns_cache[value] = (time.monotonic(), ([], str(exc)))
         return [], str(exc)
+    _dns_cache[value] = (time.monotonic(), (list(ips), None))
     return ips, None
 
 
@@ -259,19 +309,29 @@ def address_match_state(values: Any, address_text: str, res: ObjectResolver) -> 
       unknown  = rule uses an object type this static simulator cannot evaluate
     """
     raw = str(address_text or "").strip()
+    dns_error = None
     try:
         ip = ip_address(raw)
         ips = [ip]
         is_domain = False
     except ValueError:
         is_domain = True
-        resolved, _ = _domain_candidates(raw)
+        resolved, dns_error = _domain_candidates(raw)
         ips = []
         for value in resolved:
             try:
                 ips.append(ip_address(value))
             except ValueError:
                 pass
+
+    # A hostname that did not resolve leaves nothing to compare against, so
+    # every containment test below is vacuously false. Reporting that as
+    # "no-match" would be a confident answer to a question this simulator
+    # cannot answer - and it is not a harmless one: with the address
+    # conditions of every earlier rule falsely settled, a trailing
+    # Any/Any/Any cleanup rule matches and the trace reports "Drop,
+    # confidence: exact" for a flow whose path is genuinely unknown.
+    unresolved_domain = is_domain and not ips
 
     saw_unknown = False
     unknown_names = []
@@ -307,6 +367,12 @@ def address_match_state(values: Any, address_text: str, res: ObjectResolver) -> 
 
     if saw_unknown:
         return "unknown", "Static match unavailable for " + ", ".join(unknown_names[:4])
+
+    if unresolved_domain:
+        detail = f" ({dns_error})" if dns_error else ""
+        return "unknown", (
+            f"{raw} did not resolve, so membership in these objects cannot be "
+            f"decided{detail}")
 
     return "no-match", "No matching object"
 

@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .nat_analyzer import describe_nat_field, nat_field_values
+from .nat_analyzer import describe_nat_field
 from .policy_browser import _action_name, _single_name, _walk_rulebase
 from .resolver import ObjectResolver
 from .version import APP_VERSION

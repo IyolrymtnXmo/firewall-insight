@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 
 from ..policy import (access_tree, analyze_layer, analyze_package,
-                      browse_package, data_quality)
+                      browse_package)
 from ..policy_browser import browse_access_rulebase
 from ..inline_layers import aggregate_browser
 from ..runtime import cache_get, cache_pop, cache_set, use_client
@@ -59,7 +59,3 @@ async def package_context(package: str = Query(...)):
 async def analyze(layer: str = Query(...)):
     return await use_client(lambda c: analyze_layer(c, layer))
 
-
-@router.get("/api/analyze")
-async def analyze(layer: str = Query(...)):
-    return await use_client(lambda c: analyze_layer(c, layer))

@@ -1,5 +1,19 @@
 # Firewall Insight — Project-Dev Handoff (v4.29.0, 8 ก.ย. 2569)
 
+> **หมายเหตุ (v4.31.0):** เอกสารนี้เป็น snapshot ของ v4.29.0 — ตัวเลขและข้ออ้างบางส่วนไม่ตรงกับโค้ดปัจจุบันอีกแล้ว
+> สองจุดที่ต้องระวังก่อนใช้เอกสารนี้เป็น context:
+>
+> 1. **`api/` ไม่ได้ GET-only อีกแล้ว** — v4.30 เพิ่มหน้า Settings ซึ่งมี
+>    `POST /api/credentials`, `POST /api/credentials/test`, `DELETE /api/credentials`
+>    ทั้งสามอยู่ใน `api/credentials.py` ไฟล์เดียว และเขียนลง credential ที่
+>    เข้ารหัสไว้ในเครื่อง — ไม่เคยแตะ policy บน firewall
+>    (`tests/test_v413_structure.py` บังคับขอบเขตนี้ทั้งสองทาง)
+> 2. **จำนวนเทสต์:** 731 passed (ไม่ใช่ 687) + Node harness รัน renderer 51 ตัว
+> 3. **`APP_VERSION` = 4.31.0** (ไม่ใช่ 4.29.0)
+>
+> รายละเอียดอยู่ใน `CHANGELOG.md` หัวข้อ v4.31.0
+
+
 **เอกสารนี้แทนที่ฉบับ v4.19.1 ทั้งหมด** ฉบับก่อนหน้าอ้างอิง 381 เทสต์, ยังไม่มี Gaia API,
 ยังไม่มี snapshot/compliance/health และยังบอกว่า "Diff นโยบายข้ามช่วงเวลา — ยังไม่มีในโค้ด"
 ซึ่งตอนนี้มีแล้ว **อย่าใช้ฉบับเก่าเป็น context**
@@ -168,9 +182,9 @@ app/
   runtime.py (67)       Management client, response cache, HTTP error mapping
   progress.py (45)      live phase registry ที่ UI poll
   policy.py (254)       fetch → hydrate → analyse orchestration, data_quality
-  api/                  ทุกไฟล์ GET-only
+  api/                  GET-only ทุกไฟล์ ยกเว้น credentials.py (v4.30: POST/DELETE)
     meta.py access.py nat.py traffic.py topology.py export.py ui.py
-    snapshot.py compliance.py health.py
+    snapshot.py compliance.py health.py credentials.py
   checkpoint.py (511)   Management API client: session, pacing, retry/backoff,
                         pagination, Inline Layer tree discovery
   inline_layers.py (366) layer-tree traversal, display numbering, aggregation

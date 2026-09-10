@@ -8,7 +8,6 @@ editing ``.env`` by hand.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 
@@ -29,7 +28,11 @@ router = APIRouter(prefix="/api/credentials", tags=["credentials"])
 class CheckPointCreds(BaseModel):
     mgmt: str = ""
     user: str = ""
-    password: str = ""
+    # None means "the client did not supply a password", which is NOT the same
+    # as "the password is empty". The Settings form leaves the field blank to
+    # mean "keep the saved one", so a `str = ""` default silently overwrote the
+    # stored secret with "" on every save. See _resolve_password().
+    password: str | None = None
     domain: str = ""
     verify_ssl: bool = False
     timeout: float = 90.0
@@ -41,7 +44,7 @@ class CheckPointCreds(BaseModel):
 class GaiaCreds(BaseModel):
     enabled: bool = False
     user: str = ""
-    password: str = ""
+    password: str | None = None
     hosts: str = ""
     verify_ssl: bool = False
     timeout: float = 30.0
@@ -62,8 +65,34 @@ class DeleteRequest(BaseModel):
 
 # ── helpers ─────────────────────────────────────────────────────────
 
+def _resolve_password(cred_type: str, data: dict[str, Any]) -> dict[str, Any]:
+    """Carry the stored password forward when the client did not supply one.
+
+    The Settings form deliberately sends no password when the field is left
+    blank - that is how the UI says "keep the one you already have". Before
+    this, the request model defaulted the field to ``""``, so the absent key
+    arrived as an empty string and was written straight over the saved secret:
+    changing a timeout and pressing Save wiped the Check Point password, both
+    on disk and in the running ``settings``, and every subsequent API call
+    failed to log in.
+
+    ``None`` therefore means "not supplied" and resolves to the stored value.
+    An explicit empty string is still honoured, so the value stays clearable.
+    """
+    data = dict(data)
+    if data.get("password") is None:
+        stored = credential_store.load(cred_type) or {}
+        data["password"] = stored.get("password", "")
+    return data
+
+
 def _apply_checkpoint(data: dict[str, Any]) -> None:
-    """Push decrypted Check Point values into the running settings."""
+    """Push decrypted Check Point values into the running settings.
+
+    A ``None`` never reaches ``settings``: an absent key and an explicit
+    ``None`` both mean "leave the running value alone".
+    """
+    data = {k: v for k, v in data.items() if v is not None}
     settings.checkpoint_mgmt = data.get("mgmt", settings.checkpoint_mgmt)
     settings.checkpoint_user = data.get("user", settings.checkpoint_user)
     settings.checkpoint_password = data.get("password", settings.checkpoint_password)
@@ -78,6 +107,7 @@ def _apply_checkpoint(data: dict[str, Any]) -> None:
 
 def _apply_gaia(data: dict[str, Any]) -> None:
     """Push decrypted Gaia values into the running settings."""
+    data = {k: v for k, v in data.items() if v is not None}
     settings.gaia_enabled = data.get("enabled", settings.gaia_enabled)
     settings.gaia_user = data.get("user", settings.gaia_user)
     settings.gaia_password = data.get("password", settings.gaia_password)
@@ -87,7 +117,12 @@ def _apply_gaia(data: dict[str, Any]) -> None:
 
 
 def load_credentials_on_startup() -> None:
-    """Called once at import-time to restore persisted credentials."""
+    """Restore persisted credentials into the running settings.
+
+    Called from the application lifespan, not at import time. Importing a
+    module should not read and decrypt a secret from disk - that happened on
+    every ``import app.main``, including during test collection.
+    """
     cp_data = credential_store.load("checkpoint")
     if cp_data:
         _apply_checkpoint(cp_data)
@@ -96,6 +131,27 @@ def load_credentials_on_startup() -> None:
     if gaia_data:
         _apply_gaia(gaia_data)
         log.info("Restored Gaia credentials from encrypted store")
+
+
+def _password_for_test(cred_type: str, supplied: str | None,
+                       matches_stored_target: bool) -> str:
+    """Password to use for a connectivity test.
+
+    The Settings form leaves the password blank once credentials are saved, so
+    a test pressed after a page reload would otherwise always authenticate with
+    "" and report a failure that says nothing about the saved credentials.
+
+    Falling back to the stored secret is only safe when the request targets the
+    host that secret was stored for. This endpoint accepts an arbitrary target
+    URL, so without that check an unauthenticated caller could point it at a
+    server they control and have this process post the saved password to it.
+    """
+    if supplied:
+        return supplied
+    if not matches_stored_target:
+        return supplied or ""
+    stored = credential_store.load(cred_type) or {}
+    return stored.get("password", "") or ""
 
 
 # ── endpoints ───────────────────────────────────────────────────────
@@ -139,11 +195,10 @@ async def save_credentials(req: SaveRequest):
     if req.type == "checkpoint":
         if not req.checkpoint:
             raise HTTPException(400, "checkpoint data required")
-        data = req.checkpoint.model_dump()
+        data = _resolve_password("checkpoint", req.checkpoint.model_dump())
         credential_store.save("checkpoint", data)
         _apply_checkpoint(data)
         # Re-initialize the client to apply new IP, timeout and SSL settings
-        import httpx
         try:
             await cp.close()
         except Exception:
@@ -160,7 +215,7 @@ async def save_credentials(req: SaveRequest):
     elif req.type == "gaia":
         if not req.gaia:
             raise HTTPException(400, "gaia data required")
-        data = req.gaia.model_dump()
+        data = _resolve_password("gaia", req.gaia.model_dump())
         credential_store.save("gaia", data)
         _apply_gaia(data)
         return {"status": "saved", "type": "gaia"}
@@ -179,7 +234,10 @@ async def test_credentials(req: TestRequest):
             raise HTTPException(400, "checkpoint data required")
         d = req.checkpoint.model_dump()
         base = d.get("mgmt", "").rstrip("/")
-        payload = {"user": d.get("user", ""), "password": d.get("password", "")}
+        stored_cp = credential_store.load("checkpoint") or {}
+        same_target = bool(base) and base == str(stored_cp.get("mgmt", "")).rstrip("/")
+        password = _password_for_test("checkpoint", d.get("password"), same_target)
+        payload = {"user": d.get("user", ""), "password": password}
         if d.get("domain"):
             payload["domain"] = d["domain"]
         try:
@@ -225,6 +283,10 @@ async def test_credentials(req: TestRequest):
         hosts = [h.strip() for h in d.get("hosts", "").split(",") if h.strip()]
         if not hosts:
             return {"success": False, "message": "No gateway hosts specified"}
+        stored_gaia = credential_store.load("gaia") or {}
+        stored_hosts = {h.strip() for h in str(stored_gaia.get("hosts", "")).split(",") if h.strip()}
+        same_target = bool(stored_hosts) and set(hosts).issubset(stored_hosts)
+        gaia_password = _password_for_test("gaia", d.get("password"), same_target)
         results = []
         for host in hosts[:3]:  # test first 3
             url = f"https://{host}/gaia_api/login"
@@ -235,7 +297,7 @@ async def test_credentials(req: TestRequest):
                 ) as client:
                     r = await client.post(url, json={
                         "user": d.get("user", ""),
-                        "password": d.get("password", ""),
+                        "password": gaia_password,
                     })
                     try:
                         body = r.json()
@@ -295,7 +357,3 @@ async def delete_credentials(req: DeleteRequest):
         settings.gaia_hosts = ""
 
     return {"status": "deleted" if existed else "not_found", "type": req.type}
-
-
-# Auto-load on import
-load_credentials_on_startup()

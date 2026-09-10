@@ -57,8 +57,20 @@ const TOAST_LIFE = {success:4200, info:5200, warn:9000, error:0}; // 0 = sticky
 function notify(kind, title, message='', opts={}){
   const host = document.getElementById('toasts');
   if(!host) return;
+
+  /* One toast per thing being said. Re-running a trace used to stack another
+     identical copy, and the UNVERIFIED toast is raised with {duration:0} - it
+     never expires - so the pile only grew and eventually covered the result
+     it was describing. Replacing the previous one also restarts its lifetime,
+     which is the behaviour you want when the same warning recurs. */
+  const key = kind + '|' + title;
+  for(const old of Array.from(host.querySelectorAll ? host.querySelectorAll('.toast') : [])){
+    if(old && old.dataset && old.dataset.toastKey === key && old.remove) old.remove();
+  }
+
   const el = document.createElement('div');
   el.className = 'toast ' + kind;
+  el.dataset.toastKey = key;
   el.setAttribute('role', kind === 'error' ? 'alert' : 'status');
 
   const life = opts.duration !== undefined ? opts.duration : TOAST_LIFE[kind];
@@ -419,6 +431,9 @@ async function api(u){
     let d;
     try{d=JSON.parse(t)}catch{throw new Error('HTTP '+r.status+': '+t.slice(0,300))}
     if(!r.ok)throw new Error('HTTP '+r.status+': '+(d.detail||JSON.stringify(d)));
+    // One place, so the chip cannot fall behind the reads again.
+    lastReadLabel = new Date().toLocaleTimeString();
+    if(typeof renderContextChips === 'function') renderContextChips();
     return d;
   }finally{
     clearTimeout(to);
@@ -1467,9 +1482,32 @@ async function trace(){
         :`Source → ${esc(natLead.translated_source)} · Destination → ${esc(natLead.translated_destination)}`);
    const actionClass=String(w?.action||'').toLowerCase().includes('accept')?'good':(String(w?.action||'').toLowerCase().includes('drop')||String(w?.action||'').toLowerCase().includes('reject')?'bad':'neutral');
 
+   /* The evidence to show when there is no winner: the rule the trace stopped
+      on still carries the match detail that explains why it stopped. */
+   const ev = w || possible || null;
+
+   /* A step's colour comes from its state first. An `unknown` step is never
+      painted as an outcome, however its configured action reads. */
+   const stepPillClass = x => {
+     if(x.state==='unknown') return 'warn';
+     const a=String(x.action||'').toLowerCase();
+     return a.includes('accept')?'good':((a.includes('drop')||a.includes('reject'))?'bad':'neutral');
+   };
+   const stepActionCell = x => x.state==='unknown'
+     ? `<span class="pill warn">UNKNOWN</span><br><span class="muted">configured: ${esc(x.action||'Inline')}</span>`
+     : `<span class="pill ${stepPillClass(x)}">${esc(x.action||'Inline')}</span>`;
+
+   /* Only the backend decides that a rule is final. It sets `transition` on
+      the rules it walked and leaves it unset on one it could not evaluate. */
+   const stepTransitionCell = x =>
+     x.transition==='inline-layer' ? `→ Inline Layer: <b>${esc(x.inline_layer||'')}</b>`
+     : x.transition==='final' ? 'Final rule'
+     : x.state==='unknown' ? '<span class="muted">not declared final \u2014 could not be evaluated</span>'
+     : '<span class="muted">\u2014</span>';
+
    const pathHtml=path.length?`
      <div class="card" style="margin-top:16px">
-       <div class="section-title"><h3>Matched Policy Path</h3><span class="hint">Top-level → Inline Layer → Final Action</span></div>
+       <div class="section-title"><h3>${w?'Matched Policy Path':'Policy Path (unverified)'}</h3><span class="hint">${w?'Top-level → Inline Layer → Final Action':'Where the trace stopped, and why'}</span></div>
        <div class="table-wrap" style="margin-top:12px">
          <table>
            <thead><tr><th>Step</th><th>Rule</th><th>Layer</th><th>Name</th><th>Action</th><th>Transition</th><th>Match Details</th></tr></thead>
@@ -1478,8 +1516,8 @@ async function trace(){
              <td><span class="rule-no">Rule ${esc(x.display_rule||x.rule)}</span></td>
              <td><span class="pill ${Number(x.depth||0)>0?'inline':'good'}">${esc(x.layer||'—')}</span></td>
              <td>${esc(x.name||'—')}</td>
-             <td><span class="pill ${String(x.action||'').toLowerCase().includes('accept')?'good':(String(x.action||'').toLowerCase().includes('drop')?'bad':'neutral')}">${esc(x.action||'Inline')}</span></td>
-             <td>${x.transition==='inline-layer'?`→ Inline Layer: <b>${esc(x.inline_layer||'')}</b>`:'Final rule'}</td>
+             <td>${stepActionCell(x)}</td>
+             <td>${stepTransitionCell(x)}</td>
              <td>Src: ${esc(x.source_match||'—')}<br>Dst: ${esc(x.destination_match||'—')}<br>Svc: ${esc(x.service_match||'—')}${x.vpn_state&&x.vpn_state!=='match'?`<br><span class="pill warn">VPN</span> ${esc(x.vpn_match||'')}`:''}</td>
            </tr>`).join('')}</tbody>
          </table>
@@ -1497,7 +1535,8 @@ async function trace(){
        ...(path.length?path.slice(0,3).map(x=>({
             title:`Rule ${x.display_rule||x.rule}${x.name?' '+x.name:''}`,
             detail:`${x.layer||''} · ${x.action||'Inline'}`,
-            state:String(x.action||'').toLowerCase().includes('drop')?'no-match':'match'})):[]),
+            state:x.state==='unknown'?'unknown'
+                  :(String(x.action||'').toLowerCase().includes('drop')?'no-match':'match')})):[]),
        {title:'Final action',      detail:`Confidence: ${confidence}`,
         state:confidence==='unknown'?'unknown':(String(w?.action||'').toLowerCase().includes('drop')?'no-match':'match')},
        {title:'NAT correlation',   detail:natLead?`Rule ${natLead.rule} · ${natLead.confidence||''}`:'Not checked',
@@ -1518,11 +1557,11 @@ async function trace(){
    </div>
    <div class="table-wrap" style="margin-top:18px"><table>
      <tr><th>Item</th><th>Result</th><th>Details</th></tr>
-     <tr><td>Source</td><td>${esc(d.query.source)}</td><td>${esc(w?.source_match||'—')}</td></tr>
-     <tr><td>Destination</td><td>${esc(d.query.destination)}</td><td>${esc(w?.destination_match||'—')}</td></tr>
-     <tr><td>Service</td><td>${esc(d.query.service_display||d.query.service_input||'—')}</td><td>${esc(w?.service_match||'—')} · resolved by ${esc(d.query.service_resolved_by||'—')}${svcWarnHtml}</td></tr>
+     <tr><td>Source</td><td>${esc(d.query.source)}</td><td>${esc(ev?.source_match||'—')}</td></tr>
+     <tr><td>Destination</td><td>${esc(d.query.destination)}</td><td>${esc(ev?.destination_match||'—')}</td></tr>
+     <tr><td>Service</td><td>${esc(d.query.service_display||d.query.service_input||'—')}</td><td>${esc(ev?.service_match||'—')} · resolved by ${esc(d.query.service_resolved_by||'—')}${svcWarnHtml}</td></tr>
      ${(w||possible)&&(w||possible).vpn_state&&(w||possible).vpn_state!=='match'?`<tr><td>VPN</td><td><span class="pill warn">UNKNOWN</span></td><td>${esc((w||possible).vpn_match||'')}</td></tr>`:''}
-     <tr><td>Access Rule</td><td>${w?'Rule '+esc(w.display_rule||w.rule):'No match'}</td><td>${w?`${esc(w.layer||'—')} · ${esc(w.name||'—')}`:esc(d.access.reason||'—')}</td></tr>
+     <tr><td>Access Rule</td><td>${w?'Rule '+esc(w.display_rule||w.rule):(confidence==='unknown'?'<span class="pill warn">UNVERIFIED</span>':'No match')}</td><td>${w?`${esc(w.layer||'—')} · ${esc(w.name||'—')}`:esc(d.access.reason||'—')}</td></tr>
      <tr><td>Action</td><td>${esc(w?.action||(confidence==='unknown'?'UNVERIFIED':'—'))}</td><td>${esc(d.access.reason||'—')} · Confidence: ${esc(confidence)}</td></tr>
      <tr><td>NAT</td><td>${natCell}</td><td>${natDetail}</td></tr>
    </table></div>
@@ -3634,6 +3673,10 @@ async function saveCred(type) {
     if (r.ok) {
       const rid = type === 'checkpoint' ? 'cpTestResult' : 'gaiaTestResult';
       showTestResult(rid, true, '<span class="test-icon good">✓</span> <strong>Credentials saved and encrypted successfully.</strong>');
+      // Saving rebuilds the client and clears the session: the old
+      // "Connected" was about the previous settings and is no longer
+      // something this application knows to be true.
+      if(type === 'checkpoint') setConn('','Not tested');
       loadCredentialStatus();
     } else {
       const rid = type === 'checkpoint' ? 'cpTestResult' : 'gaiaTestResult';
@@ -3676,6 +3719,15 @@ async function testCred(type) {
       body: JSON.stringify(body),
     });
     const d = await r.json();
+
+    /* The header badge is the same claim as this panel's, so it must not be
+       left saying "Not tested" next to a successful test. Gaia is a different
+       API with its own credentials and does not speak for the Management
+       connection, so only the Check Point test touches it. */
+    if(type === 'checkpoint'){
+      if(d && d.success) setConn('ok','Connected \u00b7 API '+(d.api_version||'?'));
+      else setConn('bad','Connection failed');
+    }
 
     /* ---- Build structured per-host result ---- */
     if (d.details && Array.isArray(d.details)) {

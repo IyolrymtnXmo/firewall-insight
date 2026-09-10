@@ -82,12 +82,72 @@ class TestModuleBoundaries:
 
 
 class TestReadOnlyIsStillStructural:
-    def test_every_route_is_a_get(self):
-        """The read-only guarantee is easiest to verify if no route can mutate."""
+    # Until v4.30 this class asserted that *no* route used a mutating verb.
+    # That was a proxy for the real guarantee - the tool never changes firewall
+    # policy - and it was an exact proxy for as long as the application had
+    # nothing of its own to write.
+    #
+    # v4.30 gave it something: the Settings page saves Check Point and Gaia
+    # credentials so an operator does not have to hand-edit .env. Those writes
+    # go to a local encrypted file. They do not reach a firewall.
+    #
+    # Deleting the test would have given that up quietly, so it is restated as
+    # what is still true and still worth protecting: mutating verbs exist in
+    # exactly one named module, and that module cannot touch policy. A new
+    # POST anywhere else fails here, which is the property that mattered.
+    MUTATING_VERBS = ("router.post", "router.put", "router.patch", "router.delete")
+    MAY_MUTATE = {"credentials.py"}
+
+    def test_only_the_credential_route_may_mutate(self):
         for py in (APP / "api").rglob("*.py"):
+            if py.name in self.MAY_MUTATE:
+                continue
             text = py.read_text(encoding="utf-8")
-            for verb in ("router.post", "router.put", "router.patch", "router.delete"):
-                assert verb not in text, f"{py.name} declares {verb}"
+            for verb in self.MUTATING_VERBS:
+                assert verb not in text, (
+                    f"{py.name} declares {verb}. Every route that reads policy is a "
+                    f"GET; only {sorted(self.MAY_MUTATE)} may mutate, and only the "
+                    f"local credential store.")
+
+    def test_the_exception_is_a_real_module_not_a_stale_name(self):
+        """An allowance for a file that no longer exists protects nothing."""
+        for name in self.MAY_MUTATE:
+            assert (APP / "api" / name).is_file(), name
+
+    def test_the_mutating_module_writes_only_to_the_credential_store(self):
+        """Its writes must land on a local file, never on a firewall.
+
+        credentials.py talks to a Management Server (to validate a login) and
+        to Gaia (same), so "it makes no network calls" would be false. What
+        holds is narrower and is the thing that matters: it never imports the
+        policy layer, and the only Management API verbs it names are login and
+        logout.
+        """
+        text = (APP / "api" / "credentials.py").read_text(encoding="utf-8")
+
+        for forbidden in ("from ..policy", "from ..checkpoint import",
+                          "show_rulebase", "install_policy", "publish"):
+            assert forbidden not in text, f"credentials.py reaches {forbidden}"
+
+        called = {line.split("web_api/")[1].split('"')[0].split("'")[0]
+                  for line in text.splitlines() if "web_api/" in line}
+        called |= {line.split("gaia_api/")[1].split('"')[0].split("'")[0]
+                   for line in text.splitlines() if "gaia_api/" in line}
+        assert called <= {"login", "logout"}, called
+
+    def test_the_documented_surface_matches_the_code(self):
+        """The README states this guarantee; a drifting claim is a defect.
+
+        README said "Every HTTP route is a GET" for seven releases after that
+        stopped being true. On a tool whose entire pitch is that it is safe to
+        point at production, a safety claim the code does not honour is worse
+        than no claim.
+        """
+        readme = (APP.parent / "README.md").read_text(encoding="utf-8")
+        assert "Every HTTP route is a `GET`" not in readme, (
+            "README still claims every route is a GET")
+        assert "/api/credentials" in readme, (
+            "README does not disclose the mutating credential routes")
 
     def test_no_mutating_management_api_call_exists(self):
         joined = "\n".join(p.read_text(encoding="utf-8") for p in APP.rglob("*.py"))
