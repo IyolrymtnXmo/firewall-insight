@@ -596,6 +596,26 @@ async function ensurePackages(){
   return !!(P && P.options && P.options.length > 1);
 }
 
+/* Put a freshly rendered result where the person who asked for it is looking.
+
+   Measured on a 1280x720 window: the result sits at y=765 with a 720px
+   viewport, so pressing Compare rendered 5,837px of content entirely below the
+   fold and the card looked exactly as empty as before. That is one of the two
+   reasons "Compare does nothing" was reported; the other was that the card
+   could be folded shut.
+
+   `nearest` scrolls the least it can: nothing at all when the result is
+   already on screen, just enough when it is not. The scroll container is
+   `main.main` - body and html have been overflow:hidden since v4.30.3 - and
+   measured there, `behavior:'smooth'` does not move it at all while the
+   default instant behaviour does. Instant is also what prefers-reduced-motion
+   would ask for, so there is nothing to branch on. */
+function revealResult(el){
+  if(!el || !el.scrollIntoView) return;
+  try{ el.scrollIntoView({block:'nearest'}); }
+  catch(_){ el.scrollIntoView(); }
+}
+
 function isAlertMetric(label){
   return [
     'Shadow / Redundant','Duplicate Groups','Any / Any / Any',
@@ -3383,7 +3403,7 @@ async function runDiff(ev){
            ['Changes',r=>r.changes.map(c=>`<b>${esc(c.field)}</b>: ${esc(String(c.from??'—'))} → ${esc(String(c.to??'—'))}`).join('<br>')]])
 
       + `<div class="hint" style="margin-top:12px">${(d.notes||[]).map(esc).join(' · ')}</div>`;
-
+    revealResult(diffResult);
     if(d.identical) notify('success','No change','Every tracked rule matched, in the same order, with the same resolved reach.');
     else notify('warn','Policy changed',
       `${s.added} added · ${s.removed} removed · ${s.modified} modified · ${s.moved} moved · ${s.scope_changed} changed scope without changing`,
@@ -3506,7 +3526,7 @@ async function runCompliance(ev){
 
     complianceResult.innerHTML=head+cards+body+notChecked
       +`<div class="hint" style="margin-top:12px">${(d.notes||[]).map(esc).join(' · ')}</div>`;
-
+    revealResult(complianceResult);
     if(d.data_quality) reportDataQuality(d.data_quality,'Compliance');
     if(s.unverifiable) notify('warn','Some checks could not be decided',
       `${s.unverifiable} check(s) are unverifiable. They are not counted as passes, and the run is not conformant while one remains.`,
@@ -3595,7 +3615,7 @@ async function runHealth(ev){
 
     healthResult.innerHTML=head+findings+diff+gws+unreachable
       +`<div class="hint" style="margin-top:12px">${(d.notes||[]).map(esc).join(' · ')}${d.saved_as?' · Saved as baseline '+esc(d.saved_as):''}</div>`;
-
+    revealResult(healthResult);
     await loadBaselines();
     if(s.gateways_unreachable) notify('warn','Some gateways were not read',
       `${s.gateways_unreachable} gateway(s) did not answer. They produce no findings, which is not the same as having none.`,

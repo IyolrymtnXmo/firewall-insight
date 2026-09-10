@@ -184,3 +184,79 @@ class TestConnectingLeavesTheApplicationUsable:
         assert "ensurePackages()" in body
         assert "No packages to select" in body, (
             "an empty list is still reported as an unmade selection")
+
+
+class TestTheResultsCardCannotBeHidden:
+    """Every page kept its result in a card that could be folded shut.
+
+    `data-fold="pg-*"` wrapped the *results* card on seven pages - Configured
+    Rulebase, Findings, NAT Results, Trace Result, Gateway Readings, Compliance
+    Result, Snapshot Difference - and the whole card header was a click target,
+    not just the 26px chevron. One stray click collapsed the only part of the
+    page that shows an answer, and `toggleFold()` writes the state to
+    localStorage, so it stayed collapsed on the next visit and every visit
+    after that.
+
+    That is indistinguishable from the feature being broken, and it was
+    reported as exactly that: "Policy Diff, press Compare, nothing appears".
+
+    Folding a region is worth keeping where a page has several of them - the
+    Dashboard has seven and putting one away still leaves six. Folding the only
+    region on a page leaves a heading and nothing else.
+    """
+
+    RESULT_PAGES = ["pg-browser", "pg-access", "pg-nat", "pg-traffic",
+                    "pg-health", "pg-compliance", "pg-diff"]
+
+    def test_no_results_card_is_foldable(self):
+        for key in self.RESULT_PAGES:
+            assert f'data-fold="{key}"' not in INDEX, (
+                f"{key} can be folded shut, hiding the result the page exists to show")
+
+    def test_no_page_level_fold_was_reintroduced_under_another_name(self):
+        import re
+        assert not re.search(r'data-fold="pg-', INDEX)
+
+    def test_folding_is_kept_where_a_page_has_several_regions(self):
+        """The Dashboard is the case the feature was built for."""
+        import re
+        keys = re.findall(r'data-fold="([^"]+)"', INDEX)
+        assert keys, "folding was removed entirely; the Dashboard needs it"
+        assert all(k.startswith("dash-") or k.startswith("settings-") for k in keys), keys
+        assert len([k for k in keys if k.startswith("dash-")]) >= 5
+
+
+class TestAResultIsBroughtIntoView:
+    """Rendering a result off-screen reads as not rendering one.
+
+    Measured on a 1280x720 window: the Policy Diff result sits at y=765 with a
+    720px viewport, so Compare produced 5,837px of content entirely below the
+    fold while the card heading - already the last thing on screen - did not
+    change. Compliance and Gateway Health have the same shape.
+    """
+
+    def test_the_three_deep_pages_reveal_their_result(self):
+        for target in ("revealResult(diffResult)",
+                       "revealResult(complianceResult)",
+                       "revealResult(healthResult)"):
+            assert target in APPJS, f"missing: {target}"
+
+    def test_the_helper_scrolls_the_least_it_can(self):
+        """`nearest` does nothing when the result is already visible."""
+        body = APPJS.split("function revealResult(el)", 1)[1].split(NL + "}", 1)[0]
+        assert "block:'nearest'" in body, body
+
+    def test_it_does_not_ask_for_smooth_scrolling(self):
+        """Measured: smooth does not move `main.main` at all; instant does.
+
+        body and html have been overflow:hidden since v4.30.3, so the scroll
+        container is `main.main`. Instant is also what prefers-reduced-motion
+        would ask for, so there is nothing to branch on.
+        """
+        body = APPJS.split("function revealResult(el)", 1)[1].split(NL + "}", 1)[0]
+        assert "smooth" not in body, "smooth scrolling silently does nothing in main.main"
+
+    def test_the_reveal_happens_after_the_result_is_written(self):
+        for result_id in ("diffResult", "complianceResult", "healthResult"):
+            assert APPJS.index(f"{result_id}.innerHTML") < APPJS.index(f"revealResult({result_id})"), (
+                f"{result_id} is revealed before it is filled")

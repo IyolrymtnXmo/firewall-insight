@@ -420,7 +420,7 @@
 
           <div id="browserSummary" class="cards access-summary-grid hidden"></div>
           <div id="browserDq"></div>
-          <div class="card flush fold" data-fold="pg-browser">
+          <div class="card flush">
             <div class="card-h"><div><h3>Configured Rulebase</h3><p>Every rule the package returned, top-level and inline</p></div></div>
             <div id="browserResults"></div>
           </div>
@@ -441,7 +441,7 @@
 
           <div id="accessCards" class="cards hidden"></div>
           <div id="accessDq"></div>
-          <div class="card flush fold" data-fold="pg-access">
+          <div class="card flush">
             <div class="card-h"><div><h3>Findings</h3><p>Shadowing, duplication, any/any/any and unused rules</p></div></div>
             <div id="accessFindings"></div>
           </div>
@@ -452,7 +452,7 @@
         <div class="panel">
           <div class="controls"><button id="natBtn" class="primary" onclick="runNat()">Analyze NAT Policy</button></div>
           <div id="natCards" class="cards hidden"></div>
-          <div class="card flush fold" data-fold="pg-nat">
+          <div class="card flush">
             <div class="card-h"><div><h3>NAT Results</h3><p>Rulebase, duplicates, disabled and possible no-translation</p></div></div>
             
             <div class="tabs" id="natTabs" style="display:none; padding: var(--space-md) var(--space-lg) 0">
@@ -537,7 +537,7 @@
               <input id="port" type="text" placeholder="443, https, a service object, or an ICMP type"></label>
             <button class="primary" onclick="trace()">Analyze Path</button>
           </div>
-          <div class="card flush fold" data-fold="pg-traffic">
+          <div class="card flush">
             <div class="card-h"><div><h3>Trace Result</h3><p>Simulated from configuration — it never sends a packet</p></div></div>
             <div id="traceResult"></div>
           </div>
@@ -558,7 +558,7 @@
             <button onclick="loadBaselines(event)">Refresh Baselines</button>
           </div>
           <p id="healthNote" class="hint"></p>
-          <div class="card flush fold" data-fold="pg-health">
+          <div class="card flush">
             <div class="card-h"><div><h3>Gateway Readings</h3><p>One reading at one instant, per gateway</p></div></div>
             <div id="healthResult"></div>
           </div>
@@ -587,7 +587,7 @@
             <button onclick="loadProfiles(event)">Refresh Profiles</button>
           </div>
           <p id="profileNote" class="hint"></p>
-          <div class="card flush fold" data-fold="pg-compliance">
+          <div class="card flush">
             <div class="card-h"><div><h3>Compliance Result</h3><p>Checks, provenance and what could not be verified</p></div></div>
             <div id="complianceResult"></div>
           </div>
@@ -613,7 +613,7 @@
             <button class="primary" onclick="runDiff(event)">Compare</button>
           </div>
           <p id="snapNote" class="hint"></p>
-          <div class="card flush fold" data-fold="pg-diff">
+          <div class="card flush">
             <div class="card-h"><div><h3>Snapshot Difference</h3><p>Added, removed, moved and modified rules</p></div></div>
             <div id="diffResult"></div>
           </div>

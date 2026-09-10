@@ -4,6 +4,56 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.31.2 — the answer could be folded shut
+
+Reported as two separate problems. They were the same one.
+
+### Fixed — the results card on seven pages could be collapsed, permanently
+
+`data-fold="pg-*"` wrapped the **results** card on seven pages: Configured
+Rulebase, Findings, NAT Results, Trace Result, Gateway Readings, Compliance
+Result and Snapshot Difference. The whole card header was a click target, not
+just the 26px chevron, and `toggleFold()` writes the state to `localStorage` —
+so one stray click collapsed the only part of the page that shows an answer,
+and it stayed collapsed on the next visit and every visit after that.
+
+That is indistinguishable from the feature being broken, and it was reported as
+exactly that: *"Policy Diff, press Compare, nothing appears"*. Reproduced in a
+browser: clicking the **Snapshot Difference** heading sets `is-folded`, the
+body height goes to 0, and `localStorage` records `["pg-diff"]`.
+
+Folding is kept where it was designed to help — the Dashboard has seven regions
+and putting one away still leaves six, and Advanced Settings keeps its own.
+Folding the only region on a page leaves a heading and nothing else, which is
+not a state anybody chose.
+
+### Fixed — a result rendered below the fold reads as no result
+
+The second half of the same report. Measured on a 1280x720 window: the Policy
+Diff result sits at y=765 with a 720px viewport, so Compare rendered 5,837px of
+content entirely off-screen while the card heading — already the last thing
+visible — did not change. Compliance and Gateway Health have the same shape.
+
+All three now bring their result into view. `block:'nearest'` scrolls the least
+it can: nothing at all when the result is already visible, just enough when it
+is not. It is an instant scroll, because the container is `main.main` — `body`
+and `html` have been `overflow:hidden` since v4.30.3 — and measured there,
+`behavior:'smooth'` does not move it at all while the default does. Instant is
+also what `prefers-reduced-motion` would ask for, so there is nothing to
+branch on.
+
+### Verified in a browser, not only in tests
+
+Both fixes were reproduced and then re-checked against the running application
+at 1280x720 with the live lab attached: Policy Diff, Compliance and Gateway
+Health each render their result at y=61 with no fold control anywhere on the
+seven result pages. Gateway Health returned 9,815 characters, so the Gaia read
+path was exercised end to end as well.
+
+743 pass, up from 736.
+
+---
+
 ## v4.31.1 — connecting now leaves the application usable
 
 Both defects were found the same way: by watching somebody use the thing.
