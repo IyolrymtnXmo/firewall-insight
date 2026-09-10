@@ -4,6 +4,25 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.31.4 — Selected Context stops saying "Not tested"
+
+The Dashboard card reported `Management API: Not tested` next to a green
+`Connected · API 2.0.1` badge. `#dashApi` is a hard-coded string in the markup
+and **nothing ever wrote to it** — and `renderContextChips()` read *that*
+element to fill the header chip, so the wrong answer was copied rather than
+corrected. v4.31.1 fixed the badge and left both of these behind.
+
+Both now read the badge, which is the only element that knows: `setConn()` is
+the single thing that changes it.
+
+The harness stub gained one property to make this testable at all — setting
+`innerHTML` now updates `textContent`, as a real node does. They were separate
+plain properties, so a renderer that writes markup (`setConn`) and a reader
+that reads text (`renderContextChips`) could never be checked against each
+other: the read always came back empty. 72 harness checks, up from 71.
+
+---
+
 ## v4.31.3 — a page change starts at the top, and a run can be read
 
 ### Fixed — the scroll of the page you left was applied to the page you opened

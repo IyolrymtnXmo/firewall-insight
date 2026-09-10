@@ -935,8 +935,15 @@ function renderContextChips(){
   const put = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
   put('ctxPackage', (P && P.value) ? P.value : 'Not selected');
   put('ctxLayer',   (L && L.value) ? (L.options[L.selectedIndex]?.text || L.value) : 'Not selected');
-  const api = document.getElementById('dashApi');
-  put('ctxApi', api ? api.textContent : 'Not tested');
+  /* Both of these used to read #dashApi, which nothing ever wrote: it is a
+     hard-coded "Not tested" in the markup, so the Dashboard's Selected Context
+     card and the header chip went on saying it beside a green "Connected"
+     badge. The badge is the element that actually knows - setConn() is the
+     only thing that changes it - so read the state from there and write both. */
+  const conn = document.getElementById('conn');
+  const state = conn ? conn.textContent.trim() : 'Not tested';
+  put('dashApi', state);
+  put('ctxApi', state);
   put('ctxRead', lastReadLabel || 'No call yet');
 }
 let lastReadLabel = '';

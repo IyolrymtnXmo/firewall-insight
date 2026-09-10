@@ -137,7 +137,7 @@ docker compose up --build      # reads .env via env_file
 | Check | Expected |
 |---|---|
 | `pytest -q` | `749 passed` |
-| `GET /health` | `{"status":"ok","version":"4.31.3","mode":"read-only",...}` |
+| `GET /health` | `{"status":"ok","version":"4.31.4","mode":"read-only",...}` |
 | `GET /api/checkpoint/test` | `{"connected":true,"api_server_version":"...","read_only":true}` |
 | `GET /api/bootstrap` | lists your access layers and policy packages |
 

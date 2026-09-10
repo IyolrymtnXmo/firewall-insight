@@ -77,6 +77,21 @@ const el = (id = "") => {
     closest: () => null, insertAdjacentHTML() {}, scrollIntoView() {},
   };
   node.parentElement = null;
+
+  /* Setting innerHTML updates textContent, the way a real node does.
+     They were independent plain properties, so a renderer that writes markup
+     (setConn does) and a reader that reads text (renderContextChips does) could
+     never be tested against each other - the read always came back "". Tags are
+     stripped rather than parsed; this is enough to compare what a person would
+     see, and it is not trying to be a DOM. */
+  let html = "";
+  Object.defineProperty(node, "innerHTML", {
+    enumerable: true, configurable: true,
+    get() { return html; },
+    set(v) { html = String(v == null ? "" : v);
+             node.textContent = html.replace(/<[^>]*>/g, ""); },
+  });
+
   if (id) NODES.set(id, node);
   return node;
 };
@@ -480,6 +495,22 @@ const checks = [
     const html = context.complianceSource_cite({ cited: false, source: { note: "House rule" }});
     if (!html.includes("HOUSE RULE")) throw new Error("the house-rule label is gone");
     if (html.includes("<details")) throw new Error("a one-line label was put behind a disclosure");
+  }],
+
+  ["Selected Context follows the real connection state", () => {
+    /* #dashApi was a hard-coded "Not tested" in the markup that nothing ever
+       wrote, and renderContextChips read *it* to fill the header chip - so the
+       Dashboard card and the chip both went on saying "Not tested" next to a
+       green Connected badge. */
+    context.setConn('ok', 'Connected · API 2.0.1');
+    evalIn("renderContextChips()");
+    const shown = document.getElementById('dashApi').textContent;
+    if (!/Connected/.test(shown))
+      throw new Error(`Selected Context says "${shown}" while the badge says Connected`);
+    context.setConn('', 'Not tested');
+    evalIn("renderContextChips()");
+    if (/Connected/.test(document.getElementById('dashApi').textContent))
+      throw new Error("Selected Context kept a stale Connected after the badge was cleared");
   }],
 
   // Settings. showTestResult renders the banner every one of these ends in.
