@@ -165,26 +165,43 @@ class TestConnectingLeavesTheApplicationUsable:
             assert "loadMetadata()" in body, (
                 f"{fn.split()[-1]} proves the connection and leaves the selectors empty")
 
-    def test_metadata_is_still_not_loaded_on_page_load(self):
-        """The promise in the status line is about page load, and it holds.
+    def test_what_arrival_reads_is_what_the_status_line_says(self):
+        """The promise moved because the behaviour did, and they must match.
 
-        Every loadMetadata() caller is a button somebody pressed, so "no API
-        calls are made automatically" is still true.
+        Through v4.35 nothing reached the Management Server on page load and
+        the line said so. v4.36 reads the package list and the map on arrival,
+        because a returning session finding an empty selector was the whole
+        complaint. The line now names that, and this test is what stops the two
+        drifting apart again: if arrival stops reading them, or reads more, the
+        sentence has to be revisited.
         """
         init = APPJS.split("window.addEventListener('DOMContentLoaded'", 1)[1]
         init = init.split(NL + "});", 1)[0]
-        assert "loadMetadata" not in init, (
-            "metadata is loaded on page load, which the status line denies")
+        assert "loadMetadata" in init, (
+            "arrival no longer loads the metadata - the status line still says it does")
 
-        # v4.33: the promise moved into reportAutomationState(), because with a
-        # schedule enabled it is no longer unconditionally true. It also names
-        # the Management API now - the function reads /api/schedules from this
-        # application's own backend, which is a local file read, and the promise
-        # was always about the Management Server.
-        assert "reportAutomationState()" in init
+        promise = APPJS.split("async function reportAutomationState", 1)[1]
+        promise = promise.split(NL + "}", 1)[0]
+        assert "read when you arrive" in promise
+        assert "Nothing else is read until you open a page" in promise
+
+    def test_an_anonymous_arrival_reads_nothing(self):
+        """The old sentence is still the true one before anybody signs in."""
         promise = APPJS.split("async function reportAutomationState", 1)[1]
         promise = promise.split(NL + "}", 1)[0]
         assert "No Management API calls are made automatically" in promise
+        assert "if(!auth.authenticated)" in promise.replace(" ", ""), (
+            "the anonymous branch is gone, so an unauthenticated visitor would "
+            "be told about reads that did not happen")
+
+    def test_the_line_says_when_the_application_calls_out_on_its_own(self):
+        """A schedule makes the quiet sentence false, so it has a loud one."""
+        init = APPJS.split("window.addEventListener('DOMContentLoaded'", 1)[1]
+        init = init.split(NL + "});", 1)[0]
+        assert "reportAutomationState()" in init
+
+        promise = APPJS.split("async function reportAutomationState", 1)[1]
+        promise = promise.split(NL + "}", 1)[0]
         assert "schedule(s) are enabled" in promise, (
             "the line does not say when the application does call out on its own")
         # It must not send somebody to a page that does not exist. Between

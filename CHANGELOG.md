@@ -4,6 +4,75 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.37.0 — open a page and it is already loaded
+
+### Signing in left the application unusable
+
+A regression, and an avoidable one. `testCred()` learned in v4.31.1 to test the
+connection and fill the selectors after a successful credential check; the
+sign-in form written in v4.35 did neither. So the thing that proved the
+credentials worked left the badge reading "Not tested" and the package selector
+empty — the exact dead end v4.31.1 existed to remove.
+
+Signing in now does both, and so does arriving with a cookie from last week: a
+valid session is as much a sign-in as typing one, and the same things have to be
+true afterwards. The package the last review was taken of is reselected, if it
+is still in the list, so the dashboard's numbers and the selector agree.
+
+### Opening a page loads it
+
+Every one of Access Policy, Analyze, NAT Policy, Network Mapping, Policy Diff,
+Compliance and Gateway Health had the same shape: navigate, find an empty
+panel, press the one button on it. The click that opened the page was already
+the instruction; the second one carried no information.
+
+Measured on the lab, all seven fill themselves on arrival, most from the review
+the dashboard already hydrated from rather than from a fresh read:
+
+    Analyze 640 · NAT 3,812 · Access Policy 33,264 · Network Mapping 8,968
+    Compliance 10,029 · Gateway Health 6,993 · Policy Diff 4,812   (characters)
+
+Traffic Path is deliberately absent: it needs a source, a destination and a
+port, and there is nothing sensible to trace without them.
+
+Nothing runs on a page nobody has opened, and nothing runs twice — what a page
+already holds is rendered rather than re-read, and a page that fails to load is
+un-marked so a later visit tries again.
+
+### The status line follows, again
+
+`No Management API calls are made automatically` was exactly true through
+v4.35. Arrival now reads the package list and the map, which is three calls,
+and three is not none. Rather than let the sentence drift away from the
+behaviour it describes:
+
+    anonymous     Ready. No Management API calls are made automatically — pick
+                  a Policy Package and run an analysis.
+    signed in     Ready, signed in as admin — the package list and the network
+                  map are read when you arrive. Nothing else is read until you
+                  open a page.
+    scheduled     N schedule(s) are enabled, so this application will read the
+                  Management Server on its own — next at ...
+
+A test pins each branch to the behaviour it claims.
+
+### Dashboard order
+
+    Hits over time · Where the hits are · Policy Health Score
+    Network Topology
+    What this read found
+    Optimization Findings · Inline Layer Analysis
+    Traffic Path Summary
+    Selected Context
+
+The score takes the top row from Selected Context, and the topology moves above
+the counts. The score card had no fold key of its own and inherits the one that
+left the top row, so a card somebody put away stays put away.
+
+862 pass. The Node harness runs 83 checks.
+
+---
+
 ## v4.36.0 — the dashboard has something on it when you arrive
 
 Three complaints, all fair.

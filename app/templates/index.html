@@ -226,20 +226,90 @@
             <p class="hint" style="margin:4px 0 8px">Load the Access Policy to see which rules carry the traffic.</p>
             </div>
             </div>
-            <div class="card flush fold" data-fold="dash-ctx">
-            <div class="card-h"><div><h3>Selected Context</h3><p>Change it from the Access or NAT page</p></div></div>
-            <div class="stat-rows">
-            <div class="stat-row"><span>Access Layer</span><b id="dashLayer" style="font-family:var(--font-ui);font-size:12.5px;font-weight:500">Not selected</b></div>
-            <div class="stat-row"><span>Policy Package</span><b id="dashPackage" style="font-family:var(--font-ui);font-size:12.5px;font-weight:500">Not selected</b></div>
-            <div class="stat-row"><span>Management API</span><b id="dashApi" style="font-family:var(--font-ui);font-size:12.5px;font-weight:500">Not tested</b></div>
-            <div class="stat-row"><span>Mode</span><b><span class="pill good">Read-only</span></b></div>
-            </div>
-            </div>
+            <div class="card flush fold" data-fold="dash-score">
+              <div class="card-h">
+              <div>
+              <h3>Policy Health Score</h3>
+              <p>A heuristic computed here, not a Check Point score.</p>
+              </div>
+              <div class="r"><span id="healthLive" class="live-tag" hidden><i></i>LIVE</span></div>
+              </div>
+              <div class="gauge-wrap">
+              <svg viewBox="0 0 240 150" role="img" aria-labelledby="gaugeDesc">
+              <title id="gaugeDesc">Policy health score</title>
+              <defs>
+              <linearGradient id="gaugeArcGrad" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="var(--bad)"/>
+              <stop offset="36%" stop-color="var(--warn)"/>
+              <stop offset="72%" stop-color="var(--accent)"/>
+              <stop offset="100%" stop-color="var(--accent-2)"/>
+              </linearGradient>
+              </defs>
+              <path d="M24 128 A96 96 0 0 1 216 128" fill="none" class="gauge-track" stroke-width="15" stroke-linecap="round"/>
+              <path id="gaugeArc" d="M24 128 A96 96 0 0 1 216 128" fill="none" stroke="url(#gaugeArcGrad)"
+              stroke-width="15" stroke-linecap="round" class="gauge-arc"
+              stroke-dasharray="302" stroke-dashoffset="302"/>
+              <text id="gaugeValue" class="gauge-val" x="118" y="113" text-anchor="middle">&mdash;</text>
+              <text id="gaugeOf" class="gauge-of" x="170" y="113" text-anchor="start"></text>
+              <text id="gaugeCaption" class="gauge-cap" x="120" y="134" text-anchor="middle">Not analysed yet</text>
+              </svg>
+              </div>
+              <div class="stat-rows">
+              <div class="stat-row" onclick="drillTo('browser')">
+              <span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-cases"/></svg></span>
+              <span>Rules analysed</span><b id="hRules">&mdash;</b>
+              </div>
+              <div class="stat-row" id="hShadowRow" onclick="drillTo('access','shadow')">
+              <span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-alert"/></svg></span>
+              <span>Shadowed / redundant</span><b id="hShadow">&mdash;</b>
+              </div>
+              <div class="stat-row" id="hColdRow" onclick="drillTo('browser')">
+              <span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-clock"/></svg></span>
+              <span>Never-hit rules</span><b id="hCold">&mdash;</b>
+              </div>
+              <div class="stat-row" id="hObjRow">
+              <span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-badge"/></svg></span>
+              <span>Objects fully resolved</span><b id="hObjects">&mdash;</b>
+              </div>
+              </div>
+              <div class="card-foot">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-eye"/></svg>
+              Read-only &middot; Management API
+              <span class="pill good">GET only</span>
+              </div>
+              </div>
           </div>
 
           <!-- band A — the counts, before anything that interprets them -->
           <div class="band band-a">
-            <div class="card flush fold" data-fold="dash-counts">
+            <div class="card flush fold" data-fold="dash-topo">
+            <div class="card-h">
+            <div>
+            <h3>Network Topology</h3>
+            <p>Read at one instant. Physical cabling, switches and live routing are not inferred.</p>
+            </div>
+            <div class="r"><button onclick="goTo('mapping')" style="height:32px;font-size:12px">Open full map</button></div>
+            </div>
+            <div class="topo-preview">
+            <div class="tp-legend">
+            <span><i style="background:var(--accent-2)"></i>Route (read at one instant)</span>
+            <span><i style="background:var(--accent)"></i>Configured link</span>
+            </div>
+            <svg id="topoPreview" viewBox="0 0 900 220" preserveAspectRatio="xMidYMid meet" aria-label="Gateway topology preview"></svg>
+            <div class="tp-empty" id="topoPreviewEmpty">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-map"/></svg>
+The map is drawn from gateways the Management API returns.
+            <button onclick="goTo('mapping')" style="height:32px;font-size:12px">Load the topology</button>
+            </div>
+            </div>
+
+            </div>
+          </div>
+
+          <!-- band B — estate and findings on the left, score and trace on the right -->
+          <div class="band band-b">
+            <div class="stack">
+<div class="card flush fold" data-fold="dash-counts">
               <div class="card-h">
                 <div><h3>What this read found</h3><p>Every figure comes from the last analysis and from nothing else</p></div>
               </div>
@@ -265,33 +335,6 @@
               <div class="s">Selected Policy Package</div>
               </div>
               </div>
-            </div>
-          </div>
-
-          <!-- band B — estate and findings on the left, score and trace on the right -->
-          <div class="band band-b">
-            <div class="stack">
-<div class="card flush fold" data-fold="dash-topo">
-            <div class="card-h">
-            <div>
-            <h3>Network Topology</h3>
-            <p>Read at one instant. Physical cabling, switches and live routing are not inferred.</p>
-            </div>
-            <div class="r"><button onclick="goTo('mapping')" style="height:32px;font-size:12px">Open full map</button></div>
-            </div>
-            <div class="topo-preview">
-            <div class="tp-legend">
-            <span><i style="background:var(--accent-2)"></i>Route (read at one instant)</span>
-            <span><i style="background:var(--accent)"></i>Configured link</span>
-            </div>
-            <svg id="topoPreview" viewBox="0 0 900 220" preserveAspectRatio="xMidYMid meet" aria-label="Gateway topology preview"></svg>
-            <div class="tp-empty" id="topoPreviewEmpty">
-            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-map"/></svg>
-The map is drawn from gateways the Management API returns.
-            <button onclick="goTo('mapping')" style="height:32px;font-size:12px">Load the topology</button>
-            </div>
-            </div>
-
             </div>
               <div class="card flush fold" data-fold="dash-findings">
               <div class="card-h">
@@ -368,58 +411,15 @@ The map is drawn from gateways the Management API returns.
               </div>
             </div>
             <div class="stack">
-<div class="card flush">
-              <div class="card-h">
-              <div>
-              <h3>Policy Health Score</h3>
-              <p>A heuristic computed here, not a Check Point score.</p>
-              </div>
-              <div class="r"><span id="healthLive" class="live-tag" hidden><i></i>LIVE</span></div>
-              </div>
-              <div class="gauge-wrap">
-              <svg viewBox="0 0 240 150" role="img" aria-labelledby="gaugeDesc">
-              <title id="gaugeDesc">Policy health score</title>
-              <defs>
-              <linearGradient id="gaugeArcGrad" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stop-color="var(--bad)"/>
-              <stop offset="36%" stop-color="var(--warn)"/>
-              <stop offset="72%" stop-color="var(--accent)"/>
-              <stop offset="100%" stop-color="var(--accent-2)"/>
-              </linearGradient>
-              </defs>
-              <path d="M24 128 A96 96 0 0 1 216 128" fill="none" class="gauge-track" stroke-width="15" stroke-linecap="round"/>
-              <path id="gaugeArc" d="M24 128 A96 96 0 0 1 216 128" fill="none" stroke="url(#gaugeArcGrad)"
-              stroke-width="15" stroke-linecap="round" class="gauge-arc"
-              stroke-dasharray="302" stroke-dashoffset="302"/>
-              <text id="gaugeValue" class="gauge-val" x="118" y="113" text-anchor="middle">&mdash;</text>
-              <text id="gaugeOf" class="gauge-of" x="170" y="113" text-anchor="start"></text>
-              <text id="gaugeCaption" class="gauge-cap" x="120" y="134" text-anchor="middle">Not analysed yet</text>
-              </svg>
-              </div>
-              <div class="stat-rows">
-              <div class="stat-row" onclick="drillTo('browser')">
-              <span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-cases"/></svg></span>
-              <span>Rules analysed</span><b id="hRules">&mdash;</b>
-              </div>
-              <div class="stat-row" id="hShadowRow" onclick="drillTo('access','shadow')">
-              <span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-alert"/></svg></span>
-              <span>Shadowed / redundant</span><b id="hShadow">&mdash;</b>
-              </div>
-              <div class="stat-row" id="hColdRow" onclick="drillTo('browser')">
-              <span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-clock"/></svg></span>
-              <span>Never-hit rules</span><b id="hCold">&mdash;</b>
-              </div>
-              <div class="stat-row" id="hObjRow">
-              <span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-badge"/></svg></span>
-              <span>Objects fully resolved</span><b id="hObjects">&mdash;</b>
-              </div>
-              </div>
-              <div class="card-foot">
-              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-eye"/></svg>
-              Read-only &middot; Management API
-              <span class="pill good">GET only</span>
-              </div>
-              </div>
+<div class="card flush fold" data-fold="dash-ctx">
+            <div class="card-h"><div><h3>Selected Context</h3><p>Change it from the Access or NAT page</p></div></div>
+            <div class="stat-rows">
+            <div class="stat-row"><span>Access Layer</span><b id="dashLayer" style="font-family:var(--font-ui);font-size:12.5px;font-weight:500">Not selected</b></div>
+            <div class="stat-row"><span>Policy Package</span><b id="dashPackage" style="font-family:var(--font-ui);font-size:12.5px;font-weight:500">Not selected</b></div>
+            <div class="stat-row"><span>Management API</span><b id="dashApi" style="font-family:var(--font-ui);font-size:12.5px;font-weight:500">Not tested</b></div>
+            <div class="stat-row"><span>Mode</span><b><span class="pill good">Read-only</span></b></div>
+            </div>
+            </div>
               </div>
           </div>
 

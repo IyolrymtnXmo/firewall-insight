@@ -471,6 +471,11 @@ function showPage(id,b){
     if(!profileSel.options.length) loadProfiles();
     if(!snapshotList.length) loadSnapshots();
   }
+
+  /* After the lists above, because compliance and diff need theirs first. The
+     small delay lets those settle; auto-load is a convenience, and a
+     convenience that races is worse than one that waits a moment. */
+  setTimeout(() => autoLoadPage(id), 350);
 }
 
 function goTo(id){
@@ -554,11 +559,13 @@ window.addEventListener('DOMContentLoaded',()=>{
   /* Ask who we are talking to before saying anything about schedules.
      An anonymous visitor gets the shell and the sign-in form; every request
      for data behind it is refused by the gate in main.py. */
-  gateOrGo().then(state => {
-    if(state.authenticated || !state.required){
-      reportAutomationState();
-      hydrateDashboard();
-    }
+  gateOrGo().then(async state => {
+    if(!(state.authenticated || state.setup_mode)) return;
+    reportAutomationState();
+    /* A cookie from last week is as much a sign-in as typing one, so the same
+       things have to be true afterwards. */
+    if(state.authenticated) await loadMetadata();
+    hydrateDashboard();
   });
   notify('info','Read-only tool',
     'Firewall Insight only issues show-* Management API calls. It never publishes or installs policy.',
@@ -571,11 +578,36 @@ window.addEventListener('DOMContentLoaded',()=>{
    exactly true. A schedule makes it false, so rather than leaving a stale
    promise in place the line reports the actual state. */
 async function reportAutomationState(){
-  const idle = 'Ready. No Management API calls are made automatically \u2014 pick a Policy Package and run an analysis.';
+  /* What this application does without being asked, said accurately.
+
+     Through v4.35 this read "No Management API calls are made automatically",
+     and it was exactly true: nothing reached the Management Server unless
+     somebody pressed something. Two things have changed it since, and both are
+     things people asked for, so the sentence follows the behaviour rather than
+     the behaviour quietly drifting away from the sentence.
+
+       v4.33  a schedule can run a review on its own
+       v4.36  arriving with a session reads the package list and the map, so
+              the page is not empty when you get there
+
+     Neither is a large read - the lists and the map are three calls - and
+     everything else still waits for a page to be opened. But "three calls" is
+     not "none", and the difference belongs on the screen and not in a
+     changelog nobody has open. */
+  const arrival = 'the package list and the network map are read when you arrive';
+  const idle = 'Ready. No Management API calls are made automatically '
+    + '\u2014 pick a Policy Package and run an analysis.';
   try{
+    const auth = await (await fetch('/api/auth/status')).json();
+    if(!auth.authenticated){ setStatus(idle,'info'); return; }
+
     const d = await api('/api/schedules');
     const on = (d.schedules||[]).filter(s=>s.enabled);
-    if(!on.length){ setStatus(idle,'info'); return; }
+    if(!on.length){
+      setStatus('Ready, signed in as ' + auth.user + ' \u2014 ' + arrival
+        + '. Nothing else is read until you open a page.', 'info');
+      return;
+    }
     const next = on.map(s=>s.next_due).filter(Boolean).sort()[0];
     setStatus(on.length + ' schedule(s) are enabled, so this application will read '
       + 'the Management Server on its own'
@@ -975,7 +1007,15 @@ async function signIn(){
     const hrs = d.expires_in_hours;
     notify('success','Signed in','as ' + esc(d.user) + '. This session lasts '
       + (hrs >= 24 ? Math.round(hrs/24) + ' days' : hrs + ' hours') + '.');
+
+    /* Everything the Settings page's Test Connection does, because signing in
+       is the same moment: the selectors were left empty and the badge still
+       said "Not tested" on a page that had just authenticated against that
+       very server. testCred() learned this in v4.31.1; signIn() did not, and
+       shipped without it. */
     reportAutomationState();
+    await testConn();
+    await loadMetadata();
     hydrateDashboard();
   }catch(e){
     showTestResult('authResult', false,
@@ -1063,6 +1103,16 @@ async function hydrateDashboard(){
          numbers. It should describe what is actually being shown. */
       const put = (id, v) => { const e = document.getElementById(id); if(e) e.textContent = v; };
       put('dashPackage', run.package || 'Not selected');
+      /* Select the package the numbers on screen came from. Without it the
+         dashboard showed External-FW while the selector said nothing was
+         chosen, and every page that needs one refused to load. Only if that
+         package is still in the list - a review of something since deleted is
+         not a selection worth restoring. */
+      if(run.package && !P.value
+         && [...P.options].some(o => o.value === run.package || o.text === run.package)){
+        P.value = run.package;
+        renderContextChips();
+      }
       put('dashLayer', (accessData && (accessData.root_layers||[]).join(', '))
                        || 'Resolved from the package');
     }
@@ -1096,6 +1146,91 @@ async function hydrateTopology(){
     TOPO.graph = buildTopoGraph(d);
     renderTopoPreview();
   }catch(_){ /* refused while anonymous, or no gateways to draw */ }
+}
+
+/* ============================================================
+   A page that fills itself when you open it.
+
+   Every one of these had the same shape: navigate, find an empty panel, and
+   press the one button on it. The click that opened the page was already the
+   instruction; the second one carried no information.
+
+   So opening a page loads it. This does not weaken "no Management API calls
+   are made automatically" - opening a page is somebody doing something, the
+   same way pressing the button was. What it does not do is run anything on a
+   page nobody has opened, or run the same thing twice: `autoLoaded` remembers
+   what this session has already fetched, and anything already in memory (from
+   the stored review the dashboard hydrated from) is rendered rather than
+   re-read.
+
+   Traffic Path is deliberately absent. It needs a source, a destination and a
+   port, and there is nothing sensible to trace without them.
+   ============================================================ */
+
+const autoLoaded = new Set();
+
+async function autoLoadPage(id){
+  if(autoLoaded.has(id)) return;
+
+  /* Pages that need a package cannot run without one, and saying so is better
+     than a spinner that resolves to nothing. */
+  const needsPackage = ['browser','access','nat','diff','compliance'];
+  if(needsPackage.includes(id) && !P.value) return;
+
+  autoLoaded.add(id);
+  try{
+    switch(id){
+      case 'browser':
+        if(browserData && !browserData.from_review) renderPolicyBrowser(browserData.rules);
+        else await loadPolicyBrowser();
+        break;
+
+      case 'access':
+        /* Already hydrated from the stored review - render, do not re-read. */
+        if(accessData) renderAccess(pendingAnalysisTab || 'shadow');
+        else await runAccess();
+        break;
+
+      case 'nat':
+        if(natData) renderNat(pendingNatTab || 'rulebase');
+        else await runNat();
+        break;
+
+      case 'mapping':
+        /* mapData being set is not the same as the map being drawn: the
+           dashboard preview fills it, and the full page has its own canvas.
+           Ask whether *this* page has anything on it. */
+        if(!topology.innerHTML.trim() || topology.innerHTML.trim().length < 200)
+          await loadMap();
+        break;
+
+      case 'compliance':
+        /* The profile list arrives on its own schedule, and this used to fire
+           before it did - marking the page loaded while doing nothing. Wait
+           for it. */
+        if(!profileSel.options.length) await loadProfiles();
+        if(!complianceSnap.options.length) await loadSnapshots();
+        if(profileSel.options.length && !complianceResult.innerHTML.trim())
+          await runCompliance();
+        break;
+
+      case 'health':
+        if(!healthResult.innerHTML.trim()) await runHealth();
+        break;
+
+      case 'diff':
+        if(!snapshotList.length) await loadSnapshots();
+        /* Two snapshots of the same package is a comparison worth showing;
+           one is not, and neither is comparing a snapshot with itself. */
+        if(snapA.options.length > 1 && snapB.options.length > 1
+           && snapA.value && snapB.value && snapA.value !== snapB.value
+           && !diffResult.innerHTML.trim()) await runDiff();
+        break;
+    }
+  }catch(e){
+    autoLoaded.delete(id);           // let a later visit try again
+    console.warn('auto-load failed for', id, e);
+  }
 }
 
 function isAlertMetric(label){
@@ -1891,6 +2026,7 @@ async function runAccess(){
    setDashboardMetric(dAccess,s.total_rules,false);dAccessDetail.textContent=`SmartConsole: ${s.top_level_rules} parent/top-level rule(s) · ${s.inline_rules} inline rule(s) analyzed`;setDashboardMetric(dShadow,s.potential_shadowed_or_redundant,true);setDashboardMetric(dDup,s.duplicate_groups,true);renderInlineDashboardSummary(s);
    dashLayer.textContent=(accessData?.root_layers||[]).join(', ')||'Resolved from package';
    lastReadLabel=new Date().toLocaleTimeString();
+   autoLoaded.delete('access'); autoLoaded.delete('browser');
    dashboardSource={live:true, package:accessData&&accessData.package};
    renderDashSource();refreshAuroraDashboard();
    dashFindings.innerHTML=`<table style="min-width:650px"><thead><tr><th>Finding</th><th>Count</th><th>Meaning</th></tr></thead><tbody>
