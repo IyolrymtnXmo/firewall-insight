@@ -1476,31 +1476,90 @@ function renderTopoPreview(){
   }
   if(empty) empty.hidden = true;
 
+  /* One user unit is one pixel. The viewBox used to be a fixed 900x220 inside
+     an element that measured 1301x299, so the drawing was scaled to 1.359 and
+     centred - and the second row of labels, at y=246, landed 35px below the
+     bottom edge of a panel with overflow:hidden. Measuring the panel is the
+     same thing topoVB() does for the full map. */
+  const box = svg.getBoundingClientRect();
+  const W = Math.max(420, Math.round(box.width)  || 900);
+  const H = Math.max(200, Math.round(box.height) || 300);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
   // Devices first, then subnets: the preview is about the estate, and a map
   // that drops the gateways to fit ten subnets previews nothing useful.
   const rank = n => (n.role === 'management' ? 0 : n.kind === 'device' ? 1 : 2);
   const nodes = all.slice().sort((x,y) => rank(x) - rank(y)).slice(0, 10);
   const keep = new Map(nodes.map(n => [n.id, n]));
 
-  const links = (Array.isArray(g.links) ? g.links : [])
-    .map(l => ({from: (l.a && l.a.id) || l.from, to: (l.b && l.b.id) || l.to, kind: l.kind}))
-    .filter(l => keep.has(l.from) && keep.has(l.to));
+  /* One line per pair. A cluster and its members produce the same pair several
+     times over, and eight coincident curves only look like a thicker curve
+     with rougher edges. A route beats a configured link when both exist,
+     because the route is the one that was read rather than declared. */
+  const seen = new Map();
+  (Array.isArray(g.links) ? g.links : []).forEach(l => {
+    const from = (l.a && l.a.id) || l.from, to = (l.b && l.b.id) || l.to;
+    if(!keep.has(from) || !keep.has(to) || from === to) return;
+    const key = from < to ? from + '\u0000' + to : to + '\u0000' + from;
+    const prev = seen.get(key);
+    if(!prev || (l.kind === 'route' && prev.kind !== 'route'))
+      seen.set(key, {from, to, kind: l.kind});
+  });
+  const links = [...seen.values()];
 
-  const cols = Math.min(5, Math.max(2, Math.ceil(nodes.length / 2)));
-  const span = 700 / Math.max(1, cols - 1);
+  /* Room for what is drawn around a node, not just the node: the ring is r=17,
+     the hover halo r=30, and the label sits 32 below the centre in a 10.5px
+     face. Anything less and the panel clips its own contents again. */
+  const R = 17, HALO = 30, LABEL_DROP = 32, LABEL_H = 12;
+  const PAD_T = HALO + 16;                       // the legend lives up here
+  const PAD_B = LABEL_DROP + LABEL_H + 8;
+  const rows  = nodes.length > 5 ? 2 : 1;
+  const cols  = Math.min(5, Math.max(2, Math.ceil(nodes.length / rows)));
+
+  /* Half a label of clearance at each end, so the first and last names are not
+     sliced off by the panel edge. */
+  const PAD_X = Math.min(120, Math.max(64, Math.round(W / (cols * 2.4))));
+  const span  = cols > 1 ? (W - PAD_X * 2) / (cols - 1) : 0;
+  const y0    = rows === 1 ? Math.round((H - LABEL_DROP) / 2) : PAD_T;
+  const y1    = H - PAD_B;
+  const midY  = rows === 1 ? y0 : (y0 + y1) / 2;
+
   const pos = {};
   nodes.forEach((n,i) => {
     const c = i % cols, r = Math.floor(i / cols);
-    pos[n.id] = {x: 100 + c * span, y: r === 0 ? 96 : 214};
+    pos[n.id] = {x: Math.round(PAD_X + c * span), y: r === 0 ? y0 : y1};
   });
-  const curve = (a,b) => { const m = (a.x + b.x) / 2;
-    return `M${a.x} ${a.y} C${m} ${a.y} ${m} ${b.y} ${b.x} ${b.y}`; };
+
+  /* Every node sits on one of two rows, so the band between them holds
+     nothing. Leave vertically, travel there, arrive vertically: a curve whose
+     tangent at each end is vertical cannot graze the node standing next to the
+     one it started from, and a curve that stays in the corridor cannot cross a
+     node, because there is nothing in the corridor to cross.
+
+     Both ends stop at the ring rather than the centre, so no line is drawn
+     underneath a glyph. */
+  const route = (a, b) => {
+    if(a.y === b.y){
+      const dir = a.y <= midY ? 1 : -1;                 // bow into the corridor
+      const reach = Math.max(28, Math.min(64, Math.abs(midY - a.y) || 46));
+      const bow = a.y + dir * reach;
+      return `M${a.x} ${a.y + dir*R} C${a.x} ${bow} ${b.x} ${bow} ${b.x} ${b.y + dir*R}`;
+    }
+    const [t, u] = a.y < b.y ? [a, b] : [b, a];
+    return `M${t.x} ${t.y + R} C${t.x} ${midY} ${u.x} ${midY} ${u.x} ${u.y - R}`;
+  };
+
+  /* A name wider than the space between two columns overlaps its neighbour, so
+     the budget is the column gap and not a fixed character count. IBM Plex
+     Mono at 10.5px runs about 6.3px per character. */
+  const budget = Math.max(8, Math.floor(((span || W) - 14) / 6.3));
+  const clip = t => t.length > budget ? t.slice(0, budget - 1) + '\u2026' : t;
 
   svg.innerHTML =
     links.map(l => {
       const a = pos[l.from], b = pos[l.to];
       if(!a || !b) return '';
-      return `<path class="tp-link ${l.kind === 'route' ? 'flow' : 'up'}" d="${curve(a,b)}"/>`;
+      return `<path class="tp-link ${l.kind === 'route' ? 'flow' : 'up'}" d="${route(a,b)}"/>`;
     }).join('') +
     nodes.map(n => {
       const p = pos[n.id];
@@ -1508,11 +1567,11 @@ function renderTopoPreview(){
       const glyph = TP_GLYPH[n.role] || TP_GLYPH[n.kind] || 'ic-fw';
       const label = String(n.name || n.id);
       return `<g class="tp-node ${cls}">
-        <title>${esc(label)}${n.sub ? ' — ' + esc(n.sub) : ''}</title>
-        <circle class="halo" cx="${p.x}" cy="${p.y}" r="30"/>
-        <circle class="ring" cx="${p.x}" cy="${p.y}" r="17"/>
+        <title>${esc(label)}${n.sub ? ' \u2014 ' + esc(n.sub) : ''}</title>
+        <circle class="halo" cx="${p.x}" cy="${p.y}" r="${HALO}"/>
+        <circle class="ring" cx="${p.x}" cy="${p.y}" r="${R}"/>
         <g class="gl" transform="translate(${p.x-8} ${p.y-8}) scale(0.667)"><use href="#${glyph}"/></g>
-        <text x="${p.x}" y="${p.y+32}">${esc(label.length > 17 ? label.slice(0,16) + '…' : label)}</text>
+        <text x="${p.x}" y="${p.y+LABEL_DROP}">${esc(clip(label))}</text>
       </g>`;
     }).join('');
 }
@@ -1723,7 +1782,15 @@ function renderHitTrend(rows){
     return;
   }
 
-  const W=320,H=158,pl=40,pr=12,pt=14,pb=26;
+  /* One unit is one pixel, so the drawing fills the panel instead of being
+     letterboxed inside it. A fixed 320x158 viewBox in a `xMidYMid meet` svg
+     scales to the smaller of the two ratios: measured at 1600x900 the panel
+     was 406px wide, the chart drew 320 of them, and 43px down each side was
+     blank. This is the same reasoning as topoVB(), and it means the line gets
+     wider on a wider screen rather than staying a stamp in the middle. */
+  const pl=40,pr=12,pt=14,pb=26;
+  const W=Math.max(280, Math.round(box.clientWidth  || 0) - 16 || 320);
+  const H=Math.max(140, Math.round(box.clientHeight || 0) - 14 || 158);
   const vals=pts.map(p=>p.total_hits);
   const lo=Math.min(...vals), hi=Math.max(...vals);
   const pad=(hi-lo)||Math.max(1,hi*0.1);
@@ -3775,6 +3842,18 @@ window.addEventListener('resize', () => {
   }, 180);
 });
 
+/* The preview measures its panel too, and the panel is a grid cell that moves
+   with the window and with the sidebar rail. Redrawing it costs one pass over
+   at most ten nodes, so it is cheap enough to do on the same trailing edge. */
+let previewResizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(previewResizeTimer);
+  previewResizeTimer = setTimeout(() => {
+    try{ renderTopoPreview(); }catch(_){}
+    try{ if(typeof trendCache !== 'undefined' && trendCache) renderHitTrend(trendCache); }catch(_){}
+  }, 180);
+});
+
 try{
   if(localStorage.getItem('fw-topo-mode') === 'cards') TOPO.mode = 'cards';
   if(localStorage.getItem('fw-topo-legend') === '0') TOPO.legend = false;
@@ -3972,9 +4051,19 @@ function diffRows(rows,cols){
 }
 
 function diffSection(title, hint, tone, rows, cols){
-  return `<div class="card" style="margin:14px 0">
-    <div class="section-title"><h3><span class="pill ${tone}">${esc(rows.length)}</span> ${esc(title)}</h3>
-      <span class="hint">${esc(hint)}</span></div>
+  /* `hint-sub` rather than `hint`: what is passed here is a sentence
+     explaining the heading, so it belongs under the heading. The plain `hint`
+     class still means a short label pinned to the right of the row, which is
+     what the compliance page passes. */
+  /* Nine sections print on every comparison and most of them report nothing.
+     "No rules were added" is a result and stays on the page - but it does not
+     deserve the same weight as the one section that found something, so an
+     empty one steps back and lets the eye land on the section with a count. */
+  const quiet = rows.length === 0 ? ' card-quiet' : '';
+  return `<div class="card${quiet}" style="margin:14px 0">
+    <div class="section-title"><div>
+      <h3><span class="pill ${tone}">${esc(rows.length)}</span> ${esc(title)}</h3>
+      <p class="hint-sub">${esc(hint)}</p></div></div>
     ${diffRows(rows,cols)}
   </div>`;
 }
@@ -4190,8 +4279,8 @@ async function runCompliance(ev){
     // BELOW the results and clearly separated, so a clean run never reads as
     // "the standard is satisfied".
     const notChecked=(d.not_checkable||[]).length?`<div class="card" style="margin-top:18px;border-color:rgba(246,196,83,.46)">
-      <div class="section-title"><h3>Not checked by this tool</h3>
-        <span class="hint">Requirements this profile declares out of scope for a configuration reader</span></div>
+      <div class="section-title"><div><h3>Not checked by this tool</h3>
+        <p class="hint-sub">Requirements this profile declares out of scope for a configuration reader</p></div></div>
       <div class="table-wrap" style="margin-top:10px"><table>
         <thead><tr><th>Requirement</th><th>Clause</th><th>Why not</th></tr></thead>
         <tbody>${d.not_checkable.map(n=>`<tr><td>${esc(n.requirement||'')}</td><td>${esc(n.clause||'')}</td><td>${esc(n.why||'')}</td></tr>`).join('')}</tbody>

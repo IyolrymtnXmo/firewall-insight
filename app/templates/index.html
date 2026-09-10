@@ -295,7 +295,11 @@
             <span><i style="background:var(--accent-2)"></i>Route (read at one instant)</span>
             <span><i style="background:var(--accent)"></i>Configured link</span>
             </div>
-            <svg id="topoPreview" viewBox="0 0 900 220" preserveAspectRatio="xMidYMid meet" aria-label="Gateway topology preview"></svg>
+            <!-- No viewBox here on purpose: renderTopoPreview() sets one from the panel's
+                 own measurements, and a size written in two places is a size that will
+                 disagree with itself. This one said 900x220 while the panel was
+                 1301x299, and the second row of the map fell off the bottom. -->
+            <svg id="topoPreview" preserveAspectRatio="xMidYMid meet" aria-label="Gateway topology preview"></svg>
             <div class="tp-empty" id="topoPreviewEmpty">
             <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-map"/></svg>
 The map is drawn from gateways the Management API returns.

@@ -25,29 +25,47 @@ router = APIRouter(prefix="/api/credentials", tags=["credentials"])
 
 # ── request / response models ───────────────────────────────────────
 
+# Every field defaults to None, and None means exactly one thing: "the client
+# did not mention this". No value-typed default appears here, because a
+# value-typed default cannot say that - it arrives at the endpoint looking
+# identical to a deliberate choice and is then written over what was saved.
+#
+# This cost us the same bug twice.
+#
+#   v4.31  `password: str = ""`. The Settings form leaves the password blank to
+#          mean "keep the saved one" and drops the key; Pydantic put "" back,
+#          and pressing Save after changing a timeout wiped the secret.
+#
+#   v4.37  `mgmt: str = ""`. The sign-in form's "use these for reads too" box
+#          posts a two-field save. `mgmt` was absent, Pydantic put "" back, and
+#          the empty string was written to the store and to settings. Because
+#          `auth.configured()` is `mgmt and user`, the application then decided
+#          nothing was configured, entered SETUP MODE, and stopped asking
+#          anyone to sign in - while the header still read "Connected".
+#          Clearing a cookie produced no sign-in form because there was no
+#          longer, as far as it knew, anybody to check against.
+#
+# So the rule is now the model's, not each field's: absent is absent. What a
+# save actually persists is assembled by _record() below.
 class CheckPointCreds(BaseModel):
-    mgmt: str = ""
-    user: str = ""
-    # None means "the client did not supply a password", which is NOT the same
-    # as "the password is empty". The Settings form leaves the field blank to
-    # mean "keep the saved one", so a `str = ""` default silently overwrote the
-    # stored secret with "" on every save. See _resolve_password().
+    mgmt: str | None = None
+    user: str | None = None
     password: str | None = None
-    domain: str = ""
-    verify_ssl: bool = False
-    timeout: float = 90.0
-    min_request_interval: float = 0.55
-    rate_limit_retries: int = 4
-    rate_limit_base_delay: float = 2.0
-    cache_ttl: int = 300
+    domain: str | None = None
+    verify_ssl: bool | None = None
+    timeout: float | None = None
+    min_request_interval: float | None = None
+    rate_limit_retries: int | None = None
+    rate_limit_base_delay: float | None = None
+    cache_ttl: int | None = None
 
 class GaiaCreds(BaseModel):
-    enabled: bool = False
-    user: str = ""
+    enabled: bool | None = None
+    user: str | None = None
     password: str | None = None
-    hosts: str = ""
-    verify_ssl: bool = False
-    timeout: float = 30.0
+    hosts: str | None = None
+    verify_ssl: bool | None = None
+    timeout: float | None = None
 
 class SaveRequest(BaseModel):
     type: str          # "checkpoint" | "gaia"
@@ -65,34 +83,60 @@ class DeleteRequest(BaseModel):
 
 # ── helpers ─────────────────────────────────────────────────────────
 
-def _resolve_password(cred_type: str, data: dict[str, Any]) -> dict[str, Any]:
-    """Carry the stored password forward when the client did not supply one.
+# The values a record falls back to when neither the client nor the store has
+# an opinion. They live here rather than on the model so that "what this field
+# defaults to" and "did the client send this field" stop being the same
+# question - which is what made the two bugs above possible.
+DEFAULTS: dict[str, dict[str, Any]] = {
+    "checkpoint": {"mgmt": "", "user": "", "password": "", "domain": "",
+                   "verify_ssl": False, "timeout": 90.0,
+                   "min_request_interval": 0.55, "rate_limit_retries": 4,
+                   "rate_limit_base_delay": 2.0, "cache_ttl": 300},
+    "gaia": {"enabled": False, "user": "", "password": "", "hosts": "",
+             "verify_ssl": False, "timeout": 30.0},
+}
 
-    The Settings form deliberately sends no password when the field is left
-    blank - that is how the UI says "keep the one you already have". Before
-    this, the request model defaulted the field to ``""``, so the absent key
-    arrived as an empty string and was written straight over the saved secret:
-    changing a timeout and pressing Save wiped the Check Point password, both
-    on disk and in the running ``settings``, and every subsequent API call
-    failed to log in.
+# Fields where an empty string cannot be a setting anybody chose. There is no
+# such thing as a Management Server with no address or an account with no name,
+# so a blank one can only mean the value went missing on the way here.
+# Credentials are cleared through DELETE, which has its own explicit path.
+NEVER_BLANK = ("mgmt", "user")
 
-    ``None`` therefore means "not supplied" and resolves to the stored value.
-    An explicit empty string is still honoured, so the value stays clearable.
+
+def _supplied(data: dict[str, Any]) -> dict[str, Any]:
+    """Only the keys that carry a real answer.
+
+    Drops ``None`` (not supplied) and drops a blank where blank is meaningless
+    (see NEVER_BLANK). Everything else - including an empty password - is a
+    value the caller meant, and is kept so it stays clearable.
     """
-    data = dict(data)
-    if data.get("password") is None:
-        stored = credential_store.load(cred_type) or {}
-        data["password"] = stored.get("password", "")
-    return data
+    return {k: v for k, v in data.items()
+            if v is not None and not (k in NEVER_BLANK and v == "")}
+
+
+def _record(cred_type: str, supplied: dict[str, Any]) -> dict[str, Any]:
+    """What to persist: defaults, overlaid with the store, overlaid with *supplied*.
+
+    A save carries forward everything the client did not mention. A form that
+    sends two fields therefore changes two fields, which is the whole point:
+    before this, it replaced the record.
+    """
+    record = dict(DEFAULTS.get(cred_type, {}))
+    record.update(_supplied(credential_store.load(cred_type) or {}))
+    record.update(_supplied(supplied))
+    return record
 
 
 def _apply_checkpoint(data: dict[str, Any]) -> None:
     """Push decrypted Check Point values into the running settings.
 
-    A ``None`` never reaches ``settings``: an absent key and an explicit
-    ``None`` both mean "leave the running value alone".
+    A missing value never reaches ``settings``: an absent key, an explicit
+    ``None``, and a blank where blank is meaningless all mean "leave the
+    running value alone". That last one matters on startup - a store written by
+    an older build still holds ``mgmt: ""``, and applying it would blank the
+    address that came from .env and switch authentication off again.
     """
-    data = {k: v for k, v in data.items() if v is not None}
+    data = _supplied(data)
     settings.checkpoint_mgmt = data.get("mgmt", settings.checkpoint_mgmt)
     settings.checkpoint_user = data.get("user", settings.checkpoint_user)
     settings.checkpoint_password = data.get("password", settings.checkpoint_password)
@@ -107,7 +151,7 @@ def _apply_checkpoint(data: dict[str, Any]) -> None:
 
 def _apply_gaia(data: dict[str, Any]) -> None:
     """Push decrypted Gaia values into the running settings."""
-    data = {k: v for k, v in data.items() if v is not None}
+    data = _supplied(data)
     settings.gaia_enabled = data.get("enabled", settings.gaia_enabled)
     settings.gaia_user = data.get("user", settings.gaia_user)
     settings.gaia_password = data.get("password", settings.gaia_password)
@@ -164,11 +208,18 @@ async def credential_status():
     """
     cp_data = credential_store.load("checkpoint")
     gaia_data = credential_store.load("gaia")
+    # The Settings form is populated from this, so report the address and
+    # account actually in use rather than a blank. A record written before the
+    # v4.38 fix can hold `mgmt: ""`; that value is now ignored everywhere else,
+    # and showing it here would invite the operator to press Save on a form
+    # that has lost the field.
+    effective_mgmt = (cp_data.get("mgmt") if cp_data else "") or settings.checkpoint_mgmt
+    effective_user = (cp_data.get("user") if cp_data else "") or settings.checkpoint_user
     return {
         "checkpoint": {
             "configured": cp_data is not None,
-            "mgmt": cp_data.get("mgmt", "") if cp_data else "",
-            "user": cp_data.get("user", "") if cp_data else "",
+            "mgmt": effective_mgmt if cp_data else "",
+            "user": effective_user if cp_data else "",
             "domain": cp_data.get("domain", "") if cp_data else "",
             "verify_ssl": cp_data.get("verify_ssl", False) if cp_data else False,
             "timeout": cp_data.get("timeout", 90.0) if cp_data else 90.0,
@@ -195,7 +246,7 @@ async def save_credentials(req: SaveRequest):
     if req.type == "checkpoint":
         if not req.checkpoint:
             raise HTTPException(400, "checkpoint data required")
-        data = _resolve_password("checkpoint", req.checkpoint.model_dump())
+        data = _record("checkpoint", req.checkpoint.model_dump())
         credential_store.save("checkpoint", data)
         _apply_checkpoint(data)
         # Re-initialize the client to apply new IP, timeout and SSL settings
@@ -215,7 +266,7 @@ async def save_credentials(req: SaveRequest):
     elif req.type == "gaia":
         if not req.gaia:
             raise HTTPException(400, "gaia data required")
-        data = _resolve_password("gaia", req.gaia.model_dump())
+        data = _record("gaia", req.gaia.model_dump())
         credential_store.save("gaia", data)
         _apply_gaia(data)
         return {"status": "saved", "type": "gaia"}
@@ -233,17 +284,17 @@ async def test_credentials(req: TestRequest):
         if not req.checkpoint:
             raise HTTPException(400, "checkpoint data required")
         d = req.checkpoint.model_dump()
-        base = d.get("mgmt", "").rstrip("/")
+        base = (d.get("mgmt") or "").rstrip("/")
         stored_cp = credential_store.load("checkpoint") or {}
         same_target = bool(base) and base == str(stored_cp.get("mgmt", "")).rstrip("/")
         password = _password_for_test("checkpoint", d.get("password"), same_target)
-        payload = {"user": d.get("user", ""), "password": password}
+        payload = {"user": d.get("user") or "", "password": password}
         if d.get("domain"):
             payload["domain"] = d["domain"]
         try:
             async with httpx.AsyncClient(
-                verify=d.get("verify_ssl", False),
-                timeout=d.get("timeout", 30),
+                verify=bool(d.get("verify_ssl")),
+                timeout=d.get("timeout") or 30,
             ) as client:
                 r = await client.post(f"{base}/web_api/login", json=payload)
                 try:
@@ -286,7 +337,7 @@ async def test_credentials(req: TestRequest):
         if not req.gaia:
             raise HTTPException(400, "gaia data required")
         d = req.gaia.model_dump()
-        hosts = [h.strip() for h in d.get("hosts", "").split(",") if h.strip()]
+        hosts = [h.strip() for h in (d.get("hosts") or "").split(",") if h.strip()]
         if not hosts:
             return {"success": False, "message": "No gateway hosts specified"}
         stored_gaia = credential_store.load("gaia") or {}
@@ -298,11 +349,11 @@ async def test_credentials(req: TestRequest):
             url = f"https://{host}/gaia_api/login"
             try:
                 async with httpx.AsyncClient(
-                    verify=d.get("verify_ssl", False),
-                    timeout=d.get("timeout", 15),
+                    verify=bool(d.get("verify_ssl")),
+                    timeout=d.get("timeout") or 15,
                 ) as client:
                     r = await client.post(url, json={
-                        "user": d.get("user", ""),
+                        "user": d.get("user") or "",
                         "password": gaia_password,
                     })
                     try:
