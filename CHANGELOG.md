@@ -4,6 +4,75 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.32.0 — a review that runs without anybody watching (automation, phase A)
+
+The first piece of the automation work, and the one everything else stands on.
+No new analysis: a review run composes the same service functions the pages
+already call, in the same order, through the same paced client, so it inherits
+their rate limiting, their caching and their tri-state honesty.
+
+### The runner does not know how it was triggered
+
+`app/jobs/runner.run_review()` takes a Management API client and a package.
+Three different things call it, and one more will:
+
+    a button in the UI          -> app/api/jobs.py            (next)
+    a schedule inside the app   -> app/jobs/schedule.py       (phase B)
+    Task Scheduler, cron, a
+    Docker sidecar, a person    -> tools/run_review.py        (now)
+
+That shape is the answer to "I am not sure yet where this will run — build it
+so it can be moved". Deciding later that the schedule belongs outside the
+application means pointing Task Scheduler at the CLI and turning the in-app one
+off. Nothing in the runner changes.
+
+    python -m tools.run_review --package External-FW --profile nist-800-41-baseline
+
+One run reads the package, analyses access and NAT, writes the snapshot, diffs
+it against the previous snapshot of the same package, evaluates a compliance
+profile, reads gateway state, and stores the lot in `runs/`. Measured against
+the lab: 80 seconds, six sections, from a cold start with no server running.
+
+### A section that could not be read is never recorded as having found nothing
+
+Nobody is watching when this runs, which makes it the place where a confident
+wrong answer does the most damage. Each section carries its own `ok` and
+`error`; the run is `complete: false` while any requested section failed. Gaia
+being unreachable produces `gateways.ok = false` and **no data section at all**
+— not an empty finding list that reads like a clean bill of health.
+
+### "Changed" and "I could not tell" are different signals
+
+The first live run reported *CHANGED — 0 added, 0 removed, 0 modified, 0
+moved*, which is what the Policy Diff page has been showing all along. It was
+true and useless: `identical` is false when any of **nine** counters moves, and
+the summary printed four of them. The one that had actually moved was
+`scope_unverifiable = 1` — one rule whose reach could not be decided in one of
+the two snapshots.
+
+That is not a change. It is a reason to look. So the exit codes separate them:
+
+    0   nothing changed, nothing left undecided
+    1   something changed, or a compliance check failed
+    2   a section did not read, or the comparison contains scope it could not
+        verify
+    3   the run could not start
+
+A daily job that cries "changed" every morning is ignored by the second week,
+and this lab produces `scope_unverifiable = 1` on every single comparison.
+
+### Not in this release
+
+No scheduling, no email, no PDF, no UI. Phase B (schedule) changes the
+application's stated safety promise — *"No API calls are made automatically"* —
+and that is a decision to take deliberately, not a side effect. Phase D (email
+and the executive PDF) sends policy data out of the building and is blocked on
+closing RISK-01, the missing authentication.
+
+770 pass, up from 749.
+
+---
+
 ## v4.31.4 — Selected Context stops saying "Not tested"
 
 The Dashboard card reported `Management API: Not tested` next to a green

@@ -8,8 +8,8 @@
 >    ทั้งสามอยู่ใน `api/credentials.py` ไฟล์เดียว และเขียนลง credential ที่
 >    เข้ารหัสไว้ในเครื่อง — ไม่เคยแตะ policy บน firewall
 >    (`tests/test_v413_structure.py` บังคับขอบเขตนี้ทั้งสองทาง)
-> 2. **จำนวนเทสต์:** 749 passed (ไม่ใช่ 687) + Node harness รัน renderer 51 ตัว
-> 3. **`APP_VERSION` = 4.31.4** (ไม่ใช่ 4.29.0)
+> 2. **จำนวนเทสต์:** 770 passed (ไม่ใช่ 687) + Node harness รัน renderer 51 ตัว
+> 3. **`APP_VERSION` = 4.32.0** (ไม่ใช่ 4.29.0)
 >
 > รายละเอียดอยู่ใน `CHANGELOG.md` หัวข้อ v4.31.0
 
