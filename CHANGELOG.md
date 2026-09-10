@@ -4,6 +4,63 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.32.1 — the review, as a document (automation, phase D — PDF only)
+
+A stored run renders to a PDF. Nothing is emailed and nothing leaves the
+machine: delivery is deliberately not in this release, because sending policy
+data outward is blocked on RISK-01, the missing authentication. The file is
+written where you ask for it and that is all.
+
+    python -m tools.run_review --package External-FW         --profile nist-800-41-baseline --pdf review.pdf --pdf-detail summary
+
+### It answers an executive's questions, in their order
+
+Where does this stand · what needs a decision · what changed · **what this does
+not cover**. That last section is the one most compliance reports omit, and it
+is not a caveat for safety: this tool reads configuration and cannot see whether
+a change went through an approval workflow or whether anybody reads the logs.
+The profiles already say so in `not_checkable`, and the report prints it, because
+a document to a decision-maker that hides its own blind spots converts "we did
+not look" into "nothing was found".
+
+Failed checks are ordered by severity, each with the clause it came from, or
+labelled a house rule when it has none.
+
+### The detail level is a disclosure boundary, not a verbosity dial
+
+    summary    counts, severities, what changed. No rule identifiers.  (default)
+    findings   adds rule numbers and names, so an engineer can act on it.
+    full       adds source, destination and service of each offending rule.
+
+`summary` is the default because this is the file that will be attached to an
+email once delivery exists, and the safe choice should be the one you get
+without asking for it. A test asserts that a rule name or an address cannot
+reach the summary level, and an unknown level raises rather than silently
+downgrading.
+
+### It does not round "could not be compared" down to "unchanged"
+
+The first draft's headline read *"The policy has not changed since the previous
+run"* while one rule's reach could not be resolved in one of the two snapshots.
+That is the same flattening the CLI summary had, in the sentence most likely to
+be quoted in a meeting. It now reads: *"No rule changed since the previous run,
+though 1 could not be compared and so cannot be reported as unchanged."*
+
+An unreachable gateway prints "this is not a statement that the gateways are
+healthy". An unevaluated profile prints why, and says nothing below is a clean
+result. An incomplete run says so on the first page, in red, with the sentence
+"their absence is not evidence that they are clean — it means nobody looked".
+
+### Dependency
+
+`reportlab` — pure Python, no system libraries, which is why it was chosen over
+the HTML-to-PDF engines that need GTK on Windows.
+
+789 pass, up from 770. Verified end to end against the lab: 80.6s, six sections,
+a 5KB summary PDF.
+
+---
+
 ## v4.32.0 — a review that runs without anybody watching (automation, phase A)
 
 The first piece of the automation work, and the one everything else stands on.

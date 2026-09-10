@@ -60,6 +60,13 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true",
                    help="print the whole run as JSON instead of a summary")
     p.add_argument("--quiet", action="store_true", help="print nothing on success")
+    p.add_argument("--pdf", metavar="PATH", default=None,
+                   help="also write a PDF report to PATH")
+    p.add_argument("--pdf-detail", default="summary",
+                   choices=("summary", "findings", "full"),
+                   help="how much of the policy the PDF may contain "
+                        "(default: summary - counts and severities, no rule "
+                        "identifiers, because this is the file that gets emailed)")
     return p
 
 
@@ -192,6 +199,14 @@ async def _run(args) -> int:
         await cp.close()
 
     run["id"] = store.save_run(run)
+
+    if args.pdf:
+        from app.jobs.report import build_report
+        out = Path(args.pdf)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(build_report(run, args.pdf_detail))
+        if not args.quiet:
+            print(f"pdf            {out} ({args.pdf_detail})")
 
     if args.json:
         print(json.dumps(run, indent=2, ensure_ascii=False))
