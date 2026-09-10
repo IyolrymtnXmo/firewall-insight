@@ -70,6 +70,30 @@ def app_source() -> str:
 
 import pytest  # noqa: E402
 
+from app import credential_store  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def never_the_operator_s_credential_file(tmp_path, monkeypatch):
+    """No test may read or write the real credentials.enc.
+
+    Written after a probe did exactly that. While debugging v4.38 a throwaway
+    test POSTed to /api/credentials without the temp-file fixture that the
+    credential tests use, and the endpoint did what it is supposed to do: it
+    encrypted the probe's placeholder values over the operator's saved
+    Management Server address and password. The file is gitignored, so there
+    was nothing to restore it from.
+
+    Each credential test pointing the store at its own tmp_path was never
+    enough, because it depends on every future test remembering to. This does
+    it for all of them, including the ones nobody has written yet.
+
+    Tests that want a store keep declaring their own fixture; theirs runs
+    after this one and simply points at a different temporary path.
+    """
+    monkeypatch.setattr(credential_store, "KEY_FILE", tmp_path / ".credential_key")
+    monkeypatch.setattr(credential_store, "ENC_FILE", tmp_path / "credentials.enc")
+
 
 @pytest.fixture(autouse=True)
 def signed_in(request, monkeypatch):
