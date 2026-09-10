@@ -29,6 +29,11 @@ ROOT = Path(__file__).resolve().parent.parent
 INDEX = (ROOT / "app" / "templates" / "index.html").read_text(encoding="utf-8")
 APPJS = (ROOT / "app" / "static" / "js" / "app.js").read_text(encoding="utf-8")
 
+# Splitting source on newline-anchored markers; named so the literals do not
+# have to survive every layer of quoting between here and the file.
+NL = chr(10)
+BLANK2 = NL + NL
+
 
 class TestTheTabHasAnIcon:
     def test_an_icon_is_declared(self):
@@ -115,3 +120,67 @@ class TestTheConnectionBadgeIsOwnedByWhatProvesIt:
         assert guard in before, (
             "the Gaia branch can reach setConn(), so a gateway result would "
             "rewrite the Management API badge")
+
+
+class TestTheBadgeReportsARealVersion:
+    """`Connected · API ?` - the version came from a key that is never sent.
+
+    A Check Point login returns `api-server-version` (older builds:
+    `web-api-version`), which `api/meta.py` has always read. The credential
+    test endpoint read `api-version` instead, so it always produced an empty
+    string.
+
+    Nothing revealed it until v4.31 put the value in the header badge, at which
+    point every successful test from Settings rendered "Connected · API ?".
+    Checked against the lab afterwards: the endpoint returns "2.0.1".
+    """
+
+    def test_the_endpoint_reads_the_keys_check_point_sends(self):
+        src = (ROOT / "app" / "api" / "credentials.py").read_text(encoding="utf-8")
+        block = src.split("api_version = ", 1)[1].split(BLANK2, 1)[0]
+        assert "api-server-version" in block, (
+            "the endpoint does not read the key a Check Point login returns")
+
+    def test_it_reads_the_same_keys_as_the_other_connection_test(self):
+        """Two endpoints answering the same question must not disagree."""
+        creds = (ROOT / "app" / "api" / "credentials.py").read_text(encoding="utf-8")
+        meta = (ROOT / "app" / "api" / "meta.py").read_text(encoding="utf-8")
+        for key in ("api-server-version", "web-api-version"):
+            assert key in meta, f"meta.py no longer reads {key}"
+            assert key in creds, f"credentials.py does not read {key}"
+
+
+class TestConnectingLeavesTheApplicationUsable:
+    """A proven connection must not be followed by an empty selector.
+
+    `loadMetadata()` fills the package and layer lists and was reachable from
+    exactly one unlabelled icon button in the header. Connecting and then
+    pressing Analyze produced "pick a package in the selector at the top" -
+    pointing at a selector with nothing in it.
+    """
+
+    def test_both_connection_tests_load_the_metadata(self):
+        for fn in ("async function testConn(ev)", "async function testCred(type)"):
+            body = APPJS.split(fn, 1)[1].split(NL + "async function", 1)[0]
+            assert "loadMetadata()" in body, (
+                f"{fn.split()[-1]} proves the connection and leaves the selectors empty")
+
+    def test_metadata_is_still_not_loaded_on_page_load(self):
+        """The promise in the status line is about page load, and it holds.
+
+        Every loadMetadata() caller is a button somebody pressed, so "no API
+        calls are made automatically" is still true.
+        """
+        init = APPJS.split("window.addEventListener('DOMContentLoaded'", 1)[1]
+        init = init.split(NL + "});", 1)[0]
+        assert "loadMetadata" not in init, (
+            "metadata is loaded on page load, which the status line denies")
+        assert "No API calls are made automatically" in init
+
+    def test_the_guard_can_tell_the_two_problems_apart(self):
+        """"Not picked yet" and "there are none" need different answers."""
+        body = APPJS.split("async function dashboardRefresh()", 1)[1]
+        body = body.split(NL + "}", 1)[0]
+        assert "ensurePackages()" in body
+        assert "No packages to select" in body, (
+            "an empty list is still reported as an unmade selection")

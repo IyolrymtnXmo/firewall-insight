@@ -253,7 +253,13 @@ async def test_credentials(req: TestRequest):
                 if r.is_error:
                     return {"success": False, "message": body.get("message", str(body))}
                 sid = body.get("sid")
-                api_version = body.get("api-version", "")
+                # Same keys as api/meta.py: a Check Point login returns
+                # `api-server-version`, not `api-version`. Reading the wrong
+                # one produced an empty string, which the header rendered as
+                # "Connected - API ?".
+                api_version = (body.get("api-server-version")
+                               or body.get("web-api-version")
+                               or body.get("api-version", ""))
                 # logout immediately
                 if sid:
                     try:

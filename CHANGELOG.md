@@ -4,6 +4,54 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.31.1 — connecting now leaves the application usable
+
+Both defects were found the same way: by watching somebody use the thing.
+
+### Fixed — a successful connection led to a dead end
+
+`loadMetadata()` fills the Policy Package and Access Layer selectors, and it
+was reachable from exactly one unlabelled icon button in the header. So the
+first run of the application went: save credentials, press Test Connection, get
+a green "Connected to https://...", press **Analyze Selected Policies**, and be
+told to *"pick a package in the selector at the top"* — pointing at a selector
+with nothing in it. The only way forward was to guess that the circular-arrow
+icon meant "Refresh Metadata".
+
+Both connection tests — the header's plug button and the one on the Settings
+page — now load the metadata once they have proved the connection. The guard on
+Analyze also learned to tell the two problems apart: *you have not picked one*
+and *there are none to pick* are different situations and only the first was
+ever reported.
+
+This does not weaken the promise in the status line. "No API calls are made
+automatically" is about page load, and it still holds: every caller is a button
+somebody pressed, and a test asserts that nothing in the `DOMContentLoaded`
+handler reaches `loadMetadata`.
+
+### Fixed — "Connected · API ?"
+
+A Check Point login returns `api-server-version` (older builds:
+`web-api-version`). `api/meta.py` has always read those; the credential test
+endpoint read `api-version`, which is not a key Check Point sends, so it always
+returned an empty string.
+
+That was invisible for as long as the value was only used inside the Settings
+panel. v4.31 put it in the header badge, and every successful test from
+Settings rendered `Connected · API ?`. The endpoint returns `2.0.1` against the
+lab now, and a test pins the two endpoints to the same keys, since they answer
+the same question.
+
+### Tests
+
+736 pass, up from 731. The Node harness runs 66 checks, up from 64, and its
+`fetch` stub now returns a body `loadMetadata()` can consume — with `{}` the
+call ran, threw inside its own swallowed catch, and printed a stack trace that
+proved nothing. Both new checks were verified to fail against the defect they
+describe.
+
+---
+
 ## v4.31.0 — an audit of what v4.30 left behind
 
 v4.30 shipped the Aurora redesign and a Settings page over seven releases

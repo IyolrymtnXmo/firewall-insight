@@ -466,7 +466,20 @@ function goTo(id){
 }
 async function dashboardRefresh(){
   if(!P.value){
-    setStatus('Select a Policy Package on the Dashboard first.','warn');notify('warn','No Policy Package selected','Pick a package in the selector at the top, then run the analysis again.');
+    // The list may simply never have been fetched. Fetch it, then say which of
+    // the two problems this actually is - "you have not picked one" and "there
+    // are none to pick" need different answers, and the old message only ever
+    // gave the first one.
+    const have = await ensurePackages();
+    if(have){
+      setStatus('Select a Policy Package on the Dashboard first.','warn');
+      notify('warn','No Policy Package selected',
+        'The package list is loaded. Pick one in the selector at the top, then run the analysis again.');
+    } else {
+      setStatus('Not connected to the Management API yet.','warn');
+      notify('warn','No packages to select',
+        'The package list is empty. Test the connection from Settings or the plug button in the header, then try again.');
+    }
     return;
   }
   const btn=document.querySelector('#dashboard button.primary');
@@ -544,7 +557,14 @@ async function testConn(ev){
     blocking:false,
     button:ev&&ev.currentTarget,
     successMessage:null
-  }).catch(()=>{setConn('bad','Connection failed')});
+  })
+  .then(async d=>{
+    // Fill the selectors now. Proving the connection and then leaving the
+    // package list empty is the dead end this whole change is about.
+    if(d) await loadMetadata();
+    return d;
+  })
+  .catch(()=>{setConn('bad','Connection failed')});
 }
 async function loadMetadata(force=false,ev){
   return task('meta','Loading policy metadata',async()=>{
@@ -558,6 +578,22 @@ async function loadMetadata(force=false,ev){
     else notify('success','Metadata loaded',m);
     return d;
   },{blocking:false,button:ev&&ev.currentTarget,successMessage:null}).catch(()=>{});
+}
+
+/* Nothing may send somebody to an empty selector.
+ *
+ * The package and layer lists are filled only by loadMetadata(), which was
+ * reachable from one unlabelled icon button in the header. Connecting and then
+ * being told to "pick a package in the selector at the top" - with nothing in
+ * it - was the first wall a new user hit.
+ *
+ * This does not weaken "no API calls are made automatically": that promise is
+ * about page load, and every caller here is a button somebody pressed.
+ */
+async function ensurePackages(){
+  if(P && P.options && P.options.length > 1) return true;
+  await loadMetadata();
+  return !!(P && P.options && P.options.length > 1);
 }
 
 function isAlertMetric(label){
@@ -3725,8 +3761,15 @@ async function testCred(type) {
        API with its own credentials and does not speak for the Management
        connection, so only the Check Point test touches it. */
     if(type === 'checkpoint'){
-      if(d && d.success) setConn('ok','Connected \u00b7 API '+(d.api_version||'?'));
-      else setConn('bad','Connection failed');
+      if(d && d.success){
+        setConn('ok','Connected \u00b7 API '+(d.api_version||'?'));
+        // Same reason as the header button: a proven connection should
+        // leave the selectors usable. loadMetadata() swallows its own
+        // failures, so this cannot break the test result being rendered.
+        loadMetadata();
+      } else {
+        setConn('bad','Connection failed');
+      }
     }
 
     /* ---- Build structured per-host result ---- */

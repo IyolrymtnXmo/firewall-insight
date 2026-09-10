@@ -110,7 +110,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass   # Windows PowerShel
 pip install -r requirements.txt
 
 copy .env.example .env      # then edit .env with your Management details
-pytest -q                   # expect: 731 passed
+pytest -q                   # expect: 736 passed
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -136,8 +136,8 @@ docker compose up --build      # reads .env via env_file
 
 | Check | Expected |
 |---|---|
-| `pytest -q` | `731 passed` |
-| `GET /health` | `{"status":"ok","version":"4.31.0","mode":"read-only",...}` |
+| `pytest -q` | `736 passed` |
+| `GET /health` | `{"status":"ok","version":"4.31.1","mode":"read-only",...}` |
 | `GET /api/checkpoint/test` | `{"connected":true,"api_server_version":"...","read_only":true}` |
 | `GET /api/bootstrap` | lists your access layers and policy packages |
 

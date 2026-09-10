@@ -81,6 +81,13 @@ const el = (id = "") => {
   return node;
 };
 
+/* A body every reader can consume. loadMetadata() reaches straight for
+   d.layers.map, so an empty object made it throw inside its own swallowed
+   catch: the call happened, nothing was proved, and a stack trace was printed
+   on every run. */
+const EMPTY_BODY = { layers: [], packages: [], snapshots: [], baselines: [],
+                     profiles: [], nodes: [], edges: [], rules: [] };
+
 const document = {
   getElementById: (id) => el(id),
   querySelector: () => el(),
@@ -100,8 +107,8 @@ const context = {
      only json() made every call through api() throw before it ran. */
   fetch: () => Promise.resolve({
     ok: true, status: 200,
-    json: () => Promise.resolve({}),
-    text: () => Promise.resolve("{}"),
+    json: () => Promise.resolve(EMPTY_BODY),
+    text: () => Promise.resolve(JSON.stringify(EMPTY_BODY)),
   }),
   localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
   matchMedia: () => ({ matches: false, addEventListener() {} }),
@@ -515,7 +522,9 @@ const asyncChecks = [
       ok: true, status: 200,
       json: async () => ({ success: true, message: "Connected to x",
                            api_version: "2.0.1" }),
-      text: async () => "{}",
+      // testCred() now loads metadata too, so the body has to
+      // satisfy loadMetadata() as well as the test itself.
+      text: async () => JSON.stringify(EMPTY_BODY),
     });
     try { await context.testCred("checkpoint"); }
     finally { context.fetch = realFetch; }
@@ -530,7 +539,9 @@ const asyncChecks = [
     context.fetch = async () => ({
       ok: true, status: 200,
       json: async () => ({ success: false, message: "nope" }),
-      text: async () => "{}",
+      // testCred() now loads metadata too, so the body has to
+      // satisfy loadMetadata() as well as the test itself.
+      text: async () => JSON.stringify(EMPTY_BODY),
     });
     try { await context.testCred("checkpoint"); }
     finally { context.fetch = realFetch; }
@@ -547,12 +558,65 @@ const asyncChecks = [
     context.fetch = async () => ({
       ok: true, status: 200,
       json: async () => ({ success: true, message: "All gateways OK", details: [] }),
-      text: async () => "{}",
+      // testCred() now loads metadata too, so the body has to
+      // satisfy loadMetadata() as well as the test itself.
+      text: async () => JSON.stringify(EMPTY_BODY),
     });
     try { await context.testCred("gaia"); }
     finally { context.fetch = realFetch; }
     if (String(conn.innerHTML) !== "SENTINEL")
       throw new Error("a Gaia test rewrote the Management API badge");
+  }],
+
+  /* v4.31.1: connecting used to leave the selectors empty.
+
+     loadMetadata() was reachable from one unlabelled icon button, so a
+     successful connection was followed by "pick a package in the selector at
+     the top" - pointing at a selector with nothing in it. */
+
+  ["a successful Settings test fills the package selector", async () => {
+    const urls = [];
+    const realFetch = context.fetch;
+    context.fetch = async (u) => {
+      urls.push(String(u));
+      const body = { success: true, api_version: "2.0.1",
+                     layers: [{ name: "L" }], packages: [{ name: "P" }] };
+      return { ok: true, status: 200,
+               json: async () => body,
+               text: async () => JSON.stringify(body) };
+    };
+    try {
+      await context.testCred("checkpoint");
+      // loadMetadata() is deliberately not awaited there, so let it run.
+      await new Promise((r) => setTimeout(r, 0));
+    } finally { context.fetch = realFetch; }
+    if (!urls.some((u) => u.includes("/api/bootstrap")))
+      throw new Error("connecting did not load the packages, so the selector stays empty");
+  }],
+
+  ["ensurePackages() fetches only when the list is empty", async () => {
+    let calls = 0;
+    const realFetch = context.fetch;
+    context.fetch = async () => {
+      calls++;
+      const body = { layers: [{ name: "L" }], packages: [{ name: "P" }] };
+      return { ok: true, status: 200,
+               json: async () => body,
+               text: async () => JSON.stringify(body) };
+    };
+    try {
+      /* The stub does not turn innerHTML into options, so the return value
+         cannot be observed here. Whether it went to the network can. */
+      evalIn("P.options = [{}];");          // just the placeholder
+      await context.ensurePackages();
+      if (calls === 0)
+        throw new Error("an empty package list was not loaded");
+      const afterFirst = calls;
+      evalIn("P.options = [{},{}];");       // now something is in the list
+      await context.ensurePackages();
+      if (calls !== afterFirst)
+        throw new Error("ensurePackages() re-fetched a list that was already there");
+    } finally { context.fetch = realFetch; }
   }],
 
   ["loadCredentialStatus", () => context.loadCredentialStatus()],
