@@ -187,6 +187,11 @@ class TestConnectingLeavesTheApplicationUsable:
         assert "No Management API calls are made automatically" in promise
         assert "schedule(s) are enabled" in promise, (
             "the line does not say when the application does call out on its own")
+        # It must not send somebody to a page that does not exist. There is no
+        # schedules UI yet; the line names what there actually is.
+        assert "Settings page" not in promise, (
+            "the line points at a schedules UI that has not been built")
+        assert "schedules.json" in promise
 
     def test_the_guard_can_tell_the_two_problems_apart(self):
         """"Not picked yet" and "there are none" need different answers."""

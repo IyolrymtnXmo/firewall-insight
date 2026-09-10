@@ -571,7 +571,7 @@ async function reportAutomationState(){
     setStatus(on.length + ' schedule(s) are enabled, so this application will read '
       + 'the Management Server on its own'
       + (next ? ' \u2014 next at ' + String(next).replace('T',' ').slice(0,16) : '')
-      + '. Turn them off on the Settings page.', 'warn');
+      + '. There is no page for these yet — they live in schedules.json, and DELETE /api/schedules/<id> removes one.', 'warn');
   }catch(_){
     setStatus(idle,'info');
   }
