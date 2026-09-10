@@ -15,6 +15,29 @@
 </head>
 
 <body>
+  <div id="signin" class="signin-veil" hidden>
+    <div class="signin-card">
+      <div class="brand" style="margin-bottom:6px"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-shield"/></svg>Firewall <span>Insight</span></div>
+      <h3 id="signinTitle">Sign in</h3>
+      <p class="muted" id="signinNote">Use the Check Point Management API credentials you already
+        have. They are checked against the Management Server and then discarded — this application
+        stores no password of its own.</p>
+      <div class="form-stack">
+        <label for="authUser">Username</label>
+        <input id="authUser" type="text" autocomplete="username" autofocus>
+        <label for="authPass">Password</label>
+        <input id="authPass" type="password" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter')signIn()">
+      </div>
+      <div class="controls" style="margin-top:14px">
+        <button class="primary" onclick="signIn()">Sign in</button>
+      </div>
+      <div id="authResult"></div>
+      <p class="hint" style="margin-top:14px">Check the address bar before typing. A page that asks
+        for Check Point administrator credentials is worth being suspicious of, including this one.</p>
+    </div>
+  </div>
+
   <div id="topProgress" aria-hidden="true">
     <div class="bar"></div>
   </div>
@@ -790,7 +813,7 @@
 
                 <div class="form-stack-2col">
                   <div><label for="schPackage">Policy package</label>
-                    <input id="schPackage" type="text" placeholder="External-FW"></div>
+                    <input id="schPackage" type="text" placeholder="the package to review"></div>
                   <div><label for="schAt">At (HH:MM, local)</label>
                     <input id="schAt" type="text" placeholder="09:00"></div>
                   <div><label for="schProfile">Compliance profile (optional)</label>
@@ -841,7 +864,7 @@
             <div class="cred-form">
               <div class="form-stack">
                 <label for="cpMgmt">Management Server</label>
-                <input id="cpMgmt" type="url" placeholder="https://10.10.10.10" autocomplete="off">
+                <input id="cpMgmt" type="url" placeholder="https://192.0.2.1" autocomplete="off">
 
                 <label for="cpUser">Username</label>
                 <input id="cpUser" type="text" placeholder="api_user" autocomplete="off">
@@ -890,7 +913,7 @@
                 </div>
 
                 <label for="gaiaHosts">Gateway Hosts <span class="hint">(comma-separated)</span></label>
-                <input id="gaiaHosts" type="text" placeholder="172.23.31.177, 172.23.31.178" autocomplete="off">
+                <input id="gaiaHosts" type="text" placeholder="192.0.2.10, 192.0.2.11" autocomplete="off">
               </div>
               <div class="cred-actions">
                 <button class="secondary" onclick="testCred('gaia')">Test Connection</button>

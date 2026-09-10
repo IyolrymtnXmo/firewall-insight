@@ -551,7 +551,12 @@ window.addEventListener('DOMContentLoaded',()=>{
   /* The promise this line makes has to match what the application does. With
      no schedule enabled it is still exactly true. With one enabled it is not,
      so the line says which - reported by the server, not guessed here. */
-  reportAutomationState();
+  /* Ask who we are talking to before saying anything about schedules.
+     An anonymous visitor gets the shell and the sign-in form; every request
+     for data behind it is refused by the gate in main.py. */
+  gateOrGo().then(state => {
+    if(state.authenticated || !state.required) reportAutomationState();
+  });
   notify('info','Read-only tool',
     'Firewall Insight only issues show-* Management API calls. It never publishes or installs policy.',
     {duration:7000});
@@ -870,6 +875,83 @@ async function deleteSchedule(id){
     await loadSchedules();
     reportAutomationState();
   }catch(e){ fail(e, 'Schedule'); }
+}
+
+/* ============================================================
+   Sign-in.
+
+   RISK-01 stayed open on the grounds that the tool is read-only, which was
+   true and beside the point: it reads the whole estate's policy, and since
+   v4.33 it can be told to keep doing so on a timer.
+
+   The credentials are the Check Point ones the operator already has, so there
+   is no second password store. That also means this page looks exactly like a
+   phishing page would - so the form says so, out loud.
+   ============================================================ */
+
+async function authStatus(){
+  try{
+    const r = await fetch('/api/auth/status');
+    return await r.json();
+  }catch(_){
+    return {required:false, authenticated:false, setup_mode:false};
+  }
+}
+
+function showSignIn(state){
+  const veil = document.getElementById('signin');
+  if(!veil) return;
+  veil.hidden = !!(state.authenticated || !state.required);
+  const note = document.getElementById('signinNote');
+  if(note && state.note) note.textContent = state.note;
+}
+
+async function gateOrGo(){
+  const state = await authStatus();
+  showSignIn(state);
+  if(state.setup_mode){
+    /* Not a silent bypass. Nobody can be checked against anything yet, and
+       saying so is the difference between a stated state and a hole. */
+    notify('warn','This application is unauthenticated',
+      'No Management API credentials are configured, so there is nobody to check a '
+      + 'sign-in against. Anyone who can reach this address can use it until you '
+      + 'configure them on the Settings page.', {duration:0});
+  }
+  return state;
+}
+
+async function signIn(){
+  const user = (document.getElementById('authUser').value||'').trim();
+  const pass = document.getElementById('authPass').value||'';
+  if(!user || !pass){
+    showTestResult('authResult', false,
+      '<span class="test-icon bad">\u2715</span> <strong>Enter a username and password.</strong>');
+    return;
+  }
+  showTestResult('authResult', null,
+    '<span class="spinner sm"></span> Checking with the Management Server\u2026');
+  try{
+    const r = await fetch('/api/auth/login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({user, password: pass}),
+    });
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.detail || ('HTTP '+r.status));
+    document.getElementById('authPass').value = '';
+    document.getElementById('signin').hidden = true;
+    notify('success','Signed in','as ' + esc(d.user)
+      + '. The session lasts ' + d.expires_in_hours + ' hours.');
+    reportAutomationState();
+  }catch(e){
+    showTestResult('authResult', false,
+      '<span class="test-icon bad">\u2715</span> <strong>'
+      + esc(String(e.message||e)) + '</strong>');
+  }
+}
+
+async function signOut(){
+  await fetch('/api/auth/logout', {method:'POST'});
+  location.reload();
 }
 
 function isAlertMetric(label){

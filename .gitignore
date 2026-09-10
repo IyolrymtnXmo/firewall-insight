@@ -41,3 +41,4 @@ health-baselines/
 runs/
 schedules.json
 reports/
+.session_key

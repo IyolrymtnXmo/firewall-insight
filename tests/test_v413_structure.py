@@ -122,7 +122,12 @@ class TestReadOnlyIsStillStructural:
     # each one costs a full read of the Management Server. Like credentials.py
     # it writes locally and reads remotely, and the tests below hold it to the
     # same boundary. Adding to this set is meant to be a visible act.
-    MAY_MUTATE = {"credentials.py", "jobs.py"}
+    #
+    # v4.35 adds the third. `auth.py` signs people in: a POST because it sets a
+    # cookie and rate-limits, and because a GET that forwards a password to the
+    # Management Server would put it in every proxy log on the way. It writes
+    # no file of its own beyond the key that signs the cookie.
+    MAY_MUTATE = {"credentials.py", "jobs.py", "auth.py"}
 
     def test_only_the_credential_route_may_mutate(self):
         for py in (APP / "api").rglob("*.py"):
@@ -185,6 +190,35 @@ class TestReadOnlyIsStillStructural:
         assert '@router.post("/api/runs")' in text
         assert '@router.get("/api/runs")' in text, (
             "listing runs should still be a GET; it is free and idempotent")
+
+    def test_the_auth_module_keeps_no_password(self):
+        """It validates one and drops it. It must not learn to keep one.
+
+        The whole reason sign-in uses Check Point credentials is that this
+        application then has no password store of its own. A line that wrote
+        the supplied password anywhere would quietly turn it into one.
+        """
+        text = (APP / "api" / "auth.py").read_text(encoding="utf-8")
+        for forbidden in ("credential_store", "write_text", "write_bytes",
+                          "open(", "json.dump"):
+            assert forbidden not in text, f"auth.py persists something: {forbidden}"
+
+    def test_signing_in_only_logs_in_and_out(self):
+        text = (APP / "api" / "auth.py").read_text(encoding="utf-8")
+        called = {line.split("web_api/")[1].split('"')[0].split("'")[0]
+                  for line in text.splitlines() if "web_api/" in line}
+        assert called <= {"login", "logout"}, called
+
+    def test_the_public_path_list_has_not_grown(self):
+        """Every route is behind the gate unless it is named here.
+
+        A middleware cannot be forgotten the way a decorator can, so the only
+        way to expose something is to add it to this set - which should be a
+        deliberate, visible act.
+        """
+        from app.main import PUBLIC_PATHS
+        assert PUBLIC_PATHS == {"/", "/health", "/api/auth/status",
+                                "/api/auth/login", "/api/auth/logout"}, PUBLIC_PATHS
 
     def test_the_documented_surface_matches_the_code(self):
         """The README states this guarantee; a drifting claim is a defect.

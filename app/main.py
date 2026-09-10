@@ -18,9 +18,11 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import auth
 from .api import router
 from .api.credentials import load_credentials_on_startup
 from .jobs import schedule as schedules
@@ -59,3 +61,36 @@ app.mount(
     name="static",
 )
 app.include_router(router)
+
+# Paths reachable without a session.
+#
+# `/` is among them on purpose: it serves the single page, which then asks
+# /api/auth/status and draws the sign-in form. Refusing the page itself would
+# leave a browser with nowhere to sign in. Everything the page then asks for is
+# behind the gate, so an unauthenticated visitor gets the shell and no data.
+PUBLIC_PATHS = {"/", "/health", "/api/auth/status", "/api/auth/login",
+                "/api/auth/logout"}
+
+
+@app.middleware("http")
+async def require_session(request: Request, call_next):
+    """One gate in front of everything, rather than a decorator per route.
+
+    A decorator is something a new route can forget. This cannot be forgotten:
+    a path is reachable without a session only by being named above, and a test
+    asserts the list has not grown.
+    """
+    path = request.url.path
+    if (path in PUBLIC_PATHS
+            or path.startswith("/static/")
+            # With nothing configured there is nobody to check against, and
+            # demanding a sign-in would lock the operator out of the page where
+            # credentials are entered. Reported as a state, never silent.
+            or not auth.configured()
+            or auth.read(request.cookies.get(auth.COOKIE_NAME))):
+        return await call_next(request)
+
+    return JSONResponse(
+        status_code=401,
+        content={"detail": "Sign in to use this application. Use the Check Point "
+                           "Management API credentials you already have."})

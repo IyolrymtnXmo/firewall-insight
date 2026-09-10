@@ -64,3 +64,28 @@ def python_source() -> str:
 @functools.lru_cache(maxsize=1)
 def app_source() -> str:
     return ui_source() + "\n" + python_source()
+
+
+# ---- the suite runs as somebody who is signed in ---------------------------
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def signed_in(request, monkeypatch):
+    """Every test runs with a valid session unless it says otherwise.
+
+    v4.35 closed RISK-01 by putting one session gate in front of every route.
+    Without this fixture, every test that touches the API would be asserting
+    against a 401 rather than against the thing it is about - and the failure
+    would say nothing useful.
+
+    The gate is not disabled. `auth.read` is made to return a username, which
+    is precisely what a valid signed cookie does, so the middleware runs and
+    the route runs. The gate's own behaviour - refusing anonymous callers,
+    which paths are public, rate limiting, setup mode - is tested in
+    test_v435_auth.py, whose tests opt out with `@pytest.mark.anonymous`.
+    """
+    if "anonymous" in request.keywords:
+        return
+    monkeypatch.setattr("app.auth.read", lambda token: "test-operator")

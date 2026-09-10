@@ -4,6 +4,89 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.35.0 — RISK-01 closed: the front door has a lock
+
+Anyone who could reach the port could read the whole estate's policy, save
+credentials, and — once v4.33 added schedules — point the application at a
+server of their choosing. It stayed open on the grounds that the tool is
+read-only, which was true and beside the point.
+
+### Sign in with the credentials you already have
+
+There is no second password to invent and no new secret at rest: a sign-in is
+one Management API `login` immediately followed by a `logout`, made with a
+throwaway client so it cannot disturb the long-lived read-only session the
+pages share. The supplied password reaches that call and nothing else — it is
+never stored, cached or reused, and the session cookie carries a username and
+two timestamps.
+
+Authorisation lands where it belongs: if you may read the policy in
+SmartConsole, you may read it here.
+
+**The cost, stated rather than hidden.** A form that accepts Check Point
+administrator credentials looks exactly like a phishing page, so a convincing
+fake on the same LAN collects real ones. The form says so on itself, in the
+same words. Serve this over HTTPS and tell people the address.
+
+### One gate, not a decorator per route
+
+A decorator is something a new route can forget. The middleware cannot be:
+a path is reachable without a session only by being in `PUBLIC_PATHS`, and a
+test asserts that set has not grown. It holds five entries — `/`, `/health`,
+and the three auth routes.
+
+`/` is public on purpose. It serves the shell, which then asks
+`/api/auth/status` and draws the form; refusing the page would leave a browser
+with nowhere to sign in. Everything that fills the shell is behind the gate, so
+an anonymous visitor gets furniture and no data.
+
+### It cannot be used to lock an administrator out
+
+Failed sign-ins reach the Management Server, so this application could have
+become the thing that trips an account lockout. Attempts are counted per
+username and refused *here* after five — the sixth never leaves the machine.
+Locking one user does not lock another, and a success clears the count.
+
+### Setup mode is a stated state, not a silent bypass
+
+With no Management credentials configured there is nobody to check a sign-in
+against, and demanding one would lock the operator out of the very page where
+credentials are entered. The application lets them in and says, in a banner
+that does not auto-dismiss, that it is unauthenticated until they finish.
+
+### Two real addresses were being served on a public page
+
+The guard written for this release found them. A lab package name in a
+placeholder added in v4.34, and **the lab's actual gateway addresses** in the
+Gaia placeholder, shipped in the template since v4.30. Neither was policy the
+application had fetched — both were typed into the source, which is how this
+kind of thing survives review. Placeholders now use RFC 5737 documentation
+addresses, and the test fails on any address outside those ranges.
+
+### The harness now runs the page's own start-up
+
+While writing this, the sign-in behaviour failed to reach `app.js` — a script
+asserted after building the new source and before writing it — leaving the
+`DOMContentLoaded` handler calling a `gateOrGo()` that did not exist.
+`node --check` passed. All 80 harness checks passed. A browser found it in one
+second, because nothing had ever *run* the start-up handler.
+
+The stub keeps registered listeners now and fires `DOMContentLoaded`, so
+everything the application does on arrival is executed. Re-injecting the defect
+confirms it: `the DOMContentLoaded handler runs: gateOrGo is not defined`.
+
+### Tests
+
+860 pass, up from 825. The suite runs as a signed-in operator via one autouse
+fixture — the gate is not disabled, `auth.read` returns a username exactly as a
+valid cookie does — and the gate's own behaviour has 32 tests of its own that
+opt out with `@pytest.mark.anonymous`.
+
+Verified against the live lab: anonymous 401 on every data route, sign-in with
+the real credentials, sign-out, and the rate limiter refusing the sixth attempt.
+
+---
+
 ## v4.34.0 — the Reviews page, and a third place that flattened the tri-state
 
 The work built in v4.32 and v4.33 was reachable only from a terminal and an

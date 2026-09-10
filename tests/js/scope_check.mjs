@@ -145,7 +145,18 @@ const context = {
   Date, Math, JSON, Map, Set, Promise, Number, String, Array, Object, Error,
   encodeURIComponent, decodeURIComponent, parseInt, parseFloat, isNaN,
 };
-context.addEventListener = () => {};
+/* Registered listeners are kept, not dropped.
+
+   The DOMContentLoaded handler is where the application decides what to do on
+   arrival, and nothing here ever ran it - so `gateOrGo()`, wired into it while
+   the function itself failed to reach the file, passed `node --check` and
+   passed every check in this harness. A browser found it in one second. */
+const LISTENERS = new Map();
+context.addEventListener = (name, fn) => {
+  if (!LISTENERS.has(name)) LISTENERS.set(name, []);
+  LISTENERS.get(name).push(fn);
+};
+document.addEventListener = context.addEventListener;
 context.removeEventListener = () => {};
 context.dispatchEvent = () => true;
 context.window = context;
@@ -762,6 +773,14 @@ const asyncChecks = [
       if (calls !== afterFirst)
         throw new Error("ensurePackages() re-fetched a list that was already there");
     } finally { context.fetch = realFetch; }
+  }],
+
+  ["the DOMContentLoaded handler runs", async () => {
+    /* Everything the application does on arrival, actually executed. */
+    const handlers = LISTENERS.get("DOMContentLoaded") || [];
+    if (!handlers.length)
+      throw new Error("nothing registered for DOMContentLoaded - did the app change shape?");
+    for (const fn of handlers) await fn();
   }],
 
   ["loadRuns", () => context.loadRuns()],
