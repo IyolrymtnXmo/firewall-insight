@@ -29,6 +29,11 @@
         <input id="authPass" type="password" autocomplete="current-password"
                onkeydown="if(event.key==='Enter')signIn()">
       </div>
+      <label class="signin-opt"><input id="authRemember" type="checkbox" checked>
+        <span>Keep me signed in on this machine for 30 days</span></label>
+      <label class="signin-opt" id="authUseForReadsWrap"><input id="authUseForReads" type="checkbox">
+        <span>Use these for the application's own reads, so they are not asked
+          for twice</span></label>
       <div class="controls" style="margin-top:14px">
         <button class="primary" onclick="signIn()">Sign in</button>
       </div>
@@ -179,6 +184,7 @@
           <div>
             <h2>Policy Analysis</h2>
             <p>Read, correlate and prove what the rulebase actually does. Nothing on this page writes back.</p>
+            <p id="dashSource" class="dash-source"></p>
           </div>
           <div class="acts">
             <button class="primary" onclick="dashboardRefresh()">
@@ -191,6 +197,45 @@
         </div>
 
         <div class="aurora-bands">
+
+          <!-- band D, first: the three people actually look at. Moved to the
+               top in v4.36 - they were below three cards that are empty until
+               an analysis has run, so the page opened blank. -->
+          <div class="band band-d hero">
+            <div class="card flush fold" data-fold="dash-trend">
+            <div class="card-h">
+            <div><h3>Hits over time</h3><p>Totals recorded by your snapshots — nothing interpolated</p></div>
+            <div class="r"><span class="fold-count" id="trendMeta">—</span></div>
+            </div>
+            <div class="trend-legend">
+            <span><i style="background:var(--accent);box-shadow:0 0 6px var(--accent)"></i>Total access hits</span>
+            </div>
+            <div id="trendBox"></div>
+            </div>
+            <div class="card flush fold" data-fold="dash-hits">
+            <div class="card-h">
+            <div><h3>Where the hits are</h3><p>Counts as the rulebase reports them</p></div>
+            <div class="r"><span class="pill neutral" id="hitsScope">Top 8</span></div>
+            </div>
+            <div class="bars-legend">
+            <span><i style="background:var(--accent)"></i>Accept</span>
+            <span><i style="background:var(--bad)"></i>Drop</span>
+            <span><i style="background:var(--warn)"></i>Never hit</span>
+            </div>
+            <div class="bars" id="hitBars">
+            <p class="hint" style="margin:4px 0 8px">Load the Access Policy to see which rules carry the traffic.</p>
+            </div>
+            </div>
+            <div class="card flush fold" data-fold="dash-ctx">
+            <div class="card-h"><div><h3>Selected Context</h3><p>Change it from the Access or NAT page</p></div></div>
+            <div class="stat-rows">
+            <div class="stat-row"><span>Access Layer</span><b id="dashLayer" style="font-family:var(--font-ui);font-size:12.5px;font-weight:500">Not selected</b></div>
+            <div class="stat-row"><span>Policy Package</span><b id="dashPackage" style="font-family:var(--font-ui);font-size:12.5px;font-weight:500">Not selected</b></div>
+            <div class="stat-row"><span>Management API</span><b id="dashApi" style="font-family:var(--font-ui);font-size:12.5px;font-weight:500">Not tested</b></div>
+            <div class="stat-row"><span>Mode</span><b><span class="pill good">Read-only</span></b></div>
+            </div>
+            </div>
+          </div>
 
           <!-- band A — the counts, before anything that interprets them -->
           <div class="band band-a">
@@ -242,7 +287,7 @@
             <svg id="topoPreview" viewBox="0 0 900 220" preserveAspectRatio="xMidYMid meet" aria-label="Gateway topology preview"></svg>
             <div class="tp-empty" id="topoPreviewEmpty">
             <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-map"/></svg>
-            The map is drawn from gateways the Management API returns.
+The map is drawn from gateways the Management API returns.
             <button onclick="goTo('mapping')" style="height:32px;font-size:12px">Load the topology</button>
             </div>
             </div>
@@ -378,42 +423,6 @@
               </div>
           </div>
 
-          <!-- band D — where the traffic is, and what this was all read from -->
-          <div class="band band-d">
-            <div class="card flush fold" data-fold="dash-trend">
-            <div class="card-h">
-            <div><h3>Hits over time</h3><p>Totals recorded by your snapshots — nothing interpolated</p></div>
-            <div class="r"><span class="fold-count" id="trendMeta">—</span></div>
-            </div>
-            <div class="trend-legend">
-            <span><i style="background:var(--accent);box-shadow:0 0 6px var(--accent)"></i>Total access hits</span>
-            </div>
-            <div id="trendBox"></div>
-            </div>
-            <div class="card flush fold" data-fold="dash-hits">
-            <div class="card-h">
-            <div><h3>Where the hits are</h3><p>Counts as the rulebase reports them</p></div>
-            <div class="r"><span class="pill neutral" id="hitsScope">Top 8</span></div>
-            </div>
-            <div class="bars-legend">
-            <span><i style="background:var(--accent)"></i>Accept</span>
-            <span><i style="background:var(--bad)"></i>Drop</span>
-            <span><i style="background:var(--warn)"></i>Never hit</span>
-            </div>
-            <div class="bars" id="hitBars">
-            <p class="hint" style="margin:4px 0 8px">Load the Access Policy to see which rules carry the traffic.</p>
-            </div>
-            </div>
-            <div class="card flush fold" data-fold="dash-ctx">
-            <div class="card-h"><div><h3>Selected Context</h3><p>Change it from the Access or NAT page</p></div></div>
-            <div class="stat-rows">
-            <div class="stat-row"><span>Access Layer</span><b id="dashLayer" style="font-family:var(--font-ui);font-size:12.5px;font-weight:500">Not selected</b></div>
-            <div class="stat-row"><span>Policy Package</span><b id="dashPackage" style="font-family:var(--font-ui);font-size:12.5px;font-weight:500">Not selected</b></div>
-            <div class="stat-row"><span>Management API</span><b id="dashApi" style="font-family:var(--font-ui);font-size:12.5px;font-weight:500">Not tested</b></div>
-            <div class="stat-row"><span>Mode</span><b><span class="pill good">Read-only</span></b></div>
-            </div>
-            </div>
-          </div>
         </div>
       </section>
 

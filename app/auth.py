@@ -55,6 +55,16 @@ KEY_FILE = _ROOT / ".session_key"
 COOKIE_NAME = "fwi_session"
 SESSION_HOURS = 12
 
+# "Keep me signed in". The credentials are the Management Server's, so typing
+# them at every visit is both a nuisance and a habit worth not building - the
+# more often somebody types an administrator password into a web form, the less
+# they look at the address bar first.
+#
+# The trade is real and belongs in the open: a month-long cookie on a shared
+# machine is a month-long window for whoever else uses it. It is opt-in, and
+# signing out ends it immediately.
+REMEMBER_DAYS = 30
+
 # Rate limiting. Deliberately per-username: the point is not to stop an
 # attacker - it is to stop this application from being the thing that locks a
 # real administrator out of the Management Server.
@@ -76,14 +86,15 @@ def _sign(payload: bytes) -> str:
         hmac.new(_key(), payload, hashlib.sha256).digest()).decode().rstrip("=")
 
 
-def issue(username: str) -> str:
+def issue(username: str, hours: int | None = None) -> str:
     """A signed, self-contained session token. No server-side session table.
 
     Nothing sensitive is inside it - a username and two timestamps - so the
     signature is there to stop somebody writing their own, not to hide it.
     """
+    lifetime = (hours if hours is not None else SESSION_HOURS) * 3600
     body = json.dumps({"u": username, "iat": int(time.time()),
-                       "exp": int(time.time()) + SESSION_HOURS * 3600},
+                       "exp": int(time.time()) + lifetime},
                       separators=(",", ":")).encode()
     return base64.urlsafe_b64encode(body).decode().rstrip("=") + "." + _sign(body)
 

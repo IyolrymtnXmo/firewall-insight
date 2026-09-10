@@ -4,6 +4,70 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.36.0 — the dashboard has something on it when you arrive
+
+Three complaints, all fair.
+
+### The credentials were asked for twice
+
+Once on the Settings page and once at sign-in, for the same account. Sign-in now
+offers to hand what you typed to the credential route the Settings page uses —
+ticked by default when nothing is configured yet, so a first run is one entry
+and done. `app/api/auth.py` still stores nothing itself; the browser passes what
+it already has to the path that was already tested.
+
+**Keep me signed in** holds the session for 30 days instead of 12 hours. The
+trade is in the open: a month-long cookie on a shared machine is a month-long
+window for whoever else uses it, so it is opt-in and signing out ends it.
+
+### The page opened blank until you pressed Analyze
+
+Running an 80-second read of the Management Server on every page load would be
+worse, and this application has spent its life promising not to call out on its
+own. So it reads the **last stored review** instead — the files in `runs/`
+already hold exactly the analysis the dashboard renders. Free, instant, and it
+says where the numbers came from:
+
+    stored  from the review of 2026-09-10 17:07 · External-FW
+
+A fresh analysis in the same session replaces it and the line says `live`. An
+incomplete review says which sections were not read, on the same line.
+
+The topology is fetched, because it is one call and a map with nothing in it is
+not worth showing. The hit bars now draw from the review too, rather than
+sending somebody to a second page to see them.
+
+### The three cards people look at were at the bottom
+
+Hits over time, Where the hits are and Selected Context now sit first, above
+the cards that are empty until an analysis has run. They get a hairline of
+accent along the top edge and a slightly stronger ground — enough presence to
+land on, nothing that moves by itself.
+
+### Found while testing this: the health score could read 0
+
+`countUp()` writes `fmt(0)` on its first frame and takes every frame after it
+from `requestAnimationFrame`, which a browser **pauses entirely** in a
+background tab. Open the dashboard in a second tab, come back, and the score
+read **0 while the real score was 97** — not a missing number, a confidently
+wrong one.
+
+`setTimeout` is throttled in a background tab but does still fire, so it is now
+a floor under the animation: whatever happens to the frames, the true value
+lands. The harness stub's `requestAnimationFrame` never calls back, which is
+exactly a background tab, so removing the floor reproduces `left the value at
+"0" instead of 97`.
+
+Two smaller ones from the same session: Selected Context said "Not selected"
+beside a dashboard full of numbers, because it described the selectors rather
+than what was on screen; and the connection badge said "Not tested" after the
+page had just read the Management Server, because only the Test button had ever
+changed it. Both now follow what actually happened.
+
+860 pass. The Node harness runs 83 checks.
+
+---
+
 ## v4.35.0 — RISK-01 closed: the front door has a lock
 
 Anyone who could reach the port could read the whole estate's policy, save

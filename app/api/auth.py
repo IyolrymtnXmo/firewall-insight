@@ -25,6 +25,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 class Login(BaseModel):
     user: str
     password: str
+    remember: bool = False
 
 
 @router.get("/status")
@@ -91,17 +92,22 @@ async def login(body: Login, response: Response):
                             detail=f"Could not reach {base}: {exc}")
 
     auth.attempts.clear(user)
+    hours = auth.REMEMBER_DAYS * 24 if body.remember else auth.SESSION_HOURS
     response.set_cookie(
-        auth.COOKIE_NAME, auth.issue(user),
-        max_age=auth.SESSION_HOURS * 3600,
+        auth.COOKIE_NAME, auth.issue(user, hours),
+        max_age=hours * 3600,
         httponly=True,          # not readable from JavaScript
         samesite="lax",         # not sent on a cross-site POST
         # Not `secure`: this is commonly served over plain HTTP on a LAN, and a
         # cookie the browser refuses to send is an application nobody can sign
         # in to. Put it behind HTTPS and this is the line to change.
     )
-    log.info("Signed in: %s", user)
-    return {"user": user, "expires_in_hours": auth.SESSION_HOURS}
+    log.info("Signed in: %s (%sh)", user, hours)
+    return {"user": user, "expires_in_hours": hours,
+            # So the page can offer to stop asking for the same credentials
+            # twice: once here and once on the Settings page.
+            "reads_configured": bool(settings.checkpoint_password),
+            "matches_reads_account": user == settings.checkpoint_user}
 
 
 @router.post("/logout")

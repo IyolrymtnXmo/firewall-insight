@@ -192,6 +192,8 @@ const NAT_DATA = {
   ],
 };
 
+const el2 = (id) => document.getElementById(id);
+
 const evalIn = (code) => runInContext(code, context, { filename: "check.js" });
 
 /* v4.31: the Traffic Path render, driven by real API payloads.
@@ -781,6 +783,32 @@ const asyncChecks = [
     if (!handlers.length)
       throw new Error("nothing registered for DOMContentLoaded - did the app change shape?");
     for (const fn of handlers) await fn();
+  }],
+
+  ["countUp lands on the true value even if no frame ever runs", async () => {
+    /* The stub's requestAnimationFrame never calls back, which is exactly what
+       a browser does to a background tab. The first frame writes fmt(0), so
+       without a floor under the animation the dashboard health score sat at 0
+       while the real score was 97 - a confidently wrong number, which is the
+       one thing this application is built not to produce. */
+    // A node of its own: gaugeValue is shared, and an animation another
+    // check started on it would be counted as this one.
+    const el = document.createElement("span");
+    context.countUp(el, 97);
+    await new Promise((r) => setTimeout(r, 1300));
+    if (el.textContent !== "97")
+      throw new Error(`countUp left the value at "${el.textContent}" instead of 97`);
+  }],
+
+  ["countUp respects reduced motion without needing the floor", () => {
+    const real = context.matchMedia;
+    context.matchMedia = () => ({ matches: true, addEventListener() {} });
+    try {
+      const el = document.createElement("span");
+      context.countUp(el, 42);
+      if (el.textContent !== "42")
+        throw new Error(`reduced motion gave "${el.textContent}"`);
+    } finally { context.matchMedia = real; }
   }],
 
   ["loadRuns", () => context.loadRuns()],

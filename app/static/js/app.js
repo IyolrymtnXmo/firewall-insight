@@ -555,7 +555,10 @@ window.addEventListener('DOMContentLoaded',()=>{
      An anonymous visitor gets the shell and the sign-in form; every request
      for data behind it is refused by the gate in main.py. */
   gateOrGo().then(state => {
-    if(state.authenticated || !state.required) reportAutomationState();
+    if(state.authenticated || !state.required){
+      reportAutomationState();
+      hydrateDashboard();
+    }
   });
   notify('info','Read-only tool',
     'Firewall Insight only issues show-* Management API calls. It never publishes or installs policy.',
@@ -909,6 +912,13 @@ function showSignIn(state){
 async function gateOrGo(){
   const state = await authStatus();
   showSignIn(state);
+  /* Default the offer on when there is nothing configured: on a first run the
+     credentials typed here are the only ones the application has. */
+  try{
+    const st = await (await fetch('/api/credentials/status')).json();
+    const box = document.getElementById('authUseForReads');
+    if(box) box.checked = !(st.checkpoint && st.checkpoint.configured);
+  }catch(_){ /* refused while anonymous, which is the usual case */ }
   if(state.setup_mode){
     /* Not a silent bypass. Nobody can be checked against anything yet, and
        saying so is the difference between a stated state and a hole. */
@@ -931,17 +941,42 @@ async function signIn(){
   showTestResult('authResult', null,
     '<span class="spinner sm"></span> Checking with the Management Server\u2026');
   try{
+    const remember = document.getElementById('authRemember').checked;
+    const useForReads = document.getElementById('authUseForReads').checked;
     const r = await fetch('/api/auth/login', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({user, password: pass}),
+      body: JSON.stringify({user, password: pass, remember}),
     });
     const d = await r.json();
     if(!r.ok) throw new Error(d.detail || ('HTTP '+r.status));
+
+    /* Typing the same Management credentials twice - once here and once on the
+       Settings page - is a nuisance nobody asked for. When the box is ticked
+       the browser hands what it already has to the existing credential route,
+       which is the tested path; this file does not learn to store a password
+       of its own. */
+    if(useForReads){
+      try{
+        const save = await fetch('/api/credentials', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({type:'checkpoint', checkpoint:{
+            mgmt: (document.getElementById('cpMgmt')||{}).value || undefined,
+            user, password: pass,
+          }}),
+        });
+        if(save.ok) notify('info','Credentials saved',
+          'The application will use these for its own reads, so you will not be '
+          + 'asked for them again on the Settings page.');
+      }catch(_){ /* signing in still succeeded; the save is a convenience */ }
+    }
+
     document.getElementById('authPass').value = '';
     document.getElementById('signin').hidden = true;
-    notify('success','Signed in','as ' + esc(d.user)
-      + '. The session lasts ' + d.expires_in_hours + ' hours.');
+    const hrs = d.expires_in_hours;
+    notify('success','Signed in','as ' + esc(d.user) + '. This session lasts '
+      + (hrs >= 24 ? Math.round(hrs/24) + ' days' : hrs + ' hours') + '.');
     reportAutomationState();
+    hydrateDashboard();
   }catch(e){
     showTestResult('authResult', false,
       '<span class="test-icon bad">\u2715</span> <strong>'
@@ -952,6 +987,115 @@ async function signIn(){
 async function signOut(){
   await fetch('/api/auth/logout', {method:'POST'});
   location.reload();
+}
+
+/* ============================================================
+   What the dashboard shows before anybody presses anything.
+
+   The complaint was fair: the page opened empty and the numbers only appeared
+   after an 80-second analysis nobody had asked for yet. But running that
+   analysis on every page load would be worse - it is a full read of the
+   Management Server, and the application has spent its whole life promising
+   not to do that on its own.
+
+   So it reads the last *stored* review instead. Those are on this machine, in
+   runs/, put there by the runner or by a schedule, and they hold exactly the
+   analysis the dashboard renders. Free, instant, and honest: the header says
+   when it was taken, so nobody mistakes a Tuesday review for this morning.
+
+   The topology is the exception. It is one call - show-gateways-and-servers -
+   and a map with nothing in it is not worth showing, so it is fetched.
+   ============================================================ */
+
+let dashboardSource = null;
+
+function renderDashSource(){
+  const el = document.getElementById('dashSource');
+  if(!el) return;
+  if(!dashboardSource){
+    el.innerHTML = '<span class="muted">Nothing analysed yet \u2014 '
+      + 'press <b>Analyze Selected Policies</b>, or run a review on the Reviews page.</span>';
+    return;
+  }
+  const when = String(dashboardSource.started_at||'').replace('T',' ').slice(0,16);
+  const stale = dashboardSource.live
+    ? '<span class="pill good">live</span> analysed in this session'
+    : '<span class="pill neutral">stored</span> from the review of <b>'
+      + esc(when) + '</b>';
+  el.innerHTML = stale + (dashboardSource.package
+    ? ' \u00b7 ' + esc(dashboardSource.package) : '')
+    + (dashboardSource.incomplete && dashboardSource.incomplete.length
+        ? ' \u00b7 <span class="pill warn">incomplete</span> '
+          + esc(dashboardSource.incomplete.join(', ')) + ' was not read'
+        : '');
+}
+
+async function hydrateDashboard(){
+  /* Anything already analysed in this session wins - it is newer than a file. */
+  if(accessData){
+    dashboardSource = {live:true, package: accessData.package};
+    renderDashSource();
+    refreshAuroraDashboard();
+    return;
+  }
+  try{
+    const list = await api('/api/runs');
+    const newest = (list.runs||[]).find(r => !r.unreadable);
+    if(newest){
+      const run = await api('/api/runs/' + encodeURIComponent(newest.id));
+      const sections = run.sections || {};
+      if(sections.access && sections.access.ok){
+        accessData = sections.access.data;
+        /* "Where the hits are" reads browserData, which normally comes from the
+           Access Policy page. The analysis carries the same rules with the same
+           hit counts, so the bars can be drawn from what is already here rather
+           than making somebody load a second page to see them. */
+        if(!browserData && Array.isArray(accessData.rules))
+          browserData = {rules: accessData.rules, from_review: true};
+      }
+      if(sections.nat && sections.nat.ok) natData = sections.nat.data;
+      dashboardSource = {
+        live:false, package: run.package, started_at: run.started_at,
+        incomplete: run.incomplete_sections || [],
+      };
+      /* The context card described the selectors at the top, which are empty
+         on arrival - so it said "Not selected" beside a dashboard full of
+         numbers. It should describe what is actually being shown. */
+      const put = (id, v) => { const e = document.getElementById(id); if(e) e.textContent = v; };
+      put('dashPackage', run.package || 'Not selected');
+      put('dashLayer', (accessData && (accessData.root_layers||[]).join(', '))
+                       || 'Resolved from the package');
+    }
+  }catch(_){ /* not signed in, or nothing stored yet */ }
+
+  renderDashSource();
+  refreshAuroraDashboard();
+  hydrateTopology();
+  syncConnectionBadge();
+}
+
+async function syncConnectionBadge(){
+  /* The badge only ever changed when somebody pressed Test Connection, so a
+     dashboard that had just read the Management Server still said "Not
+     tested". The server knows whether the shared session is live; ask it. */
+  try{
+    const d = await api('/api/credentials/status');
+    if(d.checkpoint && d.checkpoint.connected){
+      setConn('ok','Connected');
+      renderContextChips();
+    }
+  }catch(_){ /* anonymous, or nothing configured */ }
+}
+
+async function hydrateTopology(){
+  /* One call, and a map is the thing people want to see first. */
+  if(typeof TOPO !== 'undefined' && TOPO && TOPO.graph) return;
+  try{
+    const d = await api('/api/network-map');
+    mapData = d;
+    TOPO.graph = buildTopoGraph(d);
+    renderTopoPreview();
+  }catch(_){ /* refused while anonymous, or no gateways to draw */ }
 }
 
 function isAlertMetric(label){
@@ -1056,11 +1200,29 @@ function countUp(el, to, dec = 0){
   if(window.matchMedia && matchMedia('(prefers-reduced-motion:reduce)').matches){
     el.textContent = fmt(to); return;
   }
+
+  /* The first frame writes fmt(0), and every frame after it comes from
+     requestAnimationFrame - which a browser pauses entirely while the tab is
+     in the background. Open the dashboard in a second tab, come back, and the
+     health score read 0 when the real score was 97: not a missing number, a
+     confidently wrong one, which is the thing this application exists not to
+     do.
+
+     setTimeout is throttled in a background tab but it does still fire, so it
+     is a floor under the animation: whatever happens, the true value lands. */
   const t0 = performance.now(), D = 900;
+  let settled = false;
+  const settle = () => { if(!settled){ settled = true; el.textContent = fmt(to); } };
+  const floor = setTimeout(settle, D + 250);
+
   (function step(t){
+    if(settled) return;
     const k = Math.min(1, (t - t0) / D);
     el.textContent = fmt(to * (1 - Math.pow(1 - k, 3)));
-    if(k < 1) requestAnimationFrame(step);
+    if(k < 1){ requestAnimationFrame(step); return; }
+    clearTimeout(floor);
+    settled = true;
+    el.textContent = fmt(to);
   })(t0);
 }
 
@@ -1728,7 +1890,9 @@ async function runAccess(){
    metricCards(accessCards,[['Access Rules',s.total_rules],['Inline Rules Analyzed',s.inline_rules],['Inline Layers',s.inline_layers],['Total Rules Inspected',s.analyzed_rules],['Shadow / Redundant',s.potential_shadowed_or_redundant],['Duplicate Groups',s.duplicate_groups],['Any / Any / Any',s.any_any_any_rules],['Optimizer Score',s.optimization_score+'%']]);
    setDashboardMetric(dAccess,s.total_rules,false);dAccessDetail.textContent=`SmartConsole: ${s.top_level_rules} parent/top-level rule(s) · ${s.inline_rules} inline rule(s) analyzed`;setDashboardMetric(dShadow,s.potential_shadowed_or_redundant,true);setDashboardMetric(dDup,s.duplicate_groups,true);renderInlineDashboardSummary(s);
    dashLayer.textContent=(accessData?.root_layers||[]).join(', ')||'Resolved from package';
-   lastReadLabel=new Date().toLocaleTimeString();refreshAuroraDashboard();
+   lastReadLabel=new Date().toLocaleTimeString();
+   dashboardSource={live:true, package:accessData&&accessData.package};
+   renderDashSource();refreshAuroraDashboard();
    dashFindings.innerHTML=`<table style="min-width:650px"><thead><tr><th>Finding</th><th>Count</th><th>Meaning</th></tr></thead><tbody>
      <tr class="drill-row" onclick="drillTo('access','shadow')" title="Open Shadow / Redundant findings"><td>Shadow / Redundant</td><td>${s.potential_shadowed_or_redundant?`<span class="alert-count">${esc(s.potential_shadowed_or_redundant)}</span>`:esc(s.potential_shadowed_or_redundant)}</td><td>${esc(s.top_level_shadow_findings||0)} top-level + ${esc(s.inline_shadow_findings||0)} inline finding(s).</td></tr>
      <tr class="drill-row" onclick="drillTo('access','duplicates')" title="Open Duplicate Access findings"><td>Duplicate Access</td><td>${s.duplicate_groups?`<span class="alert-count">${esc(s.duplicate_groups)}</span>`:esc(s.duplicate_groups)}</td><td>${esc(s.top_level_duplicate_groups||0)} top-level + ${esc(s.inline_duplicate_groups||0)} inline group(s).</td></tr>
