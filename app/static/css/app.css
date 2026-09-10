@@ -1835,3 +1835,32 @@ tr.rb-detail.open .rb-body{grid-template-rows:1fr}
 }
 .toggle-switch input:checked + .toggle-slider{background:var(--accent)}
 .toggle-switch input:checked + .toggle-slider::before{transform:translateX(20px)}
+
+/* Compliance disclosures.
+
+   A run lists every offending rule of every failing check and the full text of
+   the clause each check cites. On a thirteen-rule lab that is already a wall;
+   on a real rulebase it is unreadable. The summary line always carries the
+   count, so folding the rest hides nothing - and <details> forgets, which is
+   the property the results cards did not have before v4.31.2. */
+details.cite > summary,
+details.more-rows > summary{
+  cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;
+  color:var(--muted);font-size:11.5px;border-radius:8px;padding:2px 4px;
+}
+details.cite > summary::-webkit-details-marker,
+details.more-rows > summary::-webkit-details-marker{display:none}
+details.cite > summary::before,
+details.more-rows > summary::before{
+  content:"";width:0;height:0;flex:none;
+  border-left:5px solid currentColor;border-top:4px solid transparent;border-bottom:4px solid transparent;
+  transition:transform .18s ease;
+}
+details[open].cite > summary::before,
+details[open].more-rows > summary::before{transform:rotate(90deg)}
+details.cite > summary:hover,
+details.more-rows > summary:hover{color:var(--accent)}
+details.cite > summary:focus-visible,
+details.more-rows > summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+details.more-rows{margin-top:8px}
+details.more-rows > summary{font-family:var(--font-mono);font-size:11px}

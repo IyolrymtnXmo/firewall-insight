@@ -260,3 +260,61 @@ class TestAResultIsBroughtIntoView:
         for result_id in ("diffResult", "complianceResult", "healthResult"):
             assert APPJS.index(f"{result_id}.innerHTML") < APPJS.index(f"revealResult({result_id})"), (
                 f"{result_id} is revealed before it is filled")
+
+
+class TestChangingPageStartsAtTheTop:
+    """The scroll offset of the page you left was applied to the one you opened.
+
+    The scroll lives on `main.main` - body and html have been overflow:hidden
+    since v4.30.3 - and `showPage()` never reset it. Measured: leaving a
+    scrolled Compliance run for Policy Diff put the Compare button at y=-95,
+    above the viewport, so pressing it looked like being thrown somewhere else.
+    The same clamping is what made a collapsing card appear to jump pages: the
+    content shrank and the browser moved the scroll to fit.
+    """
+
+    def test_showpage_resets_the_scroll_container(self):
+        body = APPJS.split("function showPage(id,b)", 1)[1].split(NL + "}", 1)[0]
+        assert "scrollTop = 0" in body or "scrollTop=0" in body, (
+            "showPage does not reset the scroll, so a new page opens mid-way down")
+
+    def test_it_resets_the_element_that_actually_scrolls(self):
+        """body and html are overflow:hidden; resetting them would do nothing."""
+        body = APPJS.split("function showPage(id,b)", 1)[1].split(NL + "}", 1)[0]
+        assert "main.main" in body, body[:400]
+
+
+class TestAComplianceRunIsReadable:
+    """Every offender of every failing check, expanded, plus the full clause.
+
+    On a 13-rule lab one check alone printed 13 rows of a seven-column table,
+    and each check repeated the whole standard quotation underneath. Measured
+    against the NIST profile: the result is 32% shorter now, with nothing
+    removed - the rows past the first five and the quotation sit behind a
+    native <details> whose summary states the count.
+
+    <details> rather than the `data-fold` mechanism on purpose: it is keyboard
+    accessible and it forgets, so a run cannot open already collapsed the way
+    the results cards did before v4.31.2.
+    """
+
+    def test_offenders_are_previewed_not_dumped(self):
+        assert "COMPLIANCE_PREVIEW_ROWS" in APPJS
+        assert "function complianceOffenders" in APPJS
+        assert "complianceOffenders(r)" in APPJS, "the check card does not use the helper"
+
+    def test_the_disclosure_states_how_many_rows_it_holds(self):
+        body = APPJS.split("function complianceOffenders", 1)[1].split(NL + "}", 1)[0]
+        assert "Show the remaining" in body and "of ${esc(list.length)}" in body, body
+
+    def test_the_citation_folds_the_quote_and_keeps_the_clause(self):
+        body = APPJS.split("function complianceSource_cite", 1)[1].split(NL + "}", 1)[0]
+        assert "<summary>${head}</summary>" in body, "the standard is not the summary line"
+        assert "s.quote" in body, "the quotation was removed rather than folded"
+
+    def test_the_disclosures_are_styled_and_focusable(self):
+        css = (ROOT / "app" / "static" / "css" / "app.css").read_text(encoding="utf-8")
+        assert "details.cite > summary" in css
+        assert "details.more-rows > summary" in css
+        assert "focus-visible" in css.split("details.cite > summary", 1)[1][:1200], (
+            "the disclosures cannot be reached from the keyboard visibly")

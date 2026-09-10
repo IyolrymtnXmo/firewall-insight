@@ -433,6 +433,55 @@ const checks = [
         `two distinct toasts collapsed to ${host.children.length}`);
   }],
 
+  /* v4.31.3: a compliance run has to be readable, and readable must not mean
+     "some of the evidence is gone". */
+  ["complianceOffenders previews and keeps every row", () => {
+    const many = Array.from({length: 13}, (_, i) => ({
+      display_rule: String(i + 1), name: "Rule" + i, layer: "L",
+      action: "Accept", source: "S", destination: "D", service: "svc",
+      reason: "track is empty",
+    }));
+    const html = context.complianceOffenders({ offenders: many });
+    /* One `rule-no` span per offender, so this counts rows without depending
+       on how many <thead> blocks the markup happens to have. */
+    const count = t => (t.match(/class="rule-no"/g) || []).length;
+    if (count(html) !== 13)
+      throw new Error(`13 offenders rendered ${count(html)} rows - evidence was dropped`);
+    if (!html.includes("Show the remaining 8 of 13"))
+      throw new Error("the disclosure does not say how many rows it holds");
+    const i = html.indexOf("<details");
+    if (i < 0) throw new Error("13 offenders were not folded at all");
+    if (count(html.slice(0, i)) !== 5)
+      throw new Error(`preview shows ${count(html.slice(0, i))} rows, expected 5`);
+  }],
+
+  ["complianceOffenders does not fold a short list", () => {
+    const few = [{display_rule: "1", name: "a"}, {display_rule: "2", name: "b"}];
+    const html = context.complianceOffenders({ offenders: few });
+    if (html.includes("<details")) throw new Error("two rows were put behind a disclosure");
+  }],
+
+  ["complianceOffenders survives a check with no offenders", () => {
+    if (context.complianceOffenders({}) !== "") throw new Error("expected empty string");
+    if (context.complianceOffenders({ offenders: [] }) !== "") throw new Error("expected empty string");
+  }],
+
+  ["a citation keeps its standard and clause on the line", () => {
+    const html = context.complianceSource_cite({ cited: true, source: {
+      standard: "NIST SP 800-41 Rev. 1", clause: "Section 4",
+      quote: "deny by default", url: "https://example.invalid" }});
+    const summary = html.slice(html.indexOf("<summary>"), html.indexOf("</summary>"));
+    if (!summary.includes("NIST SP 800-41 Rev. 1")) throw new Error("the standard is hidden");
+    if (!summary.includes("Section 4")) throw new Error("the clause is hidden");
+    if (!html.includes("deny by default")) throw new Error("the quotation was dropped, not folded");
+  }],
+
+  ["a house rule is still labelled, not folded", () => {
+    const html = context.complianceSource_cite({ cited: false, source: { note: "House rule" }});
+    if (!html.includes("HOUSE RULE")) throw new Error("the house-rule label is gone");
+    if (html.includes("<details")) throw new Error("a one-line label was put behind a disclosure");
+  }],
+
   // Settings. showTestResult renders the banner every one of these ends in.
   ["showTestResult(ok)", () => context.showTestResult("cpTestResult", true, "<b>ok</b>")],
   ["showTestResult(fail)", () => context.showTestResult("cpTestResult", false, "<b>no</b>")],

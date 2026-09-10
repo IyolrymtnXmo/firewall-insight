@@ -4,6 +4,54 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.31.3 — a page change starts at the top, and a run can be read
+
+### Fixed — the scroll of the page you left was applied to the page you opened
+
+Reported as "press Compare and it jumps to the Compliance page". It did not
+change page; it never left the scroll position Compliance had been sitting at.
+
+`showPage()` swaps the `.active` class and nothing else. The scroll lives on
+`main.main` — `body` and `html` have been `overflow:hidden` since v4.30.3 — and
+nobody reset it. Measured: running Compliance leaves the container at 634px,
+switching to Policy Diff keeps that offset, and the Compare button lands at
+**y=-95** — above the top of the window. Pressing a button you cannot see and
+landing somewhere unrelated is indistinguishable from being thrown to another
+page.
+
+It is also the second half of the v4.31.2 report. Collapsing a card shortened
+the page, the browser clamped the scroll to fit, and the view moved on its own
+— "the drop/down button links to some other page".
+
+A page change now starts at the top, which is what every other part of the
+application already assumed.
+
+### Changed — a compliance run is 32% shorter with nothing removed
+
+Every offending rule of every failing check was printed, expanded, in a
+seven-column table, and the full clause quotation was repeated under each one.
+On a thirteen-rule lab a single check filled the screen; the verdict and the
+one sentence that says what is wrong were somewhere above it.
+
+Now: the check title, its verdict, its severity, and the sentence that explains
+the failure all stay open. The evidence rows past the first five and the
+quotation go behind a native `<details>` whose summary always states the count
+— *"Show the remaining 8 of 13"*, *"NIST SP 800-41 Rev. 1 · Section 4, Firewall
+Policy"*. The standard and clause stay on the line, because provenance is the
+point of the format.
+
+Measured against the NIST profile on the lab: 2,255px to 1,542px. Nothing is
+dropped — a harness check counts the offender rows in the markup and fails if
+thirteen offenders produce fewer than thirteen rows.
+
+`<details>` rather than the `data-fold` mechanism on purpose: it is keyboard
+accessible, and it forgets. A run cannot open already collapsed the way the
+results cards could before v4.31.2.
+
+749 pass, up from 743. The Node harness runs 71 checks, up from 66.
+
+---
+
 ## v4.31.2 — the answer could be folded shut
 
 Reported as two separate problems. They were the same one.

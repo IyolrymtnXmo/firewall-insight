@@ -445,6 +445,18 @@ async function api(u){
 function showPage(id,b){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   const pg=document.getElementById(id); if(pg)pg.classList.add('active');
+
+  /* A page change is a new view, so start it at the top.
+     The scroll lives on `main.main` - body and html have been overflow:hidden
+     since v4.30.3 - and nothing reset it, so the offset of the page you left
+     was applied to the page you arrived at. Measured: leaving a scrolled
+     Compliance run for Policy Diff put the Compare button at y=-95, above the
+     viewport, and pressing it then looked like being thrown somewhere else
+     entirely. The same clamping is what made a collapsing card appear to
+     "jump to another page": the content shrank and the browser moved the
+     scroll to fit. */
+  const scroller = document.querySelector('main.main');
+  if(scroller) scroller.scrollTop = 0;
   document.querySelectorAll('.menu button').forEach(x=>x.classList.remove('active'));
   if(b)b.classList.add('active');
   if(typeof layerControl!=='undefined') layerControl.style.display=(id==='traffic')?'inline-block':'none';
@@ -3452,14 +3464,48 @@ function complianceSourceChanged(){
   }
 }
 
+/* Where a check comes from.
+
+   The standard and clause stay on the line - that is the provenance, and it is
+   the point of the format. The quotation, the note and the URL are the long part
+   and go behind a disclosure, so eight checks do not become eight essays. */
 function complianceSource_cite(r){
   const s=r.source||{};
   if(!r.cited) return `<span class="pill neutral">HOUSE RULE</span> <span class="muted">${esc(s.note||'no external standard cited')}</span>`;
   const head=`<b>${esc(s.standard||'')}</b>${s.clause?' · '+esc(s.clause):''}`;
-  const body=[s.quote?`<div class="hint" style="margin-top:4px">&ldquo;${esc(s.quote)}&rdquo;</div>`:'',
-              s.note?`<div class="hint" style="margin-top:4px">${esc(s.note)}</div>`:'',
-              s.url?`<div class="hint" style="margin-top:4px"><code>${esc(s.url)}</code></div>`:''].join('');
-  return head+body;
+  const body=[s.quote?`<div class="hint" style="margin-top:6px">&ldquo;${esc(s.quote)}&rdquo;</div>`:'',
+              s.note?`<div class="hint" style="margin-top:6px">${esc(s.note)}</div>`:'',
+              s.url?`<div class="hint" style="margin-top:6px"><code>${esc(s.url)}</code></div>`:''].join('');
+  if(!body) return head;
+  return `<details class="cite"><summary>${head}</summary>${body}</details>`;
+}
+
+/* The evidence rows for one check.
+
+   A failing check on a large rulebase lists every offender. Five is enough to
+   see the shape of the problem; the rest stay one click away, and the summary
+   says how many are in there so the count is never hidden. */
+const COMPLIANCE_PREVIEW_ROWS = 5;
+
+function complianceOffenderTable(items){
+  return `<div class="table-wrap" style="margin-top:10px"><table>
+    <thead><tr><th>Rule</th><th>Layer</th><th>Action</th><th>Source</th><th>Destination</th><th>Service</th><th>Why</th></tr></thead>
+    <tbody>${items.map(o=>`<tr>
+      <td><span class="rule-no">Rule ${esc(o.display_rule||'—')}</span> ${esc(o.name||'')}</td>
+      <td>${esc(o.layer||'')}</td><td>${esc(o.action||'')}</td>
+      <td>${esc(o.source||'')}</td><td>${esc(o.destination||'')}</td><td>${esc(o.service||'')}</td>
+      <td>${esc(o.reason||'matches the forbidden condition')}</td></tr>`).join('')}</tbody></table></div>`;
+}
+
+function complianceOffenders(r){
+  const list=(r&&r.offenders)||[];
+  if(!list.length) return '';
+  if(list.length<=COMPLIANCE_PREVIEW_ROWS) return complianceOffenderTable(list);
+  const rest=list.length-COMPLIANCE_PREVIEW_ROWS;
+  return complianceOffenderTable(list.slice(0,COMPLIANCE_PREVIEW_ROWS))
+    + `<details class="more-rows"><summary>Show the remaining ${esc(rest)} of ${esc(list.length)}</summary>`
+    + complianceOffenderTable(list.slice(COMPLIANCE_PREVIEW_ROWS))
+    + `</details>`;
 }
 
 async function runCompliance(ev){
@@ -3501,13 +3547,7 @@ async function runCompliance(ev){
         <span class="hint">${esc(r.id)} · severity ${esc(r.severity)}</span>
       </div>
       <p style="margin:8px 0 0">${esc(r.detail)}</p>
-      ${(r.offenders||[]).length?`<div class="table-wrap" style="margin-top:10px"><table>
-        <thead><tr><th>Rule</th><th>Layer</th><th>Action</th><th>Source</th><th>Destination</th><th>Service</th><th>Why</th></tr></thead>
-        <tbody>${r.offenders.map(o=>`<tr>
-          <td><span class="rule-no">Rule ${esc(o.display_rule||'—')}</span> ${esc(o.name||'')}</td>
-          <td>${esc(o.layer||'')}</td><td>${esc(o.action||'')}</td>
-          <td>${esc(o.source||'')}</td><td>${esc(o.destination||'')}</td><td>${esc(o.service||'')}</td>
-          <td>${esc(o.reason||'matches the forbidden condition')}</td></tr>`).join('')}</tbody></table></div>`:''}
+      ${complianceOffenders(r)}
       ${(r.unverifiable_rules||[]).length?`<div class="hint" style="margin-top:10px"><b>Could not be decided for:</b><br>
         ${r.unverifiable_rules.map(o=>`Rule ${esc(o.display_rule||'—')} ${esc(o.name||'')} — ${esc(o.reason||'')}`).join('<br>')}</div>`:''}
       <div class="hint" style="margin-top:10px">${complianceSource_cite(r)}</div>
