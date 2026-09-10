@@ -513,6 +513,71 @@ const checks = [
       throw new Error("Selected Context kept a stale Connected after the badge was cleared");
   }],
 
+  /* v4.34: the Reviews screen. Two properties it must not get wrong, both of
+     them things the rest of the application spent v4.31 learning. */
+
+  ["renderRuns(nothing stored)", () => context.renderRuns([])],
+
+  ["renderRuns never draws an incomplete run as a clean one", () => {
+    context.renderRuns([{ id: "r1", package: "P", started_at: "2026-09-10T09:00:00",
+                          complete: false, incomplete_sections: ["gateways"],
+                          policy_changed: false, duration_seconds: 80 }]);
+    const html = document.getElementById("runsList").innerHTML;
+    if (!html.includes("incomplete"))
+      throw new Error("a run that could not read a section was not marked incomplete");
+    if (!html.includes("not read: gateways"))
+      throw new Error("the sections that were not read are not named");
+    if (html.includes("no change"))
+      throw new Error("an incomplete run was reported as no change");
+  }],
+
+  ["renderRuns tells a first run apart from an unchanged one", () => {
+    const outcome = (r) => context.runOutcome(r).label;
+    if (outcome({ complete: true, policy_changed: null }) !== "first run")
+      throw new Error("a first run was reported as unchanged");
+    if (outcome({ complete: true, policy_changed: false }) !== "no change")
+      throw new Error("an unchanged run lost its verdict");
+    if (outcome({ complete: true, policy_changed: true }) !== "changed")
+      throw new Error("a changed run lost its verdict");
+    if (outcome({ unreadable: "bad json" }).label !== undefined
+        && context.runOutcome({ unreadable: "x" }).label !== "unreadable")
+      throw new Error("an unreadable run file was not flagged");
+  }],
+
+  ["renderRuns offers all three report levels", () => {
+    context.renderRuns([{ id: "r1", package: "P", started_at: "2026-09-10T09:00:00",
+                          complete: true, policy_changed: false }]);
+    const html = document.getElementById("runsList").innerHTML;
+    for (const level of ["summary", "findings", "full"])
+      if (!html.includes(`detail=${level}`))
+        throw new Error(`the ${level} report cannot be downloaded`);
+  }],
+
+  ["renderSchedules(none) says the application does not call out", () => {
+    context.renderSchedules({ schedules: [] });
+    const html = document.getElementById("schedulesList").innerHTML;
+    if (!html.includes("only when you ask"))
+      throw new Error("an empty schedule list does not say what that means");
+  }],
+
+  ["renderSchedules shows an enabled one as the louder state", () => {
+    context.renderSchedules({ schedules: [
+      { id: "on", enabled: true, package: "P", at: "09:00", days: ["mon"],
+        next_due: "2026-09-14T09:00", last_result: "complete" },
+      { id: "off", enabled: false, package: "P", at: "09:00", days: ["mon"],
+        next_due: null, last_result: null },
+    ]});
+    const html = document.getElementById("schedulesList").innerHTML;
+    if (!html.includes("pill warn"))
+      throw new Error("an enabled schedule is not flagged");
+    if (!html.includes("not scheduled"))
+      throw new Error("a disabled schedule does not say it will not run");
+    if (!html.includes("never run"))
+      throw new Error("a schedule that has not run does not say so");
+    if (!html.includes("Turn off") || !html.includes("Turn on"))
+      throw new Error("a schedule cannot be turned on or off from the table");
+  }],
+
   // Settings. showTestResult renders the banner every one of these ends in.
   ["showTestResult(ok)", () => context.showTestResult("cpTestResult", true, "<b>ok</b>")],
   ["showTestResult(fail)", () => context.showTestResult("cpTestResult", false, "<b>no</b>")],
@@ -699,6 +764,8 @@ const asyncChecks = [
     } finally { context.fetch = realFetch; }
   }],
 
+  ["loadRuns", () => context.loadRuns()],
+  ["loadSchedules", () => context.loadSchedules()],
   ["loadCredentialStatus", () => context.loadCredentialStatus()],
   ["saveCred(checkpoint)", () => context.saveCred("checkpoint")],
   ["saveCred(gaia)", () => context.saveCred("gaia")],

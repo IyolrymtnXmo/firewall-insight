@@ -4,6 +4,48 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.34.0 — the Reviews page, and a third place that flattened the tri-state
+
+The work built in v4.32 and v4.33 was reachable only from a terminal and an
+API, which is a strange thing to say about the feature meant to save people from
+clicking. There is a page now.
+
+### Reviews
+
+Past runs, newest first, with what each one found and how long it took. Every
+row offers its report at all three detail levels, so the choice of how much
+policy leaves the machine is made per download rather than per install.
+
+Schedules live on the same page: create one from a form, turn it on or off from
+the table, delete it. A schedule is still created **off** — the form says so and
+the confirmation repeats it, because enabling one is what makes this application
+read the Management Server without being asked.
+
+The status line's promise now points at this page, which exists. Between v4.33.0
+and now it pointed at a Settings page that did not, then at `schedules.json`;
+the test that caught the first of those now also asserts the page it names is
+actually in the menu.
+
+### A third place was calling "could not be compared" a change
+
+`identical` is false when any of nine diff counters moves, and one of them —
+`scope_unverifiable` — means a rule's reach could not be resolved in one of the
+two snapshots. That is a reason to look, not a change.
+
+The CLI summary had this (v4.32.0). The PDF headline had it (v4.32.1). The run
+index behind this table had it too, so every row on the lab read **changed**
+when nothing had. Each was found by looking at real output rather than by
+reading the code.
+
+There is now one definition, `REAL_CHANGE_KEYS`, in two modules that a test
+holds identical, and the row shows `undecided` as its own outcome with the
+count beneath it. A run that could not read a section is still reported that
+way before anything is said about what it found.
+
+825 pass, up from 821. The Node harness runs 80 checks, up from 72.
+
+---
+
 ## v4.33.0 — schedules, and the promise they change (automation, phase B)
 
 The application can now call the Management Server on its own. That is a change

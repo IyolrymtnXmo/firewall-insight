@@ -106,6 +106,7 @@
         <button class="" data-page="diff" data-label="Policy Diff" onclick="showPage('diff',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-diff"/></svg><span class="mlabel">Policy Diff</span></button>
         <button class="" data-page="compliance" data-label="Compliance" onclick="showPage('compliance',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-compliance"/></svg><span class="mlabel">Compliance</span></button>
         <button class="" data-page="health" data-label="Gateway Health" onclick="showPage('health',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-health"/></svg><span class="mlabel">Gateway Health</span></button>
+        <button class="" data-page="runs" data-label="Reviews" onclick="showPage('runs',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-diff"/></svg><span class="mlabel">Reviews</span></button>
         <div class="menu-sep"></div>
         <button class="" data-page="settings" data-label="Settings" onclick="showPage('settings',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-settings"/></svg><span class="mlabel">Settings</span></button>
       </div>
@@ -755,6 +756,67 @@
           </div>
           <div id="inventory" class="map hidden"></div>
           <p id="mapNote" class="hint"></p>
+        </div>
+      </section>
+
+      <section id="runs" class="page">
+        <div class="panel">
+          <h2>Reviews</h2>
+          <p class="muted">A review reads the package, analyses access and NAT, stores a snapshot,
+            compares it with the previous one, evaluates a compliance profile and reads gateway state —
+            the work five pages do, in one pass, without anybody watching. It issues the same read-only
+            <code>show-*</code> calls those pages issue.</p>
+
+          <div class="controls field-row">
+            <button class="primary" onclick="startRun(event)">Run a review now</button>
+            <button onclick="loadRuns(event)">Refresh</button>
+            <span class="hint" id="runsNote"></span>
+          </div>
+
+          <div class="card flush">
+            <div class="card-h"><div><h3>Past reviews</h3><p>Newest first · click a row for the detail</p></div></div>
+            <div id="runsList"></div>
+          </div>
+
+          <div class="card flush" style="margin-top:16px">
+            <div class="card-h">
+              <div><h3>Schedules</h3><p>When this application reads the Management Server on its own</p></div>
+            </div>
+            <div id="schedulesBody">
+              <div class="cred-form">
+                <p class="muted" style="margin-top:0">A schedule is <b>off when you create it</b>. Enabling one is
+                  what makes this application call out without being asked, so it is a separate act. Times are this
+                  machine's local clock.</p>
+
+                <div class="form-stack-2col">
+                  <div><label for="schPackage">Policy package</label>
+                    <input id="schPackage" type="text" placeholder="External-FW"></div>
+                  <div><label for="schAt">At (HH:MM, local)</label>
+                    <input id="schAt" type="text" placeholder="09:00"></div>
+                  <div><label for="schProfile">Compliance profile (optional)</label>
+                    <input id="schProfile" type="text" placeholder="nist-800-41-baseline"></div>
+                  <div><label for="schDays">Days</label>
+                    <input id="schDays" type="text" placeholder="mon,tue,wed,thu,fri"></div>
+                </div>
+
+                <label style="display:flex;align-items:center;gap:8px;margin-top:10px">
+                  <input id="schPdf" type="checkbox"> <span>Write a PDF for each run</span></label>
+                <label for="schDetail" style="margin-top:8px">PDF detail</label>
+                <select id="schDetail">
+                  <option value="summary">summary — counts and severities, no rule identifiers</option>
+                  <option value="findings">findings — adds rule numbers and names</option>
+                  <option value="full">full — adds addresses and services</option>
+                </select>
+
+                <div class="controls" style="margin-top:12px">
+                  <button class="primary" onclick="saveSchedule(event)">Save schedule</button>
+                  <button onclick="loadSchedules(event)">Refresh</button>
+                </div>
+                <div id="schResult"></div>
+              </div>
+              <div id="schedulesList"></div>
+            </div>
+          </div>
         </div>
       </section>
 

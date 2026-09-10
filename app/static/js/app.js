@@ -464,6 +464,7 @@ function showPage(id,b){
   // Both new pages are useless with an empty selector, and both lists are one
   // cheap local read - so fill them on arrival rather than making the first
   // thing a new user does be pressing Refresh.
+  if(id==='runs'){ loadRuns(); loadSchedules(); }
   if(id==='diff' && !snapshotList.length) loadSnapshots();
   if(id==='health' && !healthBaseline.options.length) loadBaselines();
   if(id==='compliance'){
@@ -571,7 +572,7 @@ async function reportAutomationState(){
     setStatus(on.length + ' schedule(s) are enabled, so this application will read '
       + 'the Management Server on its own'
       + (next ? ' \u2014 next at ' + String(next).replace('T',' ').slice(0,16) : '')
-      + '. There is no page for these yet — they live in schedules.json, and DELETE /api/schedules/<id> removes one.', 'warn');
+      + '. Turn them off on the Reviews page.', 'warn');
   }catch(_){
     setStatus(idle,'info');
   }
@@ -650,6 +651,225 @@ function revealResult(el){
   if(!el || !el.scrollIntoView) return;
   try{ el.scrollIntoView({block:'nearest'}); }
   catch(_){ el.scrollIntoView(); }
+}
+
+/* ============================================================
+   Reviews: past runs, the PDF, and the schedules that trigger them.
+
+   Everything the runner and the schedule store already do, with a way to press
+   it. Until this existed the work was reachable only from a terminal and an
+   API, which is a strange thing to say about the feature meant to save people
+   from clicking.
+
+   Two things this screen has to get right, because they are the two the rest
+   of the application spent v4.31 learning:
+
+     a run that did not finish is never drawn as a clean one
+     a schedule that is off says so louder than one that is on
+   ============================================================ */
+
+const RUN_TONE = {complete: 'good', incomplete: 'warn'};
+
+/* What one row says about a run.
+
+   Ordered deliberately: a run that could not read a section is reported that
+   way before anything is said about what it found, and "could not be compared"
+   is its own answer rather than being rounded to either of its neighbours. */
+function runOutcome(r){
+  if(!r) return {label: '—', tone: 'neutral'};
+  if(r.unreadable) return {label: 'unreadable', tone: 'bad'};
+  if(r.complete === false) return {label: 'incomplete', tone: 'warn'};
+  if(r.policy_changed === true) return {label: 'changed', tone: 'warn'};
+  if(r.policy_changed === null || r.policy_changed === undefined)
+    return {label: 'first run', tone: 'neutral'};
+  if(r.undecided_rules) return {label: 'undecided', tone: 'warn'};
+  return {label: 'no change', tone: 'good'};
+}
+
+function renderRuns(rows){
+  const box = document.getElementById('runsList');
+  if(!box) return;
+  if(!rows || !rows.length){
+    box.innerHTML = '<p class="hint" style="margin:14px 16px">No review has been stored yet. '
+      + 'Press <b>Run a review now</b>, or schedule one below.</p>';
+    return;
+  }
+  box.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>When</th><th>Package</th><th>Outcome</th><th>Profile</th>
+      <th>Took</th><th>Report</th></tr></thead>
+    <tbody>${rows.map(r => {
+      const o = runOutcome(r);
+      const when = String(r.started_at || '').replace('T', ' ').slice(0, 16);
+      const missing = (r.incomplete_sections || []).join(', ');
+      return `<tr>
+        <td><span class="rule-no">${esc(when)}</span></td>
+        <td>${esc(r.package || '—')}</td>
+        <td><span class="pill ${o.tone}">${esc(o.label)}</span>${
+          missing ? `<br><span class="muted" style="font-size:10.5px">not read: ${esc(missing)}</span>` : ''}${
+          (!missing && r.undecided_rules) ? `<br><span class="muted" style="font-size:10.5px">${
+            esc(r.undecided_rules)} rule(s) could not be compared</span>` : ''}</td>
+        <td>${esc(r.profile || '—')}</td>
+        <td>${r.duration_seconds != null ? esc(r.duration_seconds) + 's' : '—'}</td>
+        <td>${r.unreadable ? '—' : `<a href="/api/runs/${encodeURIComponent(r.id)}/report.pdf?detail=summary"
+              title="Counts and severities only. No rule identifiers.">summary</a>
+            · <a href="/api/runs/${encodeURIComponent(r.id)}/report.pdf?detail=findings"
+              title="Adds rule numbers and names.">findings</a>
+            · <a href="/api/runs/${encodeURIComponent(r.id)}/report.pdf?detail=full"
+              title="Adds addresses and services.">full</a>`}</td>
+      </tr>`;
+    }).join('')}</tbody></table></div>`;
+}
+
+async function loadRuns(ev){
+  return task('runs', 'Reading stored reviews', async () => {
+    const d = await api('/api/runs');
+    renderRuns(d.runs);
+    const note = document.getElementById('runsNote');
+    if(note) note.textContent = `${(d.runs || []).length} stored in ${d.directory}`;
+    return d;
+  }, {blocking: false, button: ev && ev.currentTarget, successMessage: null}).catch(() => {});
+}
+
+async function startRun(ev){
+  if(!P.value){
+    const have = await ensurePackages();
+    setStatus(have ? 'Select a Policy Package first.' : 'Not connected yet.', 'warn');
+    notify('warn', have ? 'No Policy Package selected' : 'No packages to select',
+      have ? 'Pick a package in the selector at the top, then run the review again.'
+           : 'Test the connection from Settings or the plug button, then try again.');
+    return;
+  }
+  const rid = newRid();
+  const stop = trackProgress(rid);
+  const q = new URLSearchParams({package: P.value, rid});
+  const profile = (document.getElementById('schProfile') || {}).value;
+  if(profile) q.set('profile', profile.trim());
+
+  busyShow('Running a review', P.value + ' · elapsed',
+    ['Reading the policy package', 'Analysing access and NAT', 'Storing the snapshot',
+     'Comparing with the previous run', 'Evaluating the compliance profile',
+     'Reading gateway state']);
+  try{
+    const r = await fetch('/api/runs?' + q, {method: 'POST'});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+
+    /* A run that could not read something is not a run that found nothing. */
+    if(d.complete === false){
+      setStatus('Review finished, but some of it could not be read.', 'warn');
+      notify('warn', 'Review incomplete',
+        'Could not read: ' + (d.incomplete_sections || []).join(', ')
+        + '. Their absence is not evidence that they are clean.', {duration: 0});
+    }else{
+      setStatus('Review complete.', 'success');
+      notify('success', 'Review complete',
+        'Stored as ' + d.id + '. The PDF is on the row below.');
+    }
+    await loadRuns();
+  }catch(e){
+    fail(e, 'Review');
+  }finally{
+    stop();
+    busyHide();
+  }
+}
+
+/* ---- schedules ---- */
+
+function renderSchedules(d){
+  const box = document.getElementById('schedulesList');
+  if(!box) return;
+  const rows = d.schedules || [];
+  if(!rows.length){
+    box.innerHTML = '<p class="hint" style="margin:0 16px 16px">'
+      + 'No schedule exists. This application reads the Management Server only when you ask it to.</p>';
+    return;
+  }
+  box.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>State</th><th>Id</th><th>Package</th><th>When</th>
+      <th>Next</th><th>Last result</th><th></th></tr></thead>
+    <tbody>${rows.map(s => `<tr>
+      <td><span class="pill ${s.enabled ? 'warn' : 'neutral'}">${s.enabled ? 'ON' : 'off'}</span></td>
+      <td><span class="rule-no">${esc(s.id)}</span></td>
+      <td>${esc(s.package)}${s.profile ? `<br><span class="muted" style="font-size:10.5px">${esc(s.profile)}</span>` : ''}</td>
+      <td>${esc(s.at)}<br><span class="muted" style="font-size:10.5px">${esc((s.days || []).join(', '))}</span></td>
+      <td>${s.next_due ? esc(String(s.next_due).replace('T', ' ')) : '<span class="muted">not scheduled</span>'}</td>
+      <td>${s.last_result ? esc(s.last_result) : '<span class="muted">never run</span>'}${
+        s.last_run_at ? `<br><span class="muted" style="font-size:10.5px">${esc(String(s.last_run_at).replace('T', ' ').slice(0, 16))}</span>` : ''}</td>
+      <td><button onclick="toggleSchedule('${esc(s.id)}',${s.enabled ? 'false' : 'true'})">${s.enabled ? 'Turn off' : 'Turn on'}</button>
+          <button onclick="deleteSchedule('${esc(s.id)}')">Delete</button></td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
+async function loadSchedules(ev){
+  return task('schedules', 'Reading schedules', async () => {
+    const d = await api('/api/schedules');
+    renderSchedules(d);
+    return d;
+  }, {blocking: false, button: ev && ev.currentTarget, successMessage: null}).catch(() => {});
+}
+
+async function putSchedule(body){
+  const r = await fetch('/api/schedules', {
+    method: 'PUT', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  const d = await r.json();
+  if(!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+  return d;
+}
+
+async function saveSchedule(ev){
+  const pkg = (document.getElementById('schPackage').value || '').trim();
+  const at = (document.getElementById('schAt').value || '').trim();
+  const days = (document.getElementById('schDays').value || '')
+    .split(',').map(x => x.trim()).filter(Boolean);
+  const body = {
+    package: pkg, at,
+    profile: (document.getElementById('schProfile').value || '').trim() || null,
+    days: days.length ? days : null,
+    pdf: document.getElementById('schPdf').checked,
+    pdf_detail: document.getElementById('schDetail').value,
+    // Created off. Turning it on is the separate act, from the table.
+    enabled: false,
+  };
+  try{
+    const d = await putSchedule(body);
+    showTestResult('schResult', true,
+      '<span class="test-icon good">✓</span> <strong>Saved as ' + esc(d.id)
+      + ', and it is off.</strong> Turn it on in the table below when you want it to run.');
+    await loadSchedules();
+    reportAutomationState();
+  }catch(e){
+    showTestResult('schResult', false,
+      '<span class="test-icon bad">✕</span> <strong>' + esc(String(e.message || e)) + '</strong>');
+  }
+}
+
+async function toggleSchedule(id, on){
+  const d = await api('/api/schedules');
+  const s = (d.schedules || []).find(x => x.id === id);
+  if(!s) return;
+  try{
+    await putSchedule({...s, enabled: on});
+    if(on) notify('warn', 'Schedule enabled',
+      'This application will now read the Management Server on its own at '
+      + s.at + ' on ' + (s.days || []).join(', ') + '.', {duration: 9000});
+    else notify('info', 'Schedule disabled', 'Nothing will run on its own from it.');
+    await loadSchedules();
+    reportAutomationState();
+  }catch(e){ fail(e, 'Schedule'); }
+}
+
+async function deleteSchedule(id){
+  if(!confirm('Delete the schedule "' + id + '"? Stored reviews are not touched.')) return;
+  try{
+    const r = await fetch('/api/schedules/' + encodeURIComponent(id), {method: 'DELETE'});
+    if(!r.ok){ const d = await r.json(); throw new Error(d.detail || ('HTTP ' + r.status)); }
+    notify('info', 'Schedule deleted', 'Reviews it already produced are still stored.');
+    await loadSchedules();
+    reportAutomationState();
+  }catch(e){ fail(e, 'Schedule'); }
 }
 
 function isAlertMetric(label){

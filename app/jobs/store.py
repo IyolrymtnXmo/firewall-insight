@@ -26,6 +26,13 @@ RUN_DIR = Path(__file__).resolve().parent.parent.parent / "runs"
 
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
+# The diff counters that mean the policy actually moved. `scope_unverifiable`
+# is deliberately absent: a rule whose reach could not be resolved in one of
+# the two snapshots is a reason to look, not a change. Kept in step with
+# tools/run_review.REAL_CHANGE_KEYS, which a test asserts.
+REAL_CHANGE_KEYS = ("added", "removed", "modified", "moved", "scope_changed",
+                    "nat_added", "nat_removed", "nat_modified")
+
 
 def _dir(base: Path | None = None) -> Path:
     d = base or RUN_DIR
@@ -66,6 +73,7 @@ def list_runs(base: Path | None = None) -> list[dict[str, Any]]:
             continue
         sections = d.get("sections") or {}
         changed = ((sections.get("changed") or {}).get("data") or {})
+        counters = changed.get("summary") or {}
         out.append({
             "id": d.get("id", path.stem),
             "package": d.get("package"),
@@ -76,8 +84,13 @@ def list_runs(base: Path | None = None) -> list[dict[str, Any]]:
             "complete": d.get("complete"),
             "incomplete_sections": d.get("incomplete_sections") or [],
             "snapshot_id": ((sections.get("snapshot") or {}).get("data") or {}).get("snapshot_id"),
+            # `identical` is false when any of nine counters moved, and one of
+            # them - scope_unverifiable - means "could not be compared", not
+            # "changed". Reading it as a change is the same flattening the CLI
+            # summary and the PDF headline each had; this was the third place.
             "policy_changed": (None if not changed or changed.get("first_run")
-                               else (changed.get("identical") is False)),
+                               else any(counters.get(k) for k in REAL_CHANGE_KEYS)),
+            "undecided_rules": counters.get("scope_unverifiable", 0),
         })
     out.sort(key=lambda r: str(r.get("started_at") or ""), reverse=True)
     return out

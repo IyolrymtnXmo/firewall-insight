@@ -235,7 +235,10 @@ class TestTheRunStore:
     def test_the_index_carries_whether_the_policy_moved(self, tmp_path):
         store.save_run({
             "package": "P", "started_at": "2026-01-01T09:00:00+00:00",
-            "sections": {"changed": {"data": {"first_run": False, "identical": False}},
+            # A change means a counter moved. `identical: False` alone is not
+            # one - it is also false when a rule merely could not be compared.
+            "sections": {"changed": {"data": {"first_run": False, "identical": False,
+                                              "summary": {"modified": 1}}},
                          "snapshot": {"data": {"snapshot_id": "SNAP-9"}}},
         }, base=tmp_path)
         row = store.list_runs(base=tmp_path)[0]
@@ -256,3 +259,46 @@ def test_the_runner_issues_no_write_command():
            / "app" / "jobs" / "runner.py").read_text(encoding="utf-8")
     for forbidden in ("add-", "set-", "delete-", "publish", "install-policy"):
         assert f'"{forbidden}' not in src, forbidden
+
+
+class TestOnlyOneDefinitionOfChanged:
+    """Three places consume the diff summary. They must agree on what a change is.
+
+    `identical` is false when any of nine counters moves, and one of them -
+    `scope_unverifiable` - means "could not be compared". Reading that as a
+    change produced a wrong answer three separate times: in the CLI summary, in
+    the PDF headline, and in the run index behind the Reviews table. Each was
+    found only by looking at real output.
+    """
+
+    def test_the_two_key_lists_are_identical(self):
+        from tools.run_review import REAL_CHANGE_KEYS as cli
+        assert store.REAL_CHANGE_KEYS == cli, (
+            "the run index and the CLI disagree about what counts as a change")
+
+    def test_scope_unverifiable_is_in_neither(self):
+        assert "scope_unverifiable" not in store.REAL_CHANGE_KEYS
+
+    def test_the_index_reports_unverifiable_separately(self, tmp_path):
+        store.save_run({
+            "package": "P", "started_at": "2026-01-01T09:00:00+00:00",
+            "sections": {"changed": {"data": {
+                "first_run": False, "identical": False,
+                "summary": {"added": 0, "removed": 0, "modified": 0, "moved": 0,
+                            "unchanged": 12, "scope_unverifiable": 1}}}},
+        }, base=tmp_path)
+        row = store.list_runs(base=tmp_path)[0]
+        assert row["policy_changed"] is False, (
+            "one rule that could not be compared was counted as a change")
+        assert row["undecided_rules"] == 1
+
+    def test_a_real_change_still_reads_as_changed(self, tmp_path):
+        store.save_run({
+            "package": "P", "started_at": "2026-01-01T09:00:00+00:00",
+            "sections": {"changed": {"data": {
+                "first_run": False, "identical": False,
+                "summary": {"modified": 2, "scope_unverifiable": 1}}}},
+        }, base=tmp_path)
+        row = store.list_runs(base=tmp_path)[0]
+        assert row["policy_changed"] is True
+        assert row["undecided_rules"] == 1
