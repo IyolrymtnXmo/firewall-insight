@@ -547,11 +547,35 @@ window.addEventListener('DOMContentLoaded',()=>{
   primeEmptyStates();
   try{ initFolds(); }catch(_){}
   try{refreshAuroraDashboard()}catch(_){}
-  setStatus('Ready. No API calls are made automatically \u2014 pick a Policy Package and run an analysis.','info');
+  /* The promise this line makes has to match what the application does. With
+     no schedule enabled it is still exactly true. With one enabled it is not,
+     so the line says which - reported by the server, not guessed here. */
+  reportAutomationState();
   notify('info','Read-only tool',
     'Firewall Insight only issues show-* Management API calls. It never publishes or installs policy.',
     {duration:7000});
 });
+
+/* What the application does on its own, said plainly on arrival.
+
+   Until v4.33 this line read "No API calls are made automatically" and was
+   exactly true. A schedule makes it false, so rather than leaving a stale
+   promise in place the line reports the actual state. */
+async function reportAutomationState(){
+  const idle = 'Ready. No Management API calls are made automatically \u2014 pick a Policy Package and run an analysis.';
+  try{
+    const d = await api('/api/schedules');
+    const on = (d.schedules||[]).filter(s=>s.enabled);
+    if(!on.length){ setStatus(idle,'info'); return; }
+    const next = on.map(s=>s.next_due).filter(Boolean).sort()[0];
+    setStatus(on.length + ' schedule(s) are enabled, so this application will read '
+      + 'the Management Server on its own'
+      + (next ? ' \u2014 next at ' + String(next).replace('T',' ').slice(0,16) : '')
+      + '. Turn them off on the Settings page.', 'warn');
+  }catch(_){
+    setStatus(idle,'info');
+  }
+}
 
 function toggleTheme(){document.body.classList.toggle('light');localStorage.setItem('fw-theme',document.body.classList.contains('light')?'light':'dark')}
 if(localStorage.getItem('fw-theme')==='light')document.body.classList.add('light');

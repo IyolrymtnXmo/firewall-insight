@@ -39,3 +39,5 @@ health-baselines/
 # design skills installed locally (ui-ux-pro-max, impeccable)
 .claude/
 runs/
+schedules.json
+reports/

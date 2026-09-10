@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .api import router
 from .api.credentials import load_credentials_on_startup
+from .jobs import schedule as schedules
 from .runtime import cp
 from .version import APP_VERSION
 
@@ -41,7 +42,8 @@ async def lifespan(_: FastAPI):
     ``import app.main`` - test collection included.
     """
     load_credentials_on_startup()
-    yield
+    async with schedules.running():
+        yield
     await cp.close()
 
 

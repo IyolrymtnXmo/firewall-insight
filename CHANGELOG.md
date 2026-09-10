@@ -4,6 +4,79 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.33.0 — schedules, and the promise they change (automation, phase B)
+
+The application can now call the Management Server on its own. That is a change
+to what it promises, not a feature bolted beside it, so the promise changed
+with it.
+
+### The status line no longer says something that is not true
+
+It read *"No API calls are made automatically"* and, until this release, it was
+exactly true. With a schedule enabled it is not. Rather than leaving a stale
+sentence in place, the line reports the actual state, from the server rather
+than from a guess:
+
+    none enabled   Ready. No Management API calls are made automatically — pick
+                   a Policy Package and run an analysis.
+    one enabled    2 schedule(s) are enabled, so this application will read the
+                   Management Server on its own — next at 2026-09-11 09:00.
+                   Turn them off on the Settings page.
+
+It also names *which* API now. `reportAutomationState()` reads `/api/schedules`
+on load — this application's own backend reading a local file — and the promise
+was always about the Management Server.
+
+### Off, visible, stoppable
+
+    off        A schedule is disabled when created. Enabling is a separate act.
+    visible    GET /api/schedules returns every schedule, whether it is on, when
+               it next fires and how the last run ended — so "what is this thing
+               doing to my Management Server" has an answer.
+    stoppable  Disabling takes effect on the next tick; the loop is a task the
+               lifespan cancels on shutdown.
+
+### The time logic, which is the part that had to be right
+
+`due_at()` is pure, so a day does not have to pass to test it. Three failure
+modes it is built against, each with tests:
+
+* **Firing twice in one window.** The loop ticks every 60 seconds. A recorded
+  run closes its window — including a *failed* run, or a broken schedule would
+  retry every minute all morning.
+* **Running the backlog.** Three days away produces one run, not three.
+* **Catching up on history it was never part of.** The first draft did exactly
+  this: a schedule enabled at 08:59 immediately fired for *yesterday's* window,
+  because catch-up looked back seven days from now. It now looks back only as
+  far as the last recorded run, and with nothing recorded only today counts.
+
+Times are the machine's local clock, because "every morning at nine" is a local
+statement. Everything recorded stays UTC.
+
+### The read-only guarantee gains its second named exception
+
+`api/jobs.py` holds POST/PUT/DELETE routes. Like `credentials.py` it writes to
+local files only — a schedule file and a run file — and the structural test now
+holds it to that: it may not name a Management API path or a mutating verb.
+Adding to that allow-list is meant to be a visible act, so it is one line in a
+test with a comment saying why.
+
+Starting a review is a POST, not a GET, because it costs a full read of the
+Management Server. Anything that prefetches links — a browser, a scanner, a
+chat client unfurling a URL — would otherwise trigger an 80-second analysis.
+
+### test_main_is_thin now counts statements
+
+Adding two lines of code and four of explanation pushed `main.py` to exactly 60
+lines and tripped a test that counted every line, docstrings included. Cutting
+the explanation to satisfy the number would have made the file worse while
+measuring nothing. The loop's lifecycle moved into `schedule.running()`, where
+it belongs, and the test counts statements — the property it was always about.
+
+821 pass, up from 789.
+
+---
+
 ## v4.32.1 — the review, as a document (automation, phase D — PDF only)
 
 A stored run renders to a PDF. Nothing is emailed and nothing leaves the

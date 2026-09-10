@@ -175,7 +175,18 @@ class TestConnectingLeavesTheApplicationUsable:
         init = init.split(NL + "});", 1)[0]
         assert "loadMetadata" not in init, (
             "metadata is loaded on page load, which the status line denies")
-        assert "No API calls are made automatically" in init
+
+        # v4.33: the promise moved into reportAutomationState(), because with a
+        # schedule enabled it is no longer unconditionally true. It also names
+        # the Management API now - the function reads /api/schedules from this
+        # application's own backend, which is a local file read, and the promise
+        # was always about the Management Server.
+        assert "reportAutomationState()" in init
+        promise = APPJS.split("async function reportAutomationState", 1)[1]
+        promise = promise.split(NL + "}", 1)[0]
+        assert "No Management API calls are made automatically" in promise
+        assert "schedule(s) are enabled" in promise, (
+            "the line does not say when the application does call out on its own")
 
     def test_the_guard_can_tell_the_two_problems_apart(self):
         """"Not picked yet" and "there are none" need different answers."""
