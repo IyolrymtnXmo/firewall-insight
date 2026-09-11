@@ -4,7 +4,10 @@
 *.pem
 *.key
 .credential_key
-credentials.enc
+# The glob matters: a copy taken before a repair (credentials.enc.bak-*)
+# is the same secret under a name the bare pattern does not match, and
+# `git add -A` would have committed it.
+credentials.enc*
 
 # Python
 .venv/

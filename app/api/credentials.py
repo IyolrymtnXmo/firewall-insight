@@ -127,6 +127,22 @@ def _record(cred_type: str, supplied: dict[str, Any]) -> dict[str, Any]:
     return record
 
 
+def address_source() -> str:
+    """Where the Management Server address now in ``settings`` came from.
+
+    ``"saved"`` when a stored record supplied it, ``"env"`` otherwise. The
+    distinction is not cosmetic: a stored record overrides .env at startup, so
+    an address that is wrong in the store cannot be corrected by editing .env,
+    and somebody who does not know that will edit .env repeatedly and watch
+    nothing change.
+
+    This lives here because this module is what applies a stored record over
+    the settings. Callers use it to tell a person what to do; nothing branches
+    on it.
+    """
+    return "saved" if (credential_store.load("checkpoint") or {}).get("mgmt") else "env"
+
+
 def _apply_checkpoint(data: dict[str, Any]) -> None:
     """Push decrypted Check Point values into the running settings.
 

@@ -17,6 +17,11 @@ from pydantic import BaseModel
 
 from .. import auth
 from ..config import settings
+# Asked rather than looked up: this module must not hold a handle on the
+# credential store. It validates a password and drops it, and the test in
+# test_v413_structure.py that enforces that bans the store's name here on
+# purpose - an import sitting in the file is the beginning of keeping one.
+from .credentials import address_source
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -26,6 +31,32 @@ class Login(BaseModel):
     user: str
     password: str
     remember: bool = False
+
+
+def _unreachable(base: str, reason: str) -> str:
+    """Why the sign-in failed, and what can be done about it from here.
+
+    A sign-in is tried against the configured Management Server, so an address
+    that is wrong locks everybody out - and the Settings page where it would be
+    corrected is behind this same form. Worse, a saved record overrides .env,
+    so editing .env does not help either. That is a door that locks with the
+    key inside it, and the message should say where the key is.
+
+    The distinction matters to whoever reads this: an address that is simply
+    unreachable is a network problem and waiting will fix it, while an address
+    that is wrong will never work and has to be cleared from outside.
+    """
+    saved = address_source() == "saved"
+    source = ("the saved credentials, which override .env" if saved else ".env")
+    tail = (" Clear it with `python -m tools.reset_credentials --clear "
+            "checkpoint` on the machine running this application, and .env "
+            "applies again." if saved else
+            " Correct it in .env and restart.")
+    return (f"Could not reach {base}: {reason}. That address comes from "
+            f"{source}. If the server is only temporarily unreachable, waiting "
+            f"is enough. If the address itself is wrong, nobody can sign in and "
+            f"the Settings page cannot be opened without signing in first."
+            + tail)
 
 
 @router.get("/status")
@@ -85,11 +116,10 @@ async def login(body: Login, response: Response):
     except HTTPException:
         raise
     except httpx.TimeoutException:
-        raise HTTPException(status_code=504,
-                            detail=f"The Management Server at {base} did not answer.")
+        raise HTTPException(status_code=504, detail=_unreachable(
+            base, "it did not answer in time"))
     except Exception as exc:                                      # noqa: BLE001
-        raise HTTPException(status_code=502,
-                            detail=f"Could not reach {base}: {exc}")
+        raise HTTPException(status_code=502, detail=_unreachable(base, str(exc)))
 
     auth.attempts.clear(user)
     hours = auth.REMEMBER_DAYS * 24 if body.remember else auth.SESSION_HOURS
