@@ -4,6 +4,109 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.39.0 — from finding problems to acting on them, without writing anything
+
+Seven extensions were proposed. Five are built and verified against the lab, one is
+built without the part that could not be verified, and one is not built. That split
+is part of the release.
+
+| Proposed | Status | Why |
+|---|---|---|
+| Cleanup scripts | **Built** | text for a person to run; the application cannot run it |
+| Object optimization | **Built** | on Check Point's own `show-unused-objects` |
+| Log integration | **Built, Check Point log server only** | no Splunk/Elastic to test against; not real-time |
+| Trends | **Built** | from stored history only |
+| Alerts | **Built** | real Slack/Teams/SMTP delivery not verified — no endpoints |
+| AI assistant | **Deterministic core built, no LLM** | no key to verify with, and it would send host names outside |
+| Multi-vendor | **Not built** | no Palo Alto, Fortinet or Cisco device to test an adapter against |
+
+### Found first: tracking was blank for every rule
+
+Probing the lab for the log feature showed every snapshot recording `track: ""`. The
+Management API returns `track` as an object whose `type` points at a Track object, and
+it went through a helper that looks for `name` on the outer object. Consequences, all
+silent: the shipped NIST baseline's `all_rules_have: track` failed every rule; a cleanup
+rule was reported as not logged; a rule switched from Log to None never appeared in a
+diff. `track_name()` resolves it; an unresolvable type is *undecided*, not passed or
+failed (the first version of the fix would have read an unknown uid as "logged" — a test
+caught it); and a pre-fix snapshot does not make the whole estate look edited.
+
+### Cleanup script (Analyze page)
+
+`mgmt_cli` or Ansible. Redundant rules and later copies of duplicates are **disabled, not
+deleted**. Zero-hit rules, deleting disabled rules and deleting unused objects are
+opt-in. A rule shadowed by a *different* action and Any/Any/Any become decisions with no
+command. Never touched: a layer's cleanup rule, a rule holding an inline layer, a rule
+whose uid is not in the snapshot. No script at all on an incomplete read. Publishing needs
+the person running it to type `PUBLISH`; a script that stops half way discards its
+session; nothing is installed.
+
+On the lab it proposed deleting the two hosts the server reports unused and refused the
+only zero-hit rule — 8.4 *Block-Rest*, the inline layer's cleanup rule — with that
+reason. The shell script passes `bash -n`, the playbook parses as YAML.
+`remediation.py` imports nothing that reaches a network, which a test checks; the
+acceptance runner exempts it from its source scan by name and checks the same thing.
+
+### Objects
+
+Unused comes from the server. Duplicates are different names for one definition — two
+real pairs on the lab. Groups were first reported as "four members equal one /16", true
+and misleading: one member *is* 172.23.0.0/16 and three sit inside it. Members inside
+another member are now named redundant, and a group is only a merge when blocks are fewer
+than what remains. A merge never covers an address the members did not.
+
+### Rule Usage
+
+This API version rejects `type: count` and `top`, and a filter on `rule_uid` returns
+nothing, so records are read and counted — ~7 s per hundred on the lab, where 500
+records covered six minutes. Only *no traffic* means unused, and only for a rule that
+logs, in a window read to the end. The first scan held the heavy-read lock for 3.5
+minutes; it is now taken per page, and a test confirms another read can get in between
+pages (the first version of that test passed on the broken code too).
+
+### Trends
+
+Six small multiples, one measure and one axis each, time to scale, a missing reading
+breaks the line, a section that could not be read is marked — never drawn as zero.
+
+### Alerts
+
+`store.outcome()` is now the single meaning of a finished review; the CLI exit code maps
+it and its tests pass unchanged. Destinations fire on attention, undecided, health, clean
+or every run; *undecided* is on by default. Summary alerts carry no rule contents and no
+addresses. URLs and SMTP passwords are encrypted and never returned; URLs must be https.
+Delivered live over HTTP to a local receiver as a Teams adaptive card built from a real
+stored review ("could not be fully read").
+
+### Ask
+
+Thai or English, e.g. *ทำไม 192.168.20.10 เข้า 192.168.10.10 ด้วย tcp/9999 ไม่ได้*.
+Runs the form's own trace. On the lab that question returns **CANNOT SAY** with the
+reason `AD-Services → ALL_DCE_RPC` — the case in the project assessment — never a yes or
+no. A network, range, group or service group gets a question back. "to" inside
+"customer" swapped source and destination when markers were substrings; fixed, with a
+test that fails on the old code.
+
+### Found while verifying
+
+- Ask drew no trace after a reload (the form needs an Access Layer; Ask now selects the
+  one it traced); count charts had ticks of 1.1 and 2.2; the banner stuck on "Reading
+  objects…"; log times are UTC and were shown bare.
+- The verification server for this work stubbed `credential_store.load` but not `save`,
+  so saving a test alert wrote an entry into the operator's real `credentials.enc`. It was
+  removed, the other entries confirmed unchanged by hash, and the verification server now
+  uses its own store. `tests/conftest.py` now isolates `alerts.json` for every test, the
+  way it isolates `credentials.enc`.
+
+### Not verified, stated plainly
+
+Real Slack, Teams and SMTP delivery. Running a generated script against a Management
+Server (by design this project never does). Multi-vendor support does not exist.
+
+934 → 1,007 tests; JS harness 83 → 93 checks.
+
+---
+
 ## v4.38.2 — the documentation catches up
 
 The README described an application three versions older than the one it ships

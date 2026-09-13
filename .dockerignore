@@ -19,6 +19,7 @@ snapshots/
 health-baselines/
 reports/
 schedules.json
+alerts.json
 
 # not needed to run
 .venv/

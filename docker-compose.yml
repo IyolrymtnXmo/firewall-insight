@@ -9,12 +9,12 @@ services:
     # health baselines and PDF reports - the history Policy Diff, the Reviews
     # page and the dashboard trend are drawn from.
     #
-    # NOT persisted, and why: credentials.enc, .credential_key, .session_key and
-    # schedules.json are single files at /app. Bind-mounting a file that does
+    # NOT persisted, and why: credentials.enc, .credential_key, .session_key,
+    # schedules.json and alerts.json are single files at /app. Bind-mounting a file that does
     # not yet exist on the host makes Docker create a directory in its place,
     # which breaks the application on first start. So after a rebuild:
     # credentials fall back to .env, everybody signs in again, and schedules
-    # have to be re-created on the Reviews page.
+    # and alert destinations have to be re-created on the Reviews page.
     volumes:
       - runs:/app/runs
       - snapshots:/app/snapshots

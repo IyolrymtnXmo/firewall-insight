@@ -7,7 +7,9 @@ retrieves Access Control and NAT policy, and presents an analytical view that
 SmartConsole does not provide out of the box: shadowed and duplicate rules, overly broad
 rules, Inline Layer hierarchy, a configuration-based traffic-path simulator, a topology
 map, compliance profiles, policy diffs between snapshots, gateway health over the Gaia
-API, and reviews that can run on a schedule and produce a PDF.
+API, reviews that run on a schedule and send alerts, object hygiene, rule usage from the
+firewall logs, trends over time, cleanup scripts for a person to run, and traffic questions
+asked in Thai or English.
 
 **It is not a SmartConsole replacement, and it never modifies policy.**
 
@@ -44,12 +46,29 @@ The application issues **only** these Management API commands:
 login  logout  show-packages  show-package  show-access-layers
 show-access-rulebase  show-nat-rulebase  show-object
 show-gateways-and-servers
+show-unused-objects  show-hosts  show-networks  show-address-ranges
+show-groups  where-used  show-logs
 ```
+
+The second group arrived in v4.39 and lives in one module, `app/estate_reads.py`, whose
+`READ_COMMANDS` set a test holds the module to. `where-used` does not start with `show-`,
+which is why the set is written out rather than trusted to a prefix.
 
 There is no `add-*`, `set-*`, `delete-*`, `publish`, or `install-policy` code path.
 `tests/test_v413_structure.py` scans the source for mutating Management commands and
 fails if one appears. This is deliberate and should be preserved: the tool is intended
 to be safe to point at a production Management Server.
+
+### The cleanup script is text the application cannot run
+
+`app/remediation.py` turns findings into a `mgmt_cli` script or an Ansible playbook, so it
+necessarily contains mutating commands - as text, for a person to read and run. It imports
+nothing that can reach a network (no client, no httpx, no socket, no subprocess); a test
+checks its imports rather than trusting this paragraph, and the acceptance runner exempts
+that one file from its source scan by name while checking the same thing. The script
+disables rather than deletes, never touches a layer's cleanup rule or a rule holding an
+inline layer, refuses to build on an incomplete read, publishes only when the person running
+it types `PUBLISH`, and never installs policy.
 
 ### The Gaia API needs its own guarantee
 
@@ -86,11 +105,21 @@ every entry lands on the machine running the application:
 | Review run | `POST /api/runs`, a schedule, or `tools/run_review.py` | `runs/*.json` |
 | Schedules | `PUT` / `DELETE /api/schedules` | `schedules.json` |
 | PDF report | a schedule with PDF enabled | `reports/*.pdf` (or the schedule's `pdf_dir`) |
+| Alert destinations | `PUT` / `DELETE /api/alerts/destinations` | `alerts.json`; webhook URLs and SMTP passwords encrypted under `alerts` in `credentials.enc` |
 
 All of these paths are in `.gitignore`. Note that three of the writes happen on a
 `GET` — capturing a snapshot, recording a health baseline, and a compliance run that
 saves its evidence. They change nothing on any Check Point host, and each response
 names what it saved.
+
+### What leaves this machine - only when you configure it
+
+Alerts are the one feature that sends data somewhere other than a Check Point host: a POST
+to a Slack, Teams or generic webhook URL, or an SMTP session. Nothing is sent until a
+destination is saved. Summary alerts carry counts and verdicts - no rule contents and no
+addresses; `findings` detail adds rule numbers, failed check titles and gateway addresses,
+and is chosen per destination. Webhook URLs must be `https://` (plain `http://` only to this
+machine, for testing).
 
 `.env` holds Management **and** Gaia credentials and is excluded by `.gitignore`.
 **Never commit it.**
@@ -183,9 +212,9 @@ docker compose up --build      # reads .env via env_file
 ```
 
 Reviews, snapshots, health baselines and PDF reports persist in named volumes.
-`credentials.enc`, the key files and `schedules.json` do not: after a rebuild,
-credentials fall back to `.env`, everyone signs in again, and schedules have to be
-re-created. `docker-compose.yml` explains why they are not bind-mounted.
+`credentials.enc`, the key files, `schedules.json` and `alerts.json` do not: after a
+rebuild, credentials fall back to `.env`, everyone signs in again, and schedules and alert
+destinations have to be re-created. `docker-compose.yml` explains why they are not bind-mounted.
 
 ### Verifying the install
 
@@ -309,6 +338,46 @@ detail levels — `summary` (the default, and deliberately free of rule identifi
 because it is the file that gets forwarded), `findings`, and `full` — and the PDF prints
 what the review does not cover.
 
+**Cleanup script** (on Analyze) — the findings as a `mgmt_cli` script or an Ansible playbook
+for the `check_point.mgmt` collection. Redundant rules and later copies of exact duplicates
+are disabled; zero-hit rules (opt-in, since counters reset on install), deletion of disabled
+rules (opt-in) and deletion of objects the server reports unused (opt-in) can be added. A rule
+shadowed by one with a *different* action, and Any/Any/Any, are listed as decisions with no
+command. Every command carries its reason and the rule's hits and tracking. The Ansible module
+addresses rules by name, so unnamed rules are listed as not handled rather than risked.
+
+**Objects** — what the Management Server itself reports as unused (`show-unused-objects`),
+objects defined twice under different names, and groups whose members add nothing because
+they sit inside another member, or that could be written as fewer blocks. A shorter form is
+suggested only when it covers exactly the same addresses. `where-used` on demand.
+
+**Rule Usage** — firewall log records counted per rule, beside the hit counter. This API
+version cannot aggregate, so records are read newest first up to a limit, and the page says
+what time span they covered. Each rule gets one verdict: *seen*, *no traffic* (the only one
+that says a rule is unused - it logs, and the whole window was read), *not in sample*, *not
+logged* (track None), *track unknown*, or *via inline*. Not loaded on arrival: reading the
+logs takes a minute or more.
+
+**Trends** — small multiples of the optimization score, compliance failures, rule changes,
+gateway findings, rule count and zero-hit rules, drawn only from reviews, snapshots and health
+readings that were taken. Time is to scale, a missing reading breaks the line, and a section
+that could not be read is marked on the chart rather than drawn as zero. The same points as a
+table.
+
+**Ask** (on Traffic Path) — a traffic question in Thai or English, such as *ทำไม 192.0.2.10
+เข้า 198.51.100.5 ด้วย rdp ไม่ได้*. The source, destination and service are read out of the
+words and the same trace as the form runs; the verdict, UNVERIFIED and confidence are the
+trace's, and the answer is never a yes or a no when the trace could not say. A network, range
+or group where one address is needed gets a question back, not a guess. It is deterministic -
+no language model, and the question never leaves this application.
+
+**Alerts** (on Reviews) — Slack, Microsoft Teams (Workflows adaptive card), a generic JSON
+webhook, or email with the summary PDF attached. Each destination fires on *needs attention*,
+*could not be read*, *gateway problem*, *no change* or *every review*; the default includes
+*could not be read*, because a review that failed to read is the one whose silence is misread.
+A failed delivery is recorded on the run and never raised into it. Scheduled reviews send
+automatically; a manual review sends when *send alerts* is ticked.
+
 **Settings** — save, test and delete Management and Gaia credentials. Saved credentials
 are encrypted at rest with Fernet and override `.env`.
 
@@ -344,6 +413,11 @@ app/
     compliance.py       profiles and compliance runs
     health.py           gateway health readings and baselines
     jobs.py             reviews, PDF export, schedules
+    alerts.py           alert destinations, test send
+    remediation.py      the cleanup script route
+    objects.py          object hygiene, where-used
+    usage.py            rule usage from logs
+    trends.py           trend series from stored history
     export.py           CSV
     ui.py               serves the single-page UI
   jobs/
@@ -351,6 +425,7 @@ app/
     store.py            run persistence in runs/
     report.py           reportlab PDF, three detail levels
     schedule.py         due_at()/next_due() and the in-app schedule loop
+    alerts.py           destinations, messages, Slack/Teams/webhook/SMTP delivery
   checkpoint.py         Management API client: session, pacing, retry/backoff,
                         pagination, Inline Layer tree discovery
   inline_layers.py      layer-tree traversal, display numbering, aggregation
@@ -370,6 +445,12 @@ app/
   compliance.py         YAML profile evaluation
   compliance_profiles/  shipped starting-point profiles
   health.py             gateway health findings and baselines
+  estate_reads.py       the v4.39 reads: unused objects, definitions, where-used, logs
+  remediation.py        findings -> mgmt_cli / Ansible text; imports no network code
+  object_hygiene.py     duplicates, redundant group members, exact merges
+  log_usage.py          log records -> per-rule verdicts
+  trends.py             stored runs, snapshots, baselines -> series with gaps
+  ask.py                a question in words -> the trace's three inputs, and back
   templates/index.html
   static/css/app.css
   static/js/app.js
@@ -412,7 +493,9 @@ tools/                  command-line tools, see below
 10. **"Could not be compared" is not "unchanged".** A diff, a review summary, a PDF
     headline and a scheduler exit code must all keep the undecided case separate.
     `REAL_CHANGE_KEYS` in `app/jobs/store.py` is the one list of what counts as a
-    change, and `scope_unverifiable` is deliberately not in it.
+    change, and `scope_unverifiable` is deliberately not in it. `store.outcome()` is the
+    one meaning of a finished review - attention, undecided, clean - shared by the CLI exit
+    code, alerts and trends.
 11. **The UI must never present a partial result as a complete one.** `data_quality()`
     reports failed inline layers and truncated object hydration; the frontend turns that
     into a visible banner. Traffic confidence `exact`, `inferred` and `UNVERIFIED` get
@@ -459,12 +542,23 @@ All routes except those marked *public* require a session.
 | GET | `/api/health?baseline=&save=` | Read gateway health over Gaia; optionally compare and save |
 | GET | `/api/health-baselines` | List saved health baselines |
 | GET | `/api/runs` | List stored reviews |
-| POST | `/api/runs?package=&profile=&include_health=&rid=` | Run a review now |
+| POST | `/api/runs?package=&profile=&include_health=&notify=&rid=` | Run a review now; `notify` sends it to alert destinations |
 | GET | `/api/runs/{run_id}` | One stored review |
 | GET | `/api/runs/{run_id}/report.pdf?detail=` | The review as a PDF (`summary`, `findings`, `full`) |
 | GET | `/api/schedules` | List schedules and when each is next due |
 | PUT | `/api/schedules` | Create or replace a schedule |
 | DELETE | `/api/schedules/{sid}` | Remove a schedule |
+| GET | `/api/ask?q=&package=&rid=` | A traffic question in Thai or English, answered by the Traffic Path trace |
+| GET | `/api/remediation-script?package=&format=&include_zero_hit=&include_disabled=&include_unused_objects=&download=` | The cleanup script and its plan; writes nothing, runs nothing |
+| GET | `/api/objects/hygiene?cap=&force=&rid=` | Unused objects, duplicates, redundant group members, exact merges |
+| GET | `/api/objects/where-used?uid=` | What refers to one object |
+| GET | `/api/rule-usage?package=&time_frame=&cap=&rid=` | Per-rule usage from firewall log records |
+| GET | `/api/trends?package=` | Series from stored reviews, snapshots and health readings |
+| GET | `/api/alerts` | Alert destinations; never returns a URL or password |
+| PUT | `/api/alerts/destinations` | Create or replace a destination (secrets beside it, stored encrypted) |
+| DELETE | `/api/alerts/destinations/{did}` | Remove a destination and its secret |
+| PUT | `/api/alerts/public-url?url=` | The address alerts link back to |
+| POST | `/api/alerts/test?destination=&run_id=` | Send the latest (or a given) review to one destination |
 | GET | `/api/analyze?layer=` | Legacy layer-first analysis |
 | GET | `/api/policy-browser?layer=&force=` | Legacy layer-first raw rulebase |
 | GET | `/api/export.csv?layer=` | Analysis CSV |
@@ -575,6 +669,25 @@ where it would not fire.
 Gateway Health is one reading at one instant. It is not monitoring, and a schedule that
 includes it takes one reading per run.
 
+**Check Point only.** Palo Alto, Fortinet and Cisco are not supported. The analysis model
+(rules, objects, tri-state matching) is not tied to Check Point in principle, but an adapter
+that has never been run against a real device would be a claim, not a feature.
+
+**Rule usage is a sample, not a count.** This Management API rejects aggregate log queries
+and returns nothing for a filter on rule uid, so records are read one page at a time - about
+seven seconds per hundred on the lab, where 500 records covered six minutes. It is not
+Splunk/Elastic/SIEM integration and it is not real-time.
+
+**The cleanup script has not been run against a Management Server by this project.** Its
+shell syntax is checked with `bash -n` and the playbook parses as YAML; the commands follow
+`mgmt_cli` and `check_point.mgmt` documentation. Read it before running it.
+
+**Alert delivery to real Slack, Teams and SMTP servers is not verified here** - no such
+endpoints were available. It was tested against a local HTTP receiver and a fake SMTP class.
+
+**Ask understands phrasing it was written for.** It is a deterministic parser, not a language
+model; when it cannot find a source, destination or service it says which, rather than guessing.
+
 **Sign-in depends on the Management Server.** While it is unreachable, nobody can start
 a new session; existing sessions continue. A wrong address saved in `credentials.enc`
 locks everyone out until it is cleared with `tools/reset_credentials.py`.
@@ -604,6 +717,9 @@ Do **not**:
 - assume NAT accepts every parameter Access accepts
 - return to a layer-first selection model
 - strip layer / layer-path / parent-rule metadata from findings or UI rows
+- let `app/remediation.py` import anything that can reach a network
+- send an alert at more than summary detail by default
+- count a capped log scan's silence as "no traffic"
 - put a real address in a placeholder, `.env.example` or this README — use RFC 5737
   (`192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`)
 

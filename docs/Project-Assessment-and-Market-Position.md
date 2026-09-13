@@ -4,14 +4,14 @@
 > ทุกข้อความเกี่ยวกับผลิตภัณฑ์ในตลาดมีลิงก์อ้างอิงท้ายเอกสาร
 > ส่วนที่เป็นความเห็น เขียนว่า "ความเห็น" ส่วนที่วัดได้ เขียนตัวเลขที่วัดได้
 >
-> **สถานะ ณ v4.38.2 (13 ก.ย. 2569)** — เนื้อหาด้านล่างไม่ได้แก้ย้อนหลัง ยังเป็นของเวอร์ชันที่ระบุไว้ข้างบน
+> **สถานะ ณ v4.39.0 (13 ก.ย. 2569)** — เนื้อหาด้านล่างไม่ได้แก้ย้อนหลัง ยังเป็นของเวอร์ชันที่ระบุไว้ข้างบน
 > ข้อความต่อไปนี้ในเอกสาร **ไม่จริงแล้ว** — ถ้าคัดไปใส่รายงานหรือเปเปอร์ ให้ใช้ตัวเลขชุดนี้แทน:
 >
 > | ข้อ | เอกสารเขียนว่า (v4.23.0) | ความจริง ณ v4.38.2 |
 > |---|---|---|
-> | 1 | 17 API endpoint (GET ทั้งหมด) | 37 route — 8 ตัวเป็น POST/PUT/DELETE แต่ทุกตัวเขียนลงเครื่องที่รันแอปเท่านั้น ไม่มีตัวไหนเขียนไปที่ Check Point |
-> | 1 | backend ~3,700 + frontend ~3,900 บรรทัด | backend 8,751 (`app/*.py`) + frontend 7,706 (html+css+js) |
-> | 1 | 461 unit test | 922 test (+ JS renderer harness 83 check) |
+> | 1 | 17 API endpoint (GET ทั้งหมด) | 48 route — 12 ตัวเป็น POST/PUT/DELETE ทุกตัวเขียนลงเครื่องที่รันแอป ไม่มีตัวไหนเขียนไปที่ Check Point (ยกเว้น Alerts ที่ส่งออกไป Slack/Teams/อีเมล เมื่อผู้ใช้ตั้งค่าเอง) |
+> | 1 | backend ~3,700 + frontend ~3,900 บรรทัด | ดูขนาดปัจจุบันด้วย `wc -l` — เพิ่มขึ้นมากใน v4.39 |
+> | 1 | 461 unit test | 1,007 test (+ JS renderer harness 93 check) |
 > | 2 | Routing จริง — ทำไม่ได้ | อ่าน routing / interface / cluster state จาก **Gaia API** ได้ตั้งแต่ v4.27.0 (allowlist บังคับตอนเรียก) — แต่เป็นค่า ณ ขณะหนึ่ง ไม่ใช่ live state และ Management API ยังไม่ให้ routing เหมือนเดิม |
 > | 3 | เทียบ "audit-ready compliance reports" ของ AlgoSec | มี compliance profile แบบ YAML (v4.26.0) และรายงาน PDF (v4.32.1) แล้ว — **แต่ไม่ใช่ audit-ready ที่ผ่านการรับรอง** อย่าเขียนว่าเทียบเท่า |
 > | 5.4 | Traffic Path ไม่อ่านคอลัมน์ `vpn` — ต้องแก้ก่อนนำเสนอ | แก้แล้วใน v4.24.0 (`vpn_match_state()`) |
@@ -19,6 +19,21 @@
 > | 5.7 | ไม่มีระบบ authentication — ใครเปิด URL ได้ก็เห็นทุกอย่าง | มีแล้วตั้งแต่ v4.35.0: sign in ด้วย credential ของ Check Point, session cookie ที่เซ็นแล้ว, จำกัด 5 ครั้งต่อ username |
 > | 5.7 | รหัสผ่านอยู่ใน `.env` ไม่มี secret management | บันทึกแบบเข้ารหัส Fernet ได้ (`credentials.enc`) — **แต่ key อยู่ข้างไฟล์ในเครื่องเดียวกัน** จึงกันได้แค่การเผลอ copy ไฟล์ ไม่ใช่ secret management จริง |
 > | 7.1 | ต้องไปดูว่า Gaia API มี endpoint อ่าน routing ไหม | มี — ใช้แล้วใน v4.27.0 |
+> | 3 | AlgoSec "recommendations to remove, reorder or consolidate" | v4.39 **สร้างสคริปต์** mgmt_cli/Ansible ให้คนรันเอง (disable ก่อน delete, ไม่แตะ cleanup rule) — แต่ **ไม่มี reorder, ไม่มี change workflow, และแอปไม่รันสคริปต์เอง** อย่าเขียนว่าเทียบเท่า |
+> | 3 | AlgoSec "unused, duplicate or expired rules" | unused: hit counter + log sample (v4.39), duplicate: มี, **expired (time object): ไม่มี** |
+> | 5.6 | อ่านอย่างเดียว = แก้ปัญหาให้ไม่ได้ | ยังจริงครึ่งหนึ่ง: v4.39 ออกสคริปต์แก้ไขให้คนอ่านแล้วรันเอง แอปยังไม่เขียนอะไรไปที่ firewall โดยตั้งใจ |
+
+> ความสามารถที่เพิ่มใน v4.39 (วัดกับแล็บจริงแล้ว ยกเว้นที่ระบุ):
+>
+> | ความสามารถ | หลักฐานจากแล็บ | ข้อจำกัดที่ต้องเขียนในรายงาน |
+> |---|---|---|
+> | Cleanup script (mgmt_cli / Ansible) | เสนอลบ host 2 ตัวที่ server บอกว่าไม่ถูกใช้, ปฏิเสธ rule 8.4 เพราะเป็น cleanup rule | ไม่เคยรันกับ Management Server จริง (ตรวจแค่ syntax) |
+> | Object hygiene | network ซ้ำ 2 คู่, group Admin-Networks มีสมาชิกซ้อน 3 ตัว | อ่านได้สูงสุด 2,000 object ต่อชนิด |
+> | Rule usage จาก log | อ่าน log จริง, 500 record ครอบคลุมแค่ 6 นาที จึงไม่ตัดสินว่า rule ไหนไม่ถูกใช้ | API รุ่นนี้ aggregate ไม่ได้ ช้า ~7 วินาที/100 record, ไม่ใช่ SIEM ไม่ใช่ real-time |
+> | Trends | 4 review, 25 snapshot, 34 health reading | มีเท่าที่เคยเก็บไว้เท่านั้น |
+> | Alerts (Slack/Teams/webhook/email) | ส่ง adaptive card ผ่าน HTTP จริงไปยัง receiver ในเครื่อง | **ยังไม่เคยส่งถึง Slack/Teams/SMTP จริง** |
+> | ถามเป็นภาษาไทย/อังกฤษ | คำถาม VLAN20 → AD tcp/9999 ได้ "ตอบแน่ชัดไม่ได้" พร้อมเหตุผล ALL_DCE_RPC | ไม่ใช่ LLM — parser แบบกำหนดรูปแบบ |
+> | **Multi-vendor** | — | **ไม่ได้ทำ** ไม่มีอุปกรณ์ Palo Alto/Fortinet/Cisco ให้ทดสอบ |
 >
 > ข้อจำกัดที่ **ยังจริงอยู่** และควรอยู่ในรายงาน: ยังไม่มี role / ผู้ใช้หลายระดับ / audit trail,
 > ไม่มี HTTPS เป็นค่าเริ่มต้น (cookie ยังไม่ `secure`), รันได้ process เดียว,
