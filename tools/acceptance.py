@@ -138,16 +138,36 @@ async def run(package: str, out_path: str) -> int:
     try:
         # ---- 1. the read-only guarantee, checked structurally -------------
         print(f"\n{DIM}1. Safety{OFF}")
-        src = (Path(__file__).resolve().parent.parent / "app").rglob("*.py")
+        app_dir = Path(__file__).resolve().parent.parent / "app"
         banned = ["add-", "set-", "delete-", "publish", "install-policy"]
+        # remediation.py writes a cleanup script for a person to run, so it holds
+        # mutating commands as TEXT. It is exempt from this scan by name, and
+        # the check below proves the exemption is safe: that file cannot reach
+        # a network, so its text can only ever be read.
+        exempt = {"remediation.py"}
         hits = []
-        for py in src:
+        for py in app_dir.rglob("*.py"):
+            if py.name in exempt and py.parent == app_dir:
+                continue
             text = py.read_text(encoding="utf-8")
             for b in banned:
                 if f'"{b}' in text or f"'{b}" in text:
                     hits.append(f"{py.name}:{b}")
         rep.check("safety", "no mutating Management command anywhere in app/",
-                  not hits, ", ".join(hits) if hits else "show-* only")
+                  not hits, ", ".join(hits) if hits else "show-* only (script text in remediation.py excepted)")
+
+        import ast
+        tree = ast.parse((app_dir / "remediation.py").read_text(encoding="utf-8"))
+        imported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported |= {a.name.split(".")[0] for a in node.names}
+            elif isinstance(node, ast.ImportFrom):
+                imported.add(("." * node.level) + (node.module or ""))
+        allowed = {"__future__", "json", "datetime", "typing", ".version"}
+        rep.check("safety", "the cleanup-script generator cannot reach a network",
+                  imported <= allowed,
+                  "imports: " + ", ".join(sorted(imported)))
 
         # ---- 2. connectivity ---------------------------------------------
         print(f"\n{DIM}2. Connection{OFF}")

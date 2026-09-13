@@ -58,8 +58,8 @@ async def take_snapshot(
             "saved_to": str(store.SNAPSHOT_DIR / f"{sid}.json"),
             "nat_error": nat_error,
             "notes": snapshot["notes"] + [
-                "This is the only operation in the application that writes to "
-                "disk. Nothing was sent to the Management Server but show-* reads.",
+                "Capturing a snapshot writes to disk on this machine, and nowhere "
+                "else. Nothing was sent to the Management Server but show-* reads.",
             ],
         }
     return await use_client(run)
