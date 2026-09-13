@@ -823,6 +823,124 @@ const asyncChecks = [
 ];
 
 
+
+/* ---- v4.39 renderers, driven by payloads shaped like the lab's answers ----
+ *
+ * Each check asserts on what reaches the screen, not only that nothing threw:
+ * the property each page exists for has to be visible - UNVERIFIED is not
+ * shown as a yes, a capped log scan is not shown as "no traffic", a review
+ * that could not read a section is marked rather than drawn as zero. */
+const seen = (id, needle, label) => {
+  const html = el2(id).innerHTML;
+  if (!html.includes(needle)) throw new Error(`${label}: "${needle}" is not on the page`);
+};
+
+checks.push(
+  ["renderAsk(unverified)", () => {
+    context.renderAsk({ ran: true, verdict: "unknown", confidence: "unknown",
+      parsed: { lang: "th", clarify: [] },
+      answer: ["ตอบแน่ชัดไม่ได้: rule 4 (VLAN20-to-AD) ใน External-FW Network อาจเป็น rule ที่ตัดสิน",
+               "  • service: Static service match unavailable for AD-Services"] });
+    seen("askResult", "CANNOT SAY", "an UNVERIFIED answer");
+    const html = el2("askResult").innerHTML;
+    if (html.includes("ALLOWED") || html.includes("BLOCKED"))
+      throw new Error("an UNVERIFIED answer was labelled as a yes or a no");
+  }],
+
+  ["renderAsk(needs a single address)", () => {
+    context.renderAsk({ ran: false, answer: ["LAB-VLAN20 is the network 198.51.100.0/24"],
+      parsed: { clarify: [{ role: "source", text: "LAB-VLAN20", suggestion: "198.51.100.1", why: "network" }] } });
+    seen("askResult", "NEEDS MORE", "a clarification");
+    seen("askResult", "Use 198.51.100.1 for LAB-VLAN20", "the suggestion button");
+  }],
+
+  ["renderCleanup", () => {
+    context.renderCleanup({ format: "mgmt_cli", script: "#!/usr/bin/env bash\nrun delete host uid \"u\"\n",
+      plan: { counts: { disable: 0, delete_rules: 0, delete_objects: 2, decisions: 0, skipped: 1 },
+        actions: [], decisions: [],
+        objects: [{ command: "delete_object", uid: "u1", type: "host", name: "Client-01",
+                    reasons: ["the Management Server reports it as used nowhere"] }],
+        skipped: [{ layer: "VPN InternetLayer", rule: 4, display_rule: "8.4",
+                    why: "the cleanup rule of its layer is never touched" }] } });
+    seen("cleanupResult", "Client-01", "a proposed object deletion");
+    seen("cleanupResult", "the cleanup rule of its layer is never touched", "the reason a rule was skipped");
+    seen("cleanupResult", "read every line", "the warning above the script");
+  }],
+
+  ["renderObjects", () => {
+    context.renderObjects({
+      unused: { total: 2, capped: false, by_type: { host: 2 },
+        objects: [{ uid: "u1", name: "Client-01", type: "host", address: "192.0.2.50", comments: "" }] },
+      duplicates: [{ type: "network", definition: "198.51.100.0 - 24",
+        objects: [{ uid: "a", name: "Net-Corp" }, { uid: "b", name: "Net_198.51.100.0" }] }],
+      merges: [{ group: "Admin-Networks", member_count: 4, block_count: 1, merge_reduces: false,
+        equivalent_to: ["198.51.100.0/24"],
+        redundant_members: [{ member: "Net-A", inside: "Net-Corp" }] }],
+      scanned: { host: { read: 10, total: 10, capped: false } }, notes: ["n"] });
+    seen("objectsResult", "inside Net-Corp", "a redundant group member");
+    seen("objectsResult", "remove the redundant ones", "a group that needs no merge");
+    seen("objectsResult", "where used?", "the where-used control");
+  }],
+
+  ["renderUsage(capped scan)", () => {
+    context.renderUsage({ time_frame: "last-7-days", capped: true, read: 3000,
+      oldest_read: "2026-09-13T12:54:09Z", newest_read: "2026-09-13T20:30:00Z",
+      counts: { seen: 6, "no-traffic": 0, "not-in-sample": 6, "not-logged": 0, "track-unknown": 0, "via-inline": 1 },
+      rules: [
+        { display_rule: "2", name: "Admin-Access", layer: "Net", track: "Log", hits: 150678, logs: 148,
+          last_seen: "2026-09-13T20:29:00Z", verdict: "seen", note: "148 record(s)", disagrees: false },
+        { display_rule: "3", name: "Lab-Device-Mgmt", layer: "Net", track: "Log", hits: 472, logs: 0,
+          last_seen: null, verdict: "not-in-sample", note: "not among the 3,000 most recent records", disagrees: false },
+      ], notes: ["read"] });
+    seen("usageResult", "NOT IN SAMPLE", "a rule the capped scan could not judge");
+    seen("usageResult", "stopped at the limit", "the scan being capped");
+    if (el2("usageResult").innerHTML.includes(">NO TRAFFIC<"))
+      throw new Error("a capped scan labelled a rule NO TRAFFIC");
+  }],
+
+  ["renderTrends(with a failed section)", () => {
+    context.renderTrends({ packages: ["External-FW"], notes: ["n"], unreadable: [],
+      reviews: [
+        { at: "2026-09-10T14:46:50+00:00", package: "External-FW",
+          access: { optimization_score: 100, rules: 13 }, compliance: "failed",
+          changes: "first-run", gateways: { findings: 3, not_reached: 1 } },
+        { at: "2026-09-10T17:07:49+00:00", package: "External-FW",
+          access: { optimization_score: 100, rules: 13 }, compliance: { failed: 3, unverifiable: 0 },
+          changes: { changed: 0, could_not_compare: 1 }, gateways: { findings: 3, not_reached: 1 } },
+      ],
+      snapshots: [{ at: "2026-09-10T23:14:52+00:00", rules: 13, zero_hit_rules: 1 },
+                  { at: "2026-09-13T12:29:36+00:00", rules: 13, zero_hit_rules: 1 }],
+      health: [{ at: "2026-09-11T00:46:21+00:00", findings: 3 }] });
+    seen("trendsResult", "could not be read - not zero", "a failed compliance section");
+    seen("trendsResult", "Optimization score", "the score chart");
+    seen("trendsResult", "1 not compared", "could-not-compare in the table");
+  }],
+
+  ["miniChart breaks the line at a gap", () => {
+    const svg = context.miniChart([
+      { at: "2026-09-01T00:00:00Z", v: 1 }, { at: "2026-09-02T00:00:00Z", v: null },
+      { at: "2026-09-03T00:00:00Z", v: 3 }], p => p.v, { title: "t" });
+    const d = (svg.match(/class="line" d="([^"]*)"/) || [])[1] || "";
+    if ((d.match(/M/g) || []).length !== 2)
+      throw new Error(`a null reading was bridged by the line: ${d}`);
+  }],
+
+  ["renderAlerts", () => {
+    context.renderAlerts({ destinations: [
+      { id: "teams-secops", kind: "teams", name: "secops", on: ["attention", "undecided"], detail: "summary", url_set: true },
+      { id: "email-exec", kind: "email", name: "exec", on: ["every-run"], detail: "summary", to: ["ciso@example.com"], password_set: false }] });
+    seen("alertsList", "URL saved", "a saved webhook");
+    seen("alertsList", "could not be read", "the undecided trigger, in words");
+    seen("alertsList", "Send test", "the test control");
+  }],
+
+  ["alertKindChanged", () => {
+    el2("alKind").value = "email";
+    context.alertKindChanged();
+    if (el2("alEmailRows").hidden !== false) throw new Error("email fields stayed hidden for email");
+  }],
+);
+
 const failures = [];
 for (const [name, run] of checks) {
   try {

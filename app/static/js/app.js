@@ -464,7 +464,7 @@ function showPage(id,b){
   // Both new pages are useless with an empty selector, and both lists are one
   // cheap local read - so fill them on arrival rather than making the first
   // thing a new user does be pressing Refresh.
-  if(id==='runs'){ loadRuns(); loadSchedules(); }
+  if(id==='runs'){ loadRuns(); loadSchedules(); loadAlerts(); }
   if(id==='diff' && !snapshotList.length) loadSnapshots();
   if(id==='health' && !healthBaseline.options.length) loadBaselines();
   if(id==='compliance'){
@@ -782,6 +782,7 @@ async function startRun(ev){
   const rid = newRid();
   const stop = trackProgress(rid);
   const q = new URLSearchParams({package: P.value, rid});
+  if((document.getElementById('runNotify') || {}).checked) q.set('notify', 'true');
   const profile = (document.getElementById('schProfile') || {}).value;
   if(profile) q.set('profile', profile.trim());
 
@@ -1217,6 +1218,19 @@ async function autoLoadPage(id){
       case 'health':
         if(!healthResult.innerHTML.trim()) await runHealth();
         break;
+
+      /* Local files only - nothing reaches the Management Server. */
+      case 'trends':
+        if(!trendsResult.innerHTML.trim()) await loadTrends();
+        break;
+
+      /* Five paged reads, seconds on the lab. */
+      case 'objects':
+        if(!objectsResult.innerHTML.trim()) await runObjects();
+        break;
+
+      /* Rule Usage is deliberately absent: reading the logs takes a minute or
+         more, and a minute-long read nobody asked for is not a convenience. */
 
       case 'diff':
         if(!snapshotList.length) await loadSnapshots();
@@ -4658,3 +4672,415 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 });
+
+
+/* ============================================================
+   v4.39 - Ask, cleanup scripts, objects, rule usage, trends, alerts.
+
+   Every renderer here takes the API's answer and nothing else, so the harness
+   in tests/js/scope_check.mjs can run each one against a captured payload.
+   ============================================================ */
+
+const VERDICT_TONE = {allowed:'good', blocked:'bad', unknown:'warn', 'no-rule':'neutral'};
+const VERDICT_LABEL = {allowed:'ALLOWED', blocked:'BLOCKED', unknown:'CANNOT SAY', 'no-rule':'NO RULE'};
+
+function renderAsk(d){
+  const box = document.getElementById('askResult');
+  if(!box) return;
+  const lines = d.answer || [];
+  const head = d.ran
+    ? `<span class="pill ${VERDICT_TONE[d.verdict] || 'neutral'}">${esc(VERDICT_LABEL[d.verdict] || d.verdict)}</span>
+       <span class="muted">confidence: ${esc(d.confidence || 'none')}</span>`
+    : `<span class="pill warn">NEEDS MORE</span><span class="muted">nothing was traced</span>`;
+  const suggest = ((d.parsed || {}).clarify || []).filter(c => c.suggestion).map(c =>
+    `<button onclick="askUse(${esc(JSON.stringify(c.text))}, ${esc(JSON.stringify(c.suggestion))})">Use ${esc(c.suggestion)} for ${esc(c.text)}</button>`).join('');
+  box.innerHTML = `<div class="card ask-answer">
+    <div class="ask-head">${head}</div>
+    <ul>${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
+    ${suggest ? `<div class="ask-suggest">${suggest}</div>` : ''}
+  </div>`;
+}
+
+function askUse(text, suggestion){
+  const input = document.getElementById('askInput');
+  if(!input) return;
+  input.value = input.value.split(text).join(suggestion);
+  askTraffic();
+}
+
+async function askTraffic(ev){
+  const input = document.getElementById('askInput');
+  const q = ((input && input.value) || '').trim();
+  if(!q){ notify('warn', 'Nothing to ask', 'Type a question, for example: can 192.0.2.10 reach 198.51.100.5 on https?'); return; }
+  if(!P.value){ notify('warn', 'No Policy Package selected', 'Pick a package at the top first.'); return; }
+  return task('ask', 'Reading the question and tracing', async () => {
+    const d = await api('/api/ask?' + new URLSearchParams({q, package: P.value}));
+    renderAsk(d);
+    if(d.ran && d.parsed){
+      // The same trace, drawn by the same renderer the form uses.
+      src.value = d.parsed.source.value;
+      dst.value = d.parsed.destination.value;
+      proto.value = d.parsed.service.protocol;
+      port.value = d.parsed.service.input;
+    }
+    return d;
+  }, {button: ev && ev.currentTarget, successMessage: null}).then(d => {
+    if(d && d.ran) trace();
+  }).catch(() => {});
+}
+
+/* ---- cleanup script ---- */
+function cleanupQuery(){
+  return new URLSearchParams({
+    package: P.value,
+    format: (document.getElementById('cleanFormat') || {}).value || 'mgmt_cli',
+    include_zero_hit: String(!!(document.getElementById('cleanZeroHit') || {}).checked),
+    include_disabled: String(!!(document.getElementById('cleanDisabled') || {}).checked),
+    include_unused_objects: String(!!(document.getElementById('cleanUnused') || {}).checked),
+  });
+}
+
+const CLEAN_VERB = {disable_rule:'disable', delete_rule:'delete rule', delete_object:'delete object'};
+
+function renderCleanup(d){
+  const box = document.getElementById('cleanupResult');
+  if(!box) return;
+  const p = d.plan || {}, c = p.counts || {};
+  const rows = (p.actions || []).map(a => `<tr>
+      <td><span class="pill ${a.command === 'disable_rule' ? 'warn' : 'bad'}">${esc(CLEAN_VERB[a.command] || a.command)}</span></td>
+      <td><span class="rule-no">${esc(a.display_rule)}</span> ${esc(a.name || '(unnamed)')}</td>
+      <td>${esc(a.layer)}</td><td>${esc((a.reasons || []).join('; '))}</td>
+      <td>${esc(a.hits ?? '—')}</td><td>${esc(a.track || 'unknown')}</td></tr>`)
+    .concat((p.objects || []).map(o => `<tr>
+      <td><span class="pill bad">delete object</span></td><td>${esc(o.name)}</td>
+      <td>${esc(o.type)}</td><td>${esc((o.reasons || []).join('; '))}</td><td>—</td><td>—</td></tr>`)).join('');
+  const list = (items, label) => items && items.length ? `<div class="card" style="margin:12px 16px 0">
+      <div class="section-title"><div><h3>${esc(label)}</h3></div></div>
+      <ul style="margin:8px 0 0;padding-left:18px">${items.map(x =>
+        `<li style="line-height:1.6">${x.layer ? `Rule <span class="rule-no">${esc(x.display_rule)}</span> in ${esc(x.layer)}` : esc((x.type || '') + ' ' + (x.object || ''))}: ${esc(x.why)}</li>`).join('')}</ul></div>` : '';
+  box.innerHTML = `<div style="padding:0 16px 16px">
+    <div class="cards">
+      <div class="card"><div class="metric-label">Disable</div><div class="metric num">${esc(c.disable || 0)}</div></div>
+      <div class="card"><div class="metric-label">Delete rules</div><div class="metric num">${esc(c.delete_rules || 0)}</div></div>
+      <div class="card"><div class="metric-label">Delete objects</div><div class="metric num">${esc(c.delete_objects || 0)}</div></div>
+      <div class="card"><div class="metric-label">Left to you</div><div class="metric num">${esc(c.decisions || 0)}</div></div>
+      <div class="card"><div class="metric-label">Not touched</div><div class="metric num">${esc(c.skipped || 0)}</div></div>
+    </div></div>
+    ${rows ? `<div class="table-wrap" style="margin:0 16px"><table>
+      <thead><tr><th>Proposed</th><th>What</th><th>Where</th><th>Why</th><th>Hits</th><th>Track</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`
+      : '<p class="hint" style="margin:0 16px">Nothing to propose with these options.</p>'}
+    ${list(p.decisions, 'Left to you — a decision, not a command')}
+    ${list(p.skipped, 'Not touched, and why')}
+    <details class="script-box" style="margin-top:12px"><summary>The script (${esc(d.format)}) — read every line before running it</summary>
+      <pre class="script">${esc(d.script || '')}</pre></details>`;
+}
+
+async function previewCleanup(ev){
+  if(!P.value){ notify('warn', 'No Policy Package selected', 'Pick a package at the top first.'); return; }
+  return task('cleanup', 'Building the cleanup script', async () => {
+    const d = await api('/api/remediation-script?' + cleanupQuery());
+    renderCleanup(d);
+    return d;
+  }, {button: ev && ev.currentTarget, successMessage: 'Script built. Nothing was run.'}).catch(() => {});
+}
+
+function downloadCleanup(){
+  if(!P.value){ notify('warn', 'No Policy Package selected', 'Pick a package at the top first.'); return; }
+  const q = cleanupQuery(); q.set('download', 'true');
+  location.href = '/api/remediation-script?' + q;
+}
+
+/* ---- objects ---- */
+function renderObjects(d){
+  const box = document.getElementById('objectsResult');
+  if(!box) return;
+  const u = d.unused || {}, dups = d.duplicates || [], merges = d.merges || [];
+  const redundant = merges.reduce((n, m) => n + (m.redundant_members || []).length, 0);
+  const scanned = Object.entries(d.scanned || {}).map(([k, v]) =>
+    `${esc(k)} ${esc(v.read)}/${esc(v.total)}${v.capped ? ' (capped)' : ''}`).join(' · ');
+  const note = document.getElementById('objectsNote');
+  if(note) note.textContent = 'Read: ' + (scanned ? scanned.replace(/&[^;]+;/g, '') : '—');
+  box.innerHTML = `<div class="cards">
+      <div class="card"><div class="metric-label">Unused</div><div class="metric num">${esc(u.total ?? 0)}</div></div>
+      <div class="card"><div class="metric-label">Defined twice</div><div class="metric num">${esc(dups.length)}</div></div>
+      <div class="card"><div class="metric-label">Redundant members</div><div class="metric num">${esc(redundant)}</div></div>
+      <div class="card"><div class="metric-label">Groups to shorten</div><div class="metric num">${esc(merges.filter(m => m.merge_reduces).length)}</div></div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="section-title"><div><h3>Unused</h3>
+        <p class="hint-sub">The Management Server's own answer: referenced by nothing it knows about${u.capped ? ' — more exist than were read' : ''}.</p></div></div>
+      ${(u.objects || []).length ? `<div class="table-wrap" style="margin-top:10px"><table>
+        <thead><tr><th>Type</th><th>Name</th><th>Address</th><th>Comments</th><th></th></tr></thead>
+        <tbody>${u.objects.map(o => `<tr><td>${esc(o.type)}</td><td>${esc(o.name)}</td>
+          <td>${esc(o.address || '—')}</td><td>${esc(o.comments || '')}</td>
+          <td><button style="height:28px;font-size:11.5px" onclick="whereUsed(${esc(JSON.stringify(o.uid))}, this)">where used?</button></td></tr>`).join('')}</tbody></table></div>`
+        : '<p>No unused objects.</p>'}
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="section-title"><div><h3>Defined twice</h3>
+        <p class="hint-sub">Different names, one definition. Which name to keep depends on logs and references this page cannot see.</p></div></div>
+      ${dups.length ? `<div class="table-wrap" style="margin-top:10px"><table>
+        <thead><tr><th>Type</th><th>Definition</th><th>Names</th></tr></thead>
+        <tbody>${dups.map(x => `<tr><td>${esc(x.type)}</td><td class="mono">${esc(x.definition)}</td>
+          <td>${x.objects.map(o => esc(o.name)).join('<br>')}</td></tr>`).join('')}</tbody></table></div>`
+        : '<p>No object is defined twice.</p>'}
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="section-title"><div><h3>Groups</h3>
+        <p class="hint-sub">Members wholly inside another member add nothing. A shorter form is shown only when it covers exactly the same addresses.</p></div></div>
+      ${merges.length ? `<div class="table-wrap" style="margin-top:10px"><table>
+        <thead><tr><th>Group</th><th>Redundant members</th><th>Exactly equal to</th><th>Shorter?</th></tr></thead>
+        <tbody>${merges.map(m => `<tr><td>${esc(m.group)}<br><span class="muted">${esc(m.member_count)} address member(s)</span></td>
+          <td>${(m.redundant_members || []).length ? m.redundant_members.map(r => `${esc(r.member)} <span class="muted">inside ${esc(r.inside)}</span>`).join('<br>') : '—'}</td>
+          <td class="mono">${(m.equivalent_to || []).map(esc).join('<br>')}</td>
+          <td>${m.merge_reduces ? `<span class="pill good">${esc(m.member_count)} → ${esc(m.block_count)}</span>` : '<span class="pill neutral">remove the redundant ones</span>'}</td></tr>`).join('')}</tbody></table></div>`
+        : '<p>No group can be written shorter.</p>'}
+    </div>
+    <div class="hint" style="margin-top:12px">${(d.notes || []).map(esc).join(' · ')}</div>`;
+}
+
+async function runObjects(ev, force){
+  return task('objects', 'Reading objects', async () => {
+    const q = new URLSearchParams(); if(force) q.set('force', 'true');
+    const d = await api('/api/objects/hygiene?' + q);
+    renderObjects(d);
+    return d;
+  }, {blocking: false, button: ev && ev.currentTarget, successMessage: null}).catch(() => {});
+}
+
+async function whereUsed(uid, btn){
+  const cell = btn && btn.parentElement;
+  try{
+    const d = await api('/api/objects/where-used?uid=' + encodeURIComponent(uid));
+    if(cell) cell.innerHTML = d.total
+      ? `used by ${esc(d.total)}: ${d.access_rules.map(r => esc((r.package || '') + ' ' + (r.layer || '') + ' ' + (r.rule || ''))).join(', ')}${d.nat_rules ? ' · NAT ' + esc(d.nat_rules) : ''}${d.objects.length ? ' · in ' + d.objects.map(esc).join(', ') : ''}`
+      : '<span class="pill good">used nowhere</span>';
+  }catch(e){ if(cell) cell.textContent = String(e.message || e); }
+}
+
+/* ---- rule usage ---- */
+const USAGE_TONE = {'seen':'good', 'no-traffic':'bad', 'not-in-sample':'neutral',
+                    'not-logged':'neutral', 'track-unknown':'warn', 'via-inline':'neutral'};
+const USAGE_LABEL = {'seen':'SEEN', 'no-traffic':'NO TRAFFIC', 'not-in-sample':'NOT IN SAMPLE',
+                     'not-logged':'NOT LOGGED', 'track-unknown':'TRACK UNKNOWN', 'via-inline':'VIA INLINE'};
+
+function renderUsage(d){
+  const box = document.getElementById('usageResult');
+  if(!box) return;
+  const c = d.counts || {};
+  const span = d.oldest_read
+    ? `${String(d.oldest_read).replace('T', ' ').slice(0, 16)} → ${String(d.newest_read || '').replace('T', ' ').slice(0, 16)}`
+    : '—';
+  box.innerHTML = `<div class="flow">
+      <div class="step"><span class="muted">Read</span><br><b>${esc((d.read || 0).toLocaleString('en-US'))} record(s)</b><br><span class="muted">${esc(d.time_frame)}</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="muted">They cover</span><br><b class="mono" style="font-size:12px">${esc(span)}</b><br><span class="muted">${d.capped ? 'stopped at the limit; the window held more' : 'the whole window'}</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="muted">No traffic</span><br><span class="pill ${c['no-traffic'] ? 'bad' : 'good'}">${esc(c['no-traffic'] || 0)}</span><br><span class="muted">the only verdict that says a rule is unused</span></div>
+    </div>
+    <div class="table-wrap" style="margin-top:16px"><table>
+      <thead><tr><th>Rule</th><th>Layer</th><th>Track</th><th>Hit counter</th><th>Log records</th><th>Last seen in logs</th><th>Verdict</th><th>Why</th></tr></thead>
+      <tbody>${(d.rules || []).map(r => `<tr>
+        <td><span class="rule-no">${esc(r.display_rule)}</span> ${esc(r.name || '')}</td>
+        <td>${esc(r.layer || '')}</td><td>${esc(r.track || 'unknown')}</td>
+        <td>${esc(r.hits ?? '—')}</td><td>${esc(r.logs)}</td>
+        <td class="mono">${esc(r.last_seen ? String(r.last_seen).replace('T', ' ').slice(0, 16) : '—')}</td>
+        <td><span class="pill ${USAGE_TONE[r.verdict] || 'neutral'}">${esc(USAGE_LABEL[r.verdict] || r.verdict)}</span>${r.disagrees ? '<br><span class="muted" style="font-size:10.5px">counter and logs disagree</span>' : ''}</td>
+        <td>${esc(r.note)}</td></tr>`).join('')}</tbody></table></div>
+    <div class="hint" style="margin-top:12px">${(d.notes || []).map(esc).join(' · ')}</div>`;
+}
+
+async function runUsage(ev){
+  if(!P.value){ notify('warn', 'No Policy Package selected', 'Pick a package at the top first.'); return; }
+  const rid = newRid();
+  const stop = trackProgress(rid);
+  const frame = (document.getElementById('usageFrame') || {}).value || 'last-7-days';
+  const cap = (document.getElementById('usageCap') || {}).value || '1000';
+  return task('usage', 'Reading firewall logs', async () => {
+    const d = await api('/api/rule-usage?' + new URLSearchParams({package: P.value, time_frame: frame, cap, rid}));
+    renderUsage(d);
+    return d;
+  }, {button: ev && ev.currentTarget, sub: frame + ' · up to ' + cap + ' records · elapsed',
+      steps: ["Loading the package's rules", 'Reading firewall log records', 'Counting records per rule'],
+      successMessage: null}).catch(() => {}).finally(() => stop && stop());
+}
+
+/* ---- trends ---- */
+
+/* One measure per chart, one axis each - never two scales on one chart. Time is
+   drawn to scale, so a month without a review is a long empty stretch, not a
+   short one. A null value breaks the line; a section that could not be read is
+   marked on the baseline with its own glyph and says so on hover. */
+function miniChart(points, key, {title, sub, unit = '', failed = () => false} = {}){
+  const W = 560, H = 170, pl = 44, pr = 14, pt = 16, pb = 26;
+  const rows = points.map(p => ({at: Date.parse(p.at), p, v: key(p)})).filter(r => !isNaN(r.at));
+  const vals = rows.map(r => r.v).filter(v => typeof v === 'number');
+  const head = `<div class="card-h"><div><h3>${esc(title)}</h3><p>${esc(sub || '')}</p></div></div>`;
+  if(!vals.length){
+    return `<div class="card flush mini-chart">${head}<svg viewBox="0 0 ${W} ${H}"><text class="empty" x="${pl}" y="${H/2}">No reading recorded yet.</text></svg></div>`;
+  }
+  const t0 = Math.min(...rows.map(r => r.at)), t1 = Math.max(...rows.map(r => r.at));
+  const hi = Math.max(...vals), lo = Math.min(0, ...vals);
+  const top = hi === lo ? hi + 1 : hi + (hi - lo) * 0.1;
+  const X = t => pl + (t1 === t0 ? (W - pl - pr) / 2 : (t - t0) / (t1 - t0) * (W - pl - pr));
+  const Y = v => pt + (1 - (v - lo) / ((top - lo) || 1)) * (H - pt - pb);
+  const short = n => Math.abs(n) >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : Math.abs(n) >= 1e3 ? Math.round(n / 1e3) + 'k' : String(Math.round(n * 10) / 10);
+  let d = '', open = false;
+  for(const r of rows){
+    if(typeof r.v !== 'number'){ open = false; continue; }
+    d += `${open ? 'L' : 'M'}${X(r.at).toFixed(1)} ${Y(r.v).toFixed(1)} `;
+    open = true;
+  }
+  const day = t => { const x = new Date(t); return `${x.getDate()}/${x.getMonth() + 1}`; };
+  const grid = [lo, (lo + top) / 2, top].map(v =>
+    `<line class="grid" x1="${pl}" x2="${W - pr}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}"/>
+     <text class="axis" x="${pl - 6}" y="${(Y(v) + 3).toFixed(1)}" text-anchor="end">${esc(short(v))}</text>`).join('');
+  const marks = rows.map(r => {
+    const when = new Date(r.at).toISOString().replace('T', ' ').slice(0, 16);
+    if(typeof r.v === 'number'){
+      return `<circle class="dot" cx="${X(r.at).toFixed(1)}" cy="${Y(r.v).toFixed(1)}" r="4"><title>${esc(when)} · ${esc(r.v)}${esc(unit)}</title></circle>`;
+    }
+    if(failed(r.p)){
+      const x = X(r.at), y = H - pb;
+      return `<g><path class="gap-mark" d="M${x - 4} ${y - 4} L${x + 4} ${y + 4} M${x + 4} ${y - 4} L${x - 4} ${y + 4}"/><title>${esc(when)} · could not be read - not zero</title></g>`;
+    }
+    return '';
+  }).join('');
+  const axis = `<text class="axis" x="${pl}" y="${H - 7}">${esc(day(t0))}</text>
+    <text class="axis" x="${W - pr}" y="${H - 7}" text-anchor="end">${esc(day(t1))}</text>`;
+  return `<div class="card flush mini-chart">${head}
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}">${grid}<path class="line" d="${d}"/>${marks}${axis}</svg></div>`;
+}
+
+function renderTrends(d){
+  const box = document.getElementById('trendsResult');
+  if(!box) return;
+  const sel = document.getElementById('trendsPackage');
+  if(sel && d.packages && sel.options.length <= 1){
+    for(const p of d.packages){
+      const o = document.createElement('option'); o.value = p; o.textContent = p;
+      if(sel.appendChild) sel.appendChild(o);
+    }
+  }
+  const R = d.reviews || [], S = d.snapshots || [], Hh = d.health || [];
+  const obj = (v, k) => (v && typeof v === 'object') ? v[k] : null;
+  const wasFailed = name => p => p[name] === 'failed';
+  box.innerHTML = `<div class="mini-grid">
+      ${miniChart(R, p => obj(p.access, 'optimization_score'), {title: 'Optimization score', sub: `${R.length} review(s) · heuristic, compare over time only`, failed: wasFailed('access')})}
+      ${miniChart(R, p => obj(p.compliance, 'failed'), {title: 'Compliance checks failed', sub: 'reviews that ran a profile · × = could not run', failed: wasFailed('compliance')})}
+      ${miniChart(R, p => obj(p.changes, 'changed'), {title: 'Rule changes since the previous review', sub: 'could-not-compare is not counted here', failed: wasFailed('changes')})}
+      ${miniChart(Hh, p => p.findings, {title: 'Gateway findings', sub: `${Hh.length} health reading(s)`})}
+      ${miniChart(S, p => p.rules, {title: 'Access rules', sub: `${S.length} snapshot(s)`})}
+      ${miniChart(S, p => p.zero_hit_rules, {title: 'Rules with zero hits', sub: 'counters reset on install and restart'})}
+    </div>
+    <div class="card flush" style="margin-top:16px">
+      <div class="card-h"><div><h3>Reviews, as a table</h3><p>The same points as the charts</p></div></div>
+      ${R.length ? `<div class="table-wrap"><table>
+        <thead><tr><th>When</th><th>Package</th><th>Score</th><th>Rules</th><th>Compliance</th><th>Changes</th><th>Gateways</th></tr></thead>
+        <tbody>${R.slice().reverse().map(p => `<tr>
+          <td class="mono">${esc(String(p.at || '').replace('T', ' ').slice(0, 16))}</td><td>${esc(p.package)}</td>
+          <td>${esc(obj(p.access, 'optimization_score') ?? p.access)}</td><td>${esc(obj(p.access, 'rules') ?? '—')}</td>
+          <td>${typeof p.compliance === 'object' ? `${esc(p.compliance.failed)} failed · ${esc(p.compliance.unverifiable)} undecided` : esc(p.compliance)}</td>
+          <td>${typeof p.changes === 'object' ? `${esc(p.changes.changed)} changed · ${esc(p.changes.could_not_compare)} not compared` : esc(p.changes)}</td>
+          <td>${typeof p.gateways === 'object' ? `${esc(p.gateways.findings)} finding(s) · ${esc(p.gateways.not_reached)} not reached` : esc(p.gateways)}</td>
+        </tr>`).join('')}</tbody></table></div>` : '<p class="hint" style="margin:14px 16px">No review has been stored yet.</p>'}
+    </div>
+    <div class="hint" style="margin-top:12px">${(d.notes || []).map(esc).join(' · ')}${(d.unreadable || []).length ? ' · unreadable: ' + d.unreadable.map(esc).join(', ') : ''}</div>`;
+}
+
+async function loadTrends(ev){
+  return task('trends', 'Reading stored history', async () => {
+    const sel = document.getElementById('trendsPackage');
+    const pkg = (sel && sel.value) || '';
+    const d = await api('/api/trends' + (pkg ? '?package=' + encodeURIComponent(pkg) : ''));
+    renderTrends(d);
+    return d;
+  }, {blocking: false, button: ev && ev.currentTarget, successMessage: null}).catch(() => {});
+}
+
+/* ---- alerts ---- */
+const TRIGGER_LABEL = {attention:'needs attention', undecided:'could not be read', health:'gateway problem',
+                       clean:'no change', 'every-run':'every review'};
+
+function alertKindChanged(){
+  const kind = (document.getElementById('alKind') || {}).value;
+  const email = document.getElementById('alEmailRows');
+  const url = document.getElementById('alUrlRow');
+  if(email) email.hidden = kind !== 'email';
+  if(url) url.hidden = kind === 'email';
+}
+
+function renderAlerts(cfg){
+  const box = document.getElementById('alertsList');
+  if(!box) return;
+  const dests = cfg.destinations || [];
+  if(!dests.length){
+    box.innerHTML = '<p class="hint" style="margin:0 16px 16px">No destination yet. Nothing is sent anywhere until one is saved.</p>';
+    return;
+  }
+  box.innerHTML = `<div class="table-wrap" style="margin:0 16px 16px"><table>
+    <thead><tr><th>Name</th><th>Kind</th><th>Sends when</th><th>Detail</th><th>Secret</th><th></th></tr></thead>
+    <tbody>${dests.map(x => `<tr>
+      <td>${esc(x.name)}</td><td>${esc(x.kind)}${x.kind === 'email' ? `<br><span class="muted">${esc((x.to || []).join(', '))}</span>` : ''}</td>
+      <td>${(x.on || []).map(t => esc(TRIGGER_LABEL[t] || t)).join(', ')}</td><td>${esc(x.detail)}</td>
+      <td>${x.kind === 'email' ? (x.password_set ? '<span class="pill good">password saved</span>' : '<span class="pill neutral">no password</span>')
+            : (x.url_set ? '<span class="pill good">URL saved</span>' : '<span class="pill bad">no URL</span>')}</td>
+      <td style="white-space:nowrap"><button style="height:28px;font-size:11.5px" onclick="testAlert(${esc(JSON.stringify(x.id))}, this)">Send test</button>
+        <button style="height:28px;font-size:11.5px" onclick="deleteAlert(${esc(JSON.stringify(x.id))})">Remove</button></td></tr>`).join('')}</tbody></table></div>`;
+}
+
+async function loadAlerts(ev){
+  try{
+    const cfg = await api('/api/alerts');
+    renderAlerts(cfg);
+    return cfg;
+  }catch(_){ /* the page still works without it */ }
+}
+
+async function saveAlertDest(ev){
+  const v = id => ((document.getElementById(id) || {}).value || '').trim();
+  const kind = v('alKind');
+  const on = [...document.querySelectorAll('.alOn')].filter(x => x.checked).map(x => x.value);
+  const destination = {kind, name: v('alName') || kind, on, detail: v('alDetail') || 'summary'};
+  if(kind === 'email') Object.assign(destination, {
+    smtp_host: v('alSmtpHost'), smtp_port: v('alSmtpPort') || null, security: v('alSecurity'),
+    username: v('alUser'), sender: v('alSender'), to: v('alTo'),
+    attach_pdf: !!(document.getElementById('alAttach') || {}).checked});
+  const body = {destination, url: kind === 'email' ? null : v('alUrl'), password: kind === 'email' ? v('alPass') : null};
+  try{
+    const r = await fetch('/api/alerts/destinations', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+    showTestResult('alResult', true, '<span class="test-icon good">✓</span> <strong>Saved ' + esc(d.saved.id) + '.</strong> Press Send test to check it arrives.');
+    ['alUrl', 'alPass'].forEach(id => { const x = document.getElementById(id); if(x) x.value = ''; });
+    renderAlerts(d.config);
+  }catch(e){
+    showTestResult('alResult', false, '<span class="test-icon bad">✕</span> <strong>' + esc(String(e.message || e)) + '</strong>');
+  }
+}
+
+async function testAlert(id, btn){
+  if(btn){ btn.disabled = true; }
+  try{
+    const r = await fetch('/api/alerts/test?destination=' + encodeURIComponent(id), {method: 'POST'});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+    const res = (d.results || [])[0] || {};
+    if(res.ok) notify('success', 'Test sent', 'The latest review (' + esc(d.run_id) + ') was sent to ' + esc(id) + '.');
+    else notify('error', 'Test failed', esc(res.error || res.skipped || 'not sent'), {duration: 0});
+  }catch(e){
+    notify('error', 'Test failed', esc(String(e.message || e)), {duration: 0});
+  }finally{ if(btn) btn.disabled = false; }
+}
+
+async function deleteAlert(id){
+  try{
+    const r = await fetch('/api/alerts/destinations/' + encodeURIComponent(id), {method: 'DELETE'});
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    await loadAlerts();
+  }catch(e){ notify('error', 'Could not remove', esc(String(e.message || e))); }
+}

@@ -134,6 +134,9 @@
         <button class="" data-page="diff" data-label="Policy Diff" onclick="showPage('diff',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-diff"/></svg><span class="mlabel">Policy Diff</span></button>
         <button class="" data-page="compliance" data-label="Compliance" onclick="showPage('compliance',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-compliance"/></svg><span class="mlabel">Compliance</span></button>
         <button class="" data-page="health" data-label="Gateway Health" onclick="showPage('health',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-health"/></svg><span class="mlabel">Gateway Health</span></button>
+        <button class="" data-page="objects" data-label="Objects" onclick="showPage('objects',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-cases"/></svg><span class="mlabel">Objects</span></button>
+        <button class="" data-page="usage" data-label="Rule Usage" onclick="showPage('usage',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-eye"/></svg><span class="mlabel">Rule Usage</span></button>
+        <button class="" data-page="trends" data-label="Trends" onclick="showPage('trends',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-trend"/></svg><span class="mlabel">Trends</span></button>
         <button class="" data-page="runs" data-label="Reviews" onclick="showPage('runs',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-diff"/></svg><span class="mlabel">Reviews</span></button>
         <div class="menu-sep"></div>
         <button class="" data-page="settings" data-label="Settings" onclick="showPage('settings',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-settings"/></svg><span class="mlabel">Settings</span></button>
@@ -482,6 +485,27 @@ The map is drawn from gateways the Management API returns.
             <div class="card-h"><div><h3>Findings</h3><p>Shadowing, duplication, any/any/any and unused rules</p></div></div>
             <div id="accessFindings"></div>
           </div>
+
+          <div class="card flush" style="margin-top:16px">
+            <div class="card-h"><div><h3>Cleanup script</h3>
+              <p>The findings as commands for a person to review and run. Firewall Insight writes it and cannot run it.</p></div></div>
+            <div class="cred-form">
+              <div class="controls field-row">
+                <label class="field" style="flex:0 0 220px"><span>Format</span>
+                  <select id="cleanFormat">
+                    <option value="mgmt_cli">mgmt_cli — shell on the Management Server</option>
+                    <option value="ansible">Ansible — check_point.mgmt collection</option>
+                  </select></label>
+                <label class="check-inline"><input id="cleanZeroHit" type="checkbox"> zero-hit rules <span class="muted">(counters reset on install)</span></label>
+                <label class="check-inline"><input id="cleanDisabled" type="checkbox"> delete disabled rules</label>
+                <label class="check-inline"><input id="cleanUnused" type="checkbox"> delete unused objects</label>
+                <button onclick="previewCleanup(event)">Preview</button>
+                <button class="primary" onclick="downloadCleanup(event)">Download</button>
+              </div>
+              <p class="hint-sub" style="margin:10px 0 0">Rules are disabled, never deleted, unless you tick it. A layer's cleanup rule and a rule that holds an inline layer are never touched. Nothing is published until whoever runs it types PUBLISH, and nothing is installed.</p>
+            </div>
+            <div id="cleanupResult"></div>
+          </div>
         </div>
       </section>
 
@@ -559,6 +583,13 @@ The map is drawn from gateways the Management API returns.
           <h2>Traffic Path Analyzer</h2>
           <p class="muted">Configuration-based simulation. No packet is sent, so the hosts do not
             need to exist.</p>
+          <div class="controls field-row ask-row">
+            <label class="field"><span>Ask in plain language — Thai or English</span>
+              <input id="askInput" placeholder="ทำไม 192.0.2.10 เข้า 198.51.100.5 ด้วย rdp ไม่ได้ · can 192.0.2.10 reach 198.51.100.5 on https?"
+                onkeydown="if(event.key==='Enter')askTraffic(event)"></label>
+            <button class="primary" onclick="askTraffic(event)">Ask</button>
+          </div>
+          <div id="askResult"></div>
           <div class="controls field-row">
             <label class="field"><span>Source</span>
               <input id="src" placeholder="IP or FQDN"></label>
@@ -795,6 +826,62 @@ The map is drawn from gateways the Management API returns.
         </div>
       </section>
 
+      <section id="objects" class="page">
+        <div class="panel">
+          <h2>Objects</h2>
+          <p class="muted">What the Management Server itself reports as unused, objects defined twice under
+            different names, and groups with members that add nothing or could be written as fewer blocks.
+            A merge is only ever suggested when the blocks cover exactly the addresses the members did — never more.</p>
+          <div class="controls field-row">
+            <button class="primary" onclick="runObjects(event, true)">Analyse objects</button>
+            <span class="hint" id="objectsNote"></span>
+          </div>
+          <div id="objectsResult"></div>
+        </div>
+      </section>
+
+      <section id="usage" class="page">
+        <div class="panel">
+          <h2>Rule Usage</h2>
+          <p class="muted">The hit counter resets on install and on restart, so a second source helps: the firewall
+            logs. But a rule that does not log leaves no record however busy it is, and this Management API cannot
+            count — records are read newest first, up to a limit. Only a rule that logs, in a window read to the end,
+            can be called <b>no traffic</b>. Everything else without a record is a statement about what the logs cannot show.</p>
+          <div class="controls field-row">
+            <label class="field" style="flex:0 0 190px"><span>Window</span>
+              <select id="usageFrame">
+                <option value="last-hour">last hour</option>
+                <option value="today">today</option>
+                <option value="last-24-hours">last 24 hours</option>
+                <option value="last-7-days" selected>last 7 days</option>
+                <option value="last-30-days">last 30 days</option>
+              </select></label>
+            <label class="field" style="flex:0 0 220px"><span>Read at most</span>
+              <select id="usageCap">
+                <option value="500">500 records (~35 s)</option>
+                <option value="1000" selected>1,000 records (~70 s)</option>
+                <option value="3000">3,000 records (~3.5 min)</option>
+              </select></label>
+            <button class="primary" onclick="runUsage(event)">Read the logs</button>
+          </div>
+          <div id="usageResult"></div>
+        </div>
+      </section>
+
+      <section id="trends" class="page">
+        <div class="panel">
+          <h2>Trends</h2>
+          <p class="muted">Drawn only from reviews, snapshots and health readings that were actually taken. A gap is a
+            gap: nothing between two points is known, and a section that could not be read is marked, never drawn as zero.</p>
+          <div class="controls field-row">
+            <label class="field" style="flex:0 0 240px"><span>Package</span>
+              <select id="trendsPackage" onchange="loadTrends(event)"><option value="">every package</option></select></label>
+            <button onclick="loadTrends(event)">Refresh</button>
+          </div>
+          <div id="trendsResult"></div>
+        </div>
+      </section>
+
       <section id="runs" class="page">
         <div class="panel">
           <h2>Reviews</h2>
@@ -805,6 +892,7 @@ The map is drawn from gateways the Management API returns.
 
           <div class="controls field-row">
             <button class="primary" onclick="startRun(event)">Run a review now</button>
+            <label class="check-inline"><input id="runNotify" type="checkbox"> send alerts</label>
             <button onclick="loadRuns(event)">Refresh</button>
             <span class="hint" id="runsNote"></span>
           </div>
@@ -852,6 +940,60 @@ The map is drawn from gateways the Management API returns.
               </div>
               <div id="schedulesList"></div>
             </div>
+          </div>
+
+          <div class="card flush" style="margin-top:16px">
+            <div class="card-h">
+              <div><h3>Alerts</h3><p>Where a review goes when it needs looking at</p></div>
+            </div>
+            <div class="cred-form">
+              <p class="muted" style="margin-top:0">Scheduled reviews are sent to every destination whose triggers
+                they meet. <b>Could not be read</b> is on by default: a review that failed to read the gateways is the one
+                whose silence would be mistaken for good news. Summary alerts carry counts and verdicts only — no rule
+                contents, no addresses. Webhook URLs and SMTP passwords are encrypted and never shown again.</p>
+              <div class="form-stack-2col">
+                <div><label for="alKind">Destination</label>
+                  <select id="alKind" onchange="alertKindChanged()">
+                    <option value="teams">Microsoft Teams (Workflows webhook)</option>
+                    <option value="slack">Slack (incoming webhook)</option>
+                    <option value="webhook">Webhook (JSON)</option>
+                    <option value="email">Email (SMTP)</option>
+                  </select></div>
+                <div><label for="alName">Name</label><input id="alName" type="text" placeholder="secops"></div>
+                <div id="alUrlRow"><label for="alUrl">Webhook URL (https)</label>
+                  <input id="alUrl" type="password" autocomplete="off" placeholder="leave blank to keep the saved one"></div>
+                <div><label for="alDetail">Detail</label>
+                  <select id="alDetail">
+                    <option value="summary">summary — counts and verdicts</option>
+                    <option value="findings">findings — adds rule numbers, check titles, gateway addresses</option>
+                  </select></div>
+              </div>
+              <div id="alEmailRows" class="form-stack-2col" hidden>
+                <div><label for="alSmtpHost">SMTP host</label><input id="alSmtpHost" type="text" placeholder="smtp.example.com"></div>
+                <div><label for="alSmtpPort">Port</label><input id="alSmtpPort" type="text" placeholder="587"></div>
+                <div><label for="alSecurity">Security</label>
+                  <select id="alSecurity"><option value="starttls">STARTTLS</option><option value="ssl">SSL/TLS</option><option value="none">none</option></select></div>
+                <div><label for="alUser">Username</label><input id="alUser" type="text" autocomplete="off"></div>
+                <div><label for="alPass">Password</label><input id="alPass" type="password" autocomplete="off" placeholder="leave blank to keep the saved one"></div>
+                <div><label for="alSender">From</label><input id="alSender" type="text" placeholder="firewall-insight@example.com"></div>
+                <div><label for="alTo">To (comma-separated)</label><input id="alTo" type="text" placeholder="ciso@example.com"></div>
+                <div><label class="check-inline" style="margin-top:22px"><input id="alAttach" type="checkbox" checked> attach the summary PDF</label></div>
+              </div>
+              <div class="controls" style="margin-top:10px">
+                <span class="muted" style="font-size:12px">Send when:</span>
+                <label class="check-inline"><input type="checkbox" class="alOn" value="attention" checked> needs attention</label>
+                <label class="check-inline"><input type="checkbox" class="alOn" value="undecided" checked> could not be read</label>
+                <label class="check-inline"><input type="checkbox" class="alOn" value="health" checked> gateway problem</label>
+                <label class="check-inline"><input type="checkbox" class="alOn" value="clean"> no change</label>
+                <label class="check-inline"><input type="checkbox" class="alOn" value="every-run"> every review</label>
+              </div>
+              <div class="controls" style="margin-top:12px">
+                <button class="primary" onclick="saveAlertDest(event)">Save destination</button>
+                <button onclick="loadAlerts(event)">Refresh</button>
+              </div>
+              <div id="alResult"></div>
+            </div>
+            <div id="alertsList"></div>
           </div>
         </div>
       </section>
