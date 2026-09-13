@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from .nat_analyzer import describe_nat_field
-from .policy_browser import _action_name, _single_name, _walk_rulebase
+from .policy_browser import _action_name, _single_name, _walk_rulebase, track_name
 from .resolver import ObjectResolver
 from .version import APP_VERSION
 
@@ -108,7 +108,7 @@ def build_snapshot(
                 "name": rule.get("name") or "",
                 "enabled": bool(rule.get("enabled", True)),
                 "action": _action_name(rule, res),
-                "track": _single_name(rule.get("track"), res),
+                "track": track_name(rule.get("track"), res),
                 "comments": rule.get("comments") or "",
                 "inline_layer": _single_name(rule.get("inline-layer"), res),
                 "hits": hits.get("value"),

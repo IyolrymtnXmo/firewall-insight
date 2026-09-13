@@ -274,14 +274,24 @@ def _check_all_rules_have(check, rules, ctx):
         return UNVERIFIABLE, f"Unsupported field {field!r} for all_rules_have.", [], []
     if not rules:
         return NOT_APPLICABLE, "This package has no rules to test.", [], []
-    offenders = []
+    offenders, undecided = [], []
     for rule in rules:
         value = str(rule.get(field) or "").strip()
+        if field == "track" and value == "unresolved":
+            # The rule names a track type this read could not resolve. It
+            # might be Log and it might be None; counting it either way would
+            # be a guess presented as a result.
+            undecided.append(_offender(rule, "track type could not be resolved"))
+            continue
         missing = not value or (field == "track" and value.lower() == "none")
         if missing:
-            offenders.append(_offender(rule, f"{field} is empty"))
+            reason = "track is None" if field == "track" and value else f"{field} is empty"
+            offenders.append(_offender(rule, reason))
     if offenders:
-        return FAIL, f"{len(offenders)} rule(s) have no {field}.", offenders, []
+        return FAIL, f"{len(offenders)} rule(s) have no {field}.", offenders, undecided
+    if undecided:
+        return UNVERIFIABLE, (f"{len(undecided)} rule(s) name a track type that could "
+                              "not be resolved."), [], undecided
     return PASS, f"Every rule carries a {field}.", [], []
 
 
@@ -301,7 +311,7 @@ def _check_cleanup_rule_present(check, rules, ctx):
     for rule in rules:
         by_layer.setdefault(str(rule.get("layer") or ""), []).append(rule)
 
-    offenders = []
+    offenders, undecided = [], []
     for layer, layer_rules in by_layer.items():
         last = max(layer_rules, key=lambda r: r.get("position") or 0)
         is_cleanup = (
@@ -311,10 +321,15 @@ def _check_cleanup_rule_present(check, rules, ctx):
         if not is_cleanup:
             offenders.append(_offender(last, f"last rule in {layer} is not an explicit cleanup rule"))
             continue
-        if check.get("require_log") and str(last.get("track") or "").lower() in ("none", ""):
+        track = str(last.get("track") or "").lower()
+        if check.get("require_log") and track == "unresolved":
+            undecided.append(_offender(last, f"cleanup rule in {layer}: track type could not be resolved"))
+        elif check.get("require_log") and track in ("none", ""):
             offenders.append(_offender(last, f"cleanup rule in {layer} is not logged"))
     if offenders:
-        return FAIL, f"{len(offenders)} layer(s) have no explicit logged cleanup rule.", offenders, []
+        return FAIL, f"{len(offenders)} layer(s) have no explicit logged cleanup rule.", offenders, undecided
+    if undecided:
+        return UNVERIFIABLE, "Whether the cleanup rule is logged could not be decided.", [], undecided
     return PASS, "Every layer ends with an explicit cleanup rule.", [], []
 
 

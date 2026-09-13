@@ -96,6 +96,12 @@ def _field_changes(before: dict, after: dict, fields) -> list[dict[str, Any]]:
     changes = []
     for field in fields:
         was, now = before.get(field), after.get(field)
+        # Snapshots taken before v4.39 recorded every rule's track as "" (see
+        # policy_browser.track_name). Comparing one of those with a current
+        # snapshot would report every rule in the estate as edited. A blank on
+        # either side means "not recorded", so it is not compared at all.
+        if field == "track" and (not was or not now):
+            continue
         if was != now:
             changes.append({"field": field, "from": was, "to": now})
     return changes
@@ -198,6 +204,12 @@ def diff_snapshots(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
 
     before, untracked_a = _by_uid((a.get("access") or {}).get("rules") or [])
     after, untracked_b = _by_uid((b.get("access") or {}).get("rules") or [])
+    blank_track = any(not r.get("track") for r in list(before.values()) + list(after.values()))
+    if blank_track and (before or after):
+        warnings.append(
+            "At least one of these snapshots does not record rule tracking (every "
+            "snapshot before v4.39 recorded it blank), so a change between Log and "
+            "None cannot be seen in this comparison.")
     untracked = untracked_a + untracked_b
     if untracked:
         warnings.append(
