@@ -103,6 +103,7 @@ def merge_suggestions(definitions: dict[str, Any]) -> list[dict[str, Any]]:
     for g in (definitions.get("group") or {}).get("objects") or []:
         members = g.get("members") or []
         address_members, blocks, other = [], [], 0
+        member_nets: list[tuple[dict[str, Any], list[ipaddress.IPv4Network]]] = []
         for m in members:
             mo = m if isinstance(m, dict) else {"uid": m}
             full = by_uid.get(mo.get("uid")) or mo
@@ -111,11 +112,30 @@ def merge_suggestions(definitions: dict[str, Any]) -> list[dict[str, Any]]:
                 other += 1
                 continue
             address_members.append(full)
+            member_nets.append((full, nets))
             blocks.extend(nets)
+
+        # A member wholly inside another member adds nothing to the group. That
+        # is a finding of its own, and a better one than a merge: removing it
+        # needs no new object. Found on the lab, where Admin-Networks held
+        # 172.23.0.0/16 alongside three networks already inside it - which a
+        # bare "four members equal one /16" would have made sound like a merge.
+        contained = []
+        for i, (obj, nets) in enumerate(member_nets):
+            for j, (outer, outer_nets) in enumerate(member_nets):
+                if i == j:
+                    continue
+                inside = all(any(n.subnet_of(o) for o in outer_nets) for n in nets)
+                same = sorted(nets) == sorted(outer_nets)
+                # Identical members are duplicates, reported once, by the later one.
+                if inside and (not same or i > j):
+                    contained.append({"member": obj.get("name"), "uid": obj.get("uid"),
+                                      "inside": outer.get("name")})
+                    break
         if len(address_members) < 2:
             continue
         collapsed = list(ipaddress.collapse_addresses(blocks))
-        if len(collapsed) >= len(address_members):
+        if len(collapsed) >= len(address_members) and not contained:
             continue
         before = sum(n.num_addresses for n in blocks)
         after = sum(n.num_addresses for n in collapsed)
@@ -131,6 +151,10 @@ def merge_suggestions(definitions: dict[str, Any]) -> list[dict[str, Any]]:
             "block_count": len(collapsed),
             "addresses": after,
             "overlapping_members": before != after,
+            "redundant_members": contained,
+            # Only a merge when the blocks are fewer than what remains after the
+            # redundant members go; otherwise removing those is the whole finding.
+            "merge_reduces": len(collapsed) < len(address_members) - len(contained),
             "other_members_unchanged": other,
         })
     out.sort(key=lambda s: s["block_count"] - s["member_count"])

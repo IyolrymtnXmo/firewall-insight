@@ -60,9 +60,10 @@ def aggregate(records: list[dict[str, Any]], package: str) -> dict[str, Any]:
         row["actions"][str(rec.get("action") or "")] += 1
     for row in per_rule.values():
         row["actions"] = dict(row["actions"])
-    oldest = min((r.get("time") for r in records if r.get("time")), default=None)
+    times = [r.get("time") for r in records if r.get("time")]
     return {"per_rule": per_rule, "other_policy": other_policy, "no_uid": no_uid,
-            "read": len(records), "oldest_read": oldest}
+            "read": len(records), "oldest_read": min(times, default=None),
+            "newest_read": max(times, default=None)}
 
 
 def usage(rules: list[dict[str, Any]], agg: dict[str, Any], *, capped: bool,
@@ -101,9 +102,11 @@ def usage(rules: list[dict[str, Any]], agg: dict[str, Any], *, capped: bool,
             "disagrees": bool((r.get("hits") or 0) == 0 and seen)
                          or bool((r.get("hits") or 0) > 0 and verdict == "no-traffic"),
         })
+    covered = (f" - they span {agg.get('oldest_read')} to {agg.get('newest_read')}"
+               if agg.get("oldest_read") else "")
     notes = [
-        f"Read {agg['read']:,} firewall log record(s) from {time_frame}"
-        + (", stopping at the cap before the window ended." if capped else ", the whole window."),
+        f"Read {agg['read']:,} firewall log record(s) from {time_frame}{covered}"
+        + ("; the window held more, so the scan stopped at the cap." if capped else "; that is the whole window."),
         "Only 'no-traffic' is evidence of disuse. Every other verdict without a "
         "record is a statement about what the logs cannot show.",
     ]
@@ -114,5 +117,6 @@ def usage(rules: list[dict[str, Any]], agg: dict[str, Any], *, capped: bool,
         notes.append(f"{agg['no_uid']:,} record(s) carried no rule uid (implied rules, for "
                      "instance) and were not counted.")
     return {"time_frame": time_frame, "capped": capped, "read": agg["read"],
-            "oldest_read": agg["oldest_read"], "counts": {v: counts.get(v, 0) for v in VERDICTS},
+            "oldest_read": agg["oldest_read"], "newest_read": agg.get("newest_read"),
+            "counts": {v: counts.get(v, 0) for v in VERDICTS},
             "rules": rows, "notes": notes}

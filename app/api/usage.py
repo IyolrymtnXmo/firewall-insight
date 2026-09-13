@@ -17,7 +17,9 @@ router = APIRouter()
 @router.get("/api/rule-usage")
 async def rule_usage(package: str = Query(...),
                      time_frame: str = Query("last-7-days"),
-                     cap: int = Query(3000, ge=100, le=50000),
+                     # ~7 s per 100 records on the lab's log server, so the
+                     # default is about a minute; raise it knowingly.
+                     cap: int = Query(1000, ge=100, le=20000),
                      rid: str | None = Query(None)):
     if time_frame not in TIME_FRAMES:
         raise HTTPException(400, f"time_frame must be one of {', '.join(TIME_FRAMES)}")

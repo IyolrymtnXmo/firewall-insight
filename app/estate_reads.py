@@ -15,9 +15,11 @@ list that was cut short is reported as cut short: "no duplicates among the
 first 2,000 hosts" is a different statement from "no duplicates", and the
 analysis modules downstream keep the two apart.
 
-All reads run under `heavy_lock`, the same lock the package tree uses, so a log
-scan and a policy analysis never compete for the Management Server's rate
-limit at the same moment.
+Each call takes `heavy_lock`, the same lock the package tree uses, so two
+heavy reads never hit the Management Server's rate limit at the same moment.
+The lock is taken per page, not for a whole scan: measured on the lab, the log
+server answers a 100-record page in about seven seconds, and holding the lock
+for 3,000 records kept every other page waiting for three and a half minutes.
 """
 
 from __future__ import annotations
@@ -44,19 +46,19 @@ async def _paged(c, command: str, cap: int, extra: dict[str, Any] | None = None)
     assert command in READ_COMMANDS, command
     items: list[dict[str, Any]] = []
     offset, total = 0, None
-    async with heavy_lock:
-        while len(items) < cap:
-            payload = {"limit": min(PAGE, cap - len(items)), "offset": offset,
-                       "details-level": "full"}
-            payload.update(extra or {})
+    while len(items) < cap:
+        payload = {"limit": min(PAGE, cap - len(items)), "offset": offset,
+                   "details-level": "full"}
+        payload.update(extra or {})
+        async with heavy_lock:
             page = await c.call(command, payload)
-            batch = [o for o in page.get("objects") or [] if isinstance(o, dict)]
-            items.extend(batch)
-            total = int(page.get("total") or 0)
-            to = page.get("to")
-            offset = int(to) if to is not None else offset + len(batch)
-            if not batch or offset >= total:
-                break
+        batch = [o for o in page.get("objects") or [] if isinstance(o, dict)]
+        items.extend(batch)
+        total = int(page.get("total") or 0)
+        to = page.get("to")
+        offset = int(to) if to is not None else offset + len(batch)
+        if not batch or offset >= total:
+            break
     capped = total is not None and len(items) < total
     return items, total if total is not None else len(items), capped
 
@@ -87,7 +89,7 @@ TIME_FRAMES = ("last-hour", "today", "last-24-hours", "yesterday", "this-week",
                "last-7-days", "this-month", "last-30-days")
 
 
-async def log_records(c, time_frame: str, cap: int = 3000, per_page: int = 100):
+async def log_records(c, time_frame: str, cap: int = 1000, per_page: int = 100):
     """Firewall log records in *time_frame*, newest first, up to *cap*.
 
     This server version cannot aggregate: `type: count` and `top` are both
@@ -107,13 +109,14 @@ async def log_records(c, time_frame: str, cap: int = 3000, per_page: int = 100):
         page = await c.call("show-logs", {"new-query": {
             "time-frame": time_frame, "max-logs-per-request": per_page,
             "filter": 'blade:"Firewall"'}})
-        while True:
-            batch = page.get("logs") or []
-            for rec in batch:
-                records.append({k: rec.get(k) for k in keep})
-                if len(records) >= cap:
-                    return records, True
-            query_id = page.get("query-id")
-            if not batch or not query_id or len(batch) < per_page:
-                return records, False
+    while True:
+        batch = page.get("logs") or []
+        for rec in batch:
+            records.append({k: rec.get(k) for k in keep})
+            if len(records) >= cap:
+                return records, True
+        query_id = page.get("query-id")
+        if not batch or not query_id or len(batch) < per_page:
+            return records, False
+        async with heavy_lock:
             page = await c.call("show-logs", {"query-id": query_id})

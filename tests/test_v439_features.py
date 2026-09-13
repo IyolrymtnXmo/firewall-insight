@@ -236,6 +236,19 @@ class TestObjectHygiene:
             assert "192.0.2.0/30" not in s["equivalent_to"]
             assert s["addresses"] == 3
 
+    def test_a_member_inside_another_member_is_named_as_redundant(self):
+        """The lab case: a /16 next to three networks already inside it."""
+        nets = [{"uid": "big", "name": "Corp", "type": "network", "subnet4": "198.51.100.0", "mask-length4": 24},
+                {"uid": "a", "name": "A", "type": "network", "subnet4": "198.51.100.0", "mask-length4": 26},
+                {"uid": "b", "name": "B", "type": "network", "subnet4": "198.51.100.64", "mask-length4": 26}]
+        g = {"uid": "g", "name": "Admin", "members": [{"uid": n["uid"]} for n in nets]}
+        m = object_hygiene.merge_suggestions(_defs(networks=nets, groups=[g]))
+        assert m, "a group holding redundant members produced no finding"
+        red = {r["member"]: r["inside"] for r in m[0]["redundant_members"]}
+        assert red == {"A": "Corp", "B": "Corp"}
+        assert m[0]["merge_reduces"] is False, (
+            "removing the redundant members is the whole finding; there is nothing to merge")
+
     def test_non_address_members_are_left_alone_and_counted(self):
         hosts = [{"uid": f"h{i}", "name": f"h{i}", "type": "host", "ipv4-address": f"192.0.2.{i}"}
                  for i in range(2)]
@@ -365,6 +378,38 @@ class TestTheNewReads:
         records, capped = asyncio.run(estate_reads.log_records(c, "last-7-days", cap=10, per_page=100))
         assert records and "src" not in records[0] and "dst" not in records[0]
         assert capped is False
+
+    def test_a_long_scan_does_not_hold_the_lock_between_pages(self):
+        """3,000 records under one lock kept every other read waiting 3.5 minutes.
+
+        A second reader asks for the lock while the scan is running. With the
+        lock taken per page it gets in between two pages; with the lock held
+        for the whole scan it only gets in after the last one.
+        """
+        events: list[str] = []
+        pages = [{"logs": [{"rule_uid": "u", "time": "t"}] * 100, "query-id": "q"}
+                 for _ in range(4)] + [{"logs": [], "query-id": "q"}]
+
+        class Slow(_FakeClient):
+            async def call(self, command, payload=None):
+                events.append("page")
+                await asyncio.sleep(0.01)
+                return await super().call(command, payload)
+
+        async def other_reader():
+            await asyncio.sleep(0.015)        # after the scan has begun
+            async with estate_reads.heavy_lock:
+                events.append("other")
+
+        async def both():
+            await asyncio.gather(
+                estate_reads.log_records(Slow(pages), "last-7-days", cap=10_000),
+                other_reader())
+
+        asyncio.run(both())
+        last_page = len(events) - 1 - events[::-1].index("page")
+        assert events.index("other") < last_page, (
+            f"another read could not start until the scan finished: {events}")
 
     def test_an_unknown_time_frame_is_refused_before_any_call(self):
         c = _FakeClient([])
