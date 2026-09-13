@@ -34,6 +34,70 @@ REAL_CHANGE_KEYS = ("added", "removed", "modified", "moved", "scope_changed",
                     "nat_added", "nat_removed", "nat_modified")
 
 
+def outcome(run: dict[str, Any]) -> dict[str, Any]:
+    """What a finished review means, once, for everything that has to say it.
+
+    The CLI's exit code, an alert and a trend all need the same three-way
+    answer - look at this / could not tell / nothing moved - and each of the
+    earlier places that computed it separately flattened "could not tell" into
+    one of the other two at some point. This is the single definition;
+    tools/run_review._exit_code is a mapping of `verdict`.
+    """
+    sections = run.get("sections") or {}
+
+    def sec(name):
+        s = sections.get(name) or {}
+        if not s.get("requested", True) and not s.get("ok"):
+            return "not-requested", {}
+        return ("ok", s.get("data") or {}) if s.get("ok") else ("failed", {})
+
+    state, ch = sec("changed")
+    counters = ch.get("summary") or {}
+    first_run = bool(ch.get("first_run"))
+    changes = sum(int(counters.get(k) or 0) for k in REAL_CHANGE_KEYS) if state == "ok" else 0
+    changed = state == "ok" and not first_run and changes > 0
+    could_not_compare = int(counters.get("scope_unverifiable") or 0) if state == "ok" else 0
+
+    cstate, comp = sec("compliance")
+    csum = comp.get("summary") or {}
+    if cstate == "ok":
+        compliance = "conformant" if comp.get("conformant") else "not-conformant"
+    else:
+        compliance = cstate
+
+    hstate, gw = sec("gateways")
+    findings = gw.get("findings") or []
+    high = sum(1 for f in findings if f.get("severity") == "high")
+    not_reached = sum(1 for f in findings if f.get("kind") == "not-read")
+    health = ("findings" if findings else "clean") if hstate == "ok" else hstate
+
+    incomplete = list(run.get("incomplete_sections") or [])
+    if incomplete or could_not_compare:
+        undecided = True
+    else:
+        undecided = False
+    if changed or compliance == "not-conformant":
+        verdict = "attention"
+    elif undecided:
+        verdict = "undecided"
+    else:
+        verdict = "clean"
+    # An incomplete read outranks everything: what was not read cannot be
+    # called clean, and cannot be the basis for "look at this" either.
+    if incomplete:
+        verdict = "undecided"
+
+    return {
+        "verdict": verdict, "changed": changed, "changes": changes,
+        "first_run": first_run, "could_not_compare": could_not_compare,
+        "compliance": compliance, "compliance_failed": int(csum.get("failed") or 0),
+        "compliance_undecided": int(csum.get("unverifiable") or 0),
+        "compliance_profile": (comp.get("profile") or {}).get("name") or run.get("profile"),
+        "health": health, "health_findings": len(findings), "health_high": high,
+        "not_reached": not_reached, "incomplete": incomplete,
+    }
+
+
 def _dir(base: Path | None = None) -> Path:
     d = base or RUN_DIR
     d.mkdir(parents=True, exist_ok=True)

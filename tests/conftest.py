@@ -93,6 +93,10 @@ def never_the_operator_s_credential_file(tmp_path, monkeypatch):
     """
     monkeypatch.setattr(credential_store, "KEY_FILE", tmp_path / ".credential_key")
     monkeypatch.setattr(credential_store, "ENC_FILE", tmp_path / "credentials.enc")
+    # v4.39: the alert destinations file is the operator's too, for the same
+    # reason - a test that saves a destination must not replace theirs.
+    from app.jobs import alerts
+    monkeypatch.setattr(alerts, "CONFIG_FILE", tmp_path / "alerts.json")
 
 
 @pytest.fixture(autouse=True)

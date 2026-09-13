@@ -92,9 +92,15 @@ async def start_run(
     package: str = Query(...),
     profile: str | None = Query(None),
     include_health: bool = Query(True),
+    notify: bool = Query(False),
     rid: str | None = Query(None),
 ):
-    """Run a review now and return it. Same work the schedule does."""
+    """Run a review now and return it. Same work the schedule does.
+
+    `notify` sends it to the alert destinations whose triggers it meets, as a
+    scheduled run would. Off by default: pressing a button to look at something
+    is not usually a reason to message a channel.
+    """
     if _running.locked():
         raise HTTPException(
             status_code=409,
@@ -111,6 +117,10 @@ async def start_run(
                                       on_step=on_step)
             result["triggered_by"] = {"kind": "manual"}
             result["id"] = store.save_run(result)
+            if notify:
+                from ..jobs.alerts import dispatch
+                result["alerts"] = await dispatch(result)
+                store.save_run(result)
             progress_done(rid, "Review complete")
             return result
 

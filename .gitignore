@@ -43,5 +43,6 @@ health-baselines/
 .claude/
 runs/
 schedules.json
+alerts.json
 reports/
 .session_key

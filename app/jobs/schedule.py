@@ -261,6 +261,15 @@ async def _fire(schedule: dict[str, Any], moment: datetime) -> None:
             (out / f"{run_id}.pdf").write_bytes(
                 build_report(run, schedule.get("pdf_detail", "summary")))
 
+        # Alerts go out after the run is saved, so a delivery failure cannot
+        # cost the review, and the outcome of each delivery is written back
+        # onto the run where the Reviews page shows it.
+        from .alerts import dispatch
+        run["id"] = run_id
+        run["alerts"] = await dispatch(run)
+        if run["alerts"]:
+            save_run(run)
+
         result = "complete" if run.get("complete") else "incomplete"
         record_result(sid, run_id=run_id, result=result)
     except Exception as exc:                                      # noqa: BLE001

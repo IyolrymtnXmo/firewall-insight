@@ -15,12 +15,12 @@ boundary in both directions.
 
 from fastapi import APIRouter
 
-from . import (access, auth, compliance, credentials, export, health, jobs,
-               meta, nat, objects, remediation, snapshot, topology, traffic,
-               trends, ui, usage)
+from . import (access, alerts, auth, compliance, credentials, export, health,
+               jobs, meta, nat, objects, remediation, snapshot, topology,
+               traffic, trends, ui, usage)
 
 router = APIRouter()
 for module in (meta, access, nat, traffic, topology, snapshot, compliance,
                health, export, ui, credentials, jobs, auth, remediation, objects,
-               usage, trends):
+               usage, trends, alerts):
     router.include_router(module.router)

@@ -150,26 +150,19 @@ REAL_CHANGE_KEYS = ("added", "removed", "modified", "moved", "scope_changed",
 
 
 def _exit_code(run: dict) -> int:
-    if run["incomplete_sections"]:
+    """A mapping of store.outcome(), which is where the meaning lives.
+
+    The order of the checks is the order the previous body had, and
+    tests/test_v432_review_runner.py pins every case it distinguished.
+    """
+    from app.jobs.store import outcome
+    o = outcome(run)
+    if o["incomplete"]:
         return EXIT_UNDECIDED
-
-    s = run["sections"]
-    changed = s["changed"].get("data") or {}
-    counters = changed.get("summary") or {}
-
-    if s["changed"]["ok"] and not changed.get("first_run"):
-        if any(counters.get(k) for k in REAL_CHANGE_KEYS):
-            return EXIT_CHANGED
-
-    if s["compliance"]["ok"] and not (s["compliance"]["data"] or {}).get("conformant"):
+    if o["changed"] or o["compliance"] == "not-conformant":
         return EXIT_CHANGED
-
-    # Nothing moved, but something could not be decided. Reporting that as
-    # "unchanged" would be the confident-wrong answer this whole application
-    # is built to refuse.
-    if counters.get("scope_unverifiable"):
+    if o["could_not_compare"]:
         return EXIT_UNDECIDED
-
     return EXIT_UNCHANGED
 
 

@@ -127,7 +127,14 @@ class TestReadOnlyIsStillStructural:
     # cookie and rate-limits, and because a GET that forwards a password to the
     # Management Server would put it in every proxy log on the way. It writes
     # no file of its own beyond the key that signs the cookie.
-    MAY_MUTATE = {"credentials.py", "jobs.py", "auth.py"}
+    #
+    # v4.39 adds the fourth. `alerts.py` saves alert destinations: a PUT and a
+    # DELETE that write alerts.json and an encrypted entry in credentials.enc,
+    # and a POST that sends a test message - a POST because it messages a
+    # channel, which a link-prefetching GET must never do. It does not import
+    # the policy layer or the Management client; test_v439_alerts.py holds it
+    # to that.
+    MAY_MUTATE = {"credentials.py", "jobs.py", "auth.py", "alerts.py"}
 
     def test_only_the_credential_route_may_mutate(self):
         for py in (APP / "api").rglob("*.py"):
