@@ -75,6 +75,12 @@ class TestAskingBackInsteadOfGuessing:
         r = p("from Admins to 192.0.2.10 port 22")
         assert not r["ready"] and r["clarify"][0]["suggestion"] is None
 
+    def test_a_service_group_is_asked_about_not_reported_missing(self):
+        """AD-Services is a group with no static model; the trace needs one port."""
+        r = p("from 192.0.2.1 to 192.0.2.10 on AD-Services")
+        assert not r["ready"] and "service" not in r["missing"]
+        assert r["clarify"][0]["role"] == "service" and "service group" in r["clarify"][0]["why"]
+
     def test_missing_pieces_are_named(self):
         r = p("จาก 203.0.113.5 ไป 192.0.2.10")
         assert r["missing"] == ["service"] and not r["ready"]
@@ -103,6 +109,7 @@ class TestTheAnswerIsTheTracesAnswer:
         e = ask.explain(_result({"matched": True, "winner": STEP_9, "result": "Drop",
                                  "confidence": "exact"}), {"lang": "th"})
         assert e["verdict"] == "blocked" and e["answer"][0].startswith("ไม่ได้")
+        assert " ใน Net" in e["answer"][0] and " in Net" not in e["answer"][0]
 
     def test_unverified_is_never_turned_into_yes_or_no(self):
         e = ask.explain(_result({"matched": False, "result": "UNVERIFIED", "confidence": "unknown",

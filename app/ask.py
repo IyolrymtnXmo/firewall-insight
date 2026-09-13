@@ -58,18 +58,20 @@ ADDRESSED = {"host", "simple-gateway", "simple-cluster", "cluster-member", "chec
 
 
 def _names(objects: dict[str, dict[str, Any]]):
-    endpoints, services = [], []
+    endpoints, services, groups = [], [], []
     for o in objects.values():
         name = str(o.get("name") or "")
         if len(name) < 3:
             continue
         kind = str(o.get("type") or "")
-        if kind.startswith("service-") and kind != "service-group":
+        if kind == "service-group":
+            groups.append(o)
+        elif kind.startswith("service-"):
             services.append(o)
         elif kind in ENDPOINT_TYPES:
             endpoints.append(o)
     key = lambda o: -len(str(o.get("name")))
-    return sorted(endpoints, key=key), sorted(services, key=key)
+    return sorted(endpoints, key=key), sorted(services, key=key), sorted(groups, key=key)
 
 
 def _find_names(text: str, objs: list[dict[str, Any]], taken: list[tuple[int, int]]):
@@ -115,13 +117,14 @@ def _role(text: str, start: int, prev_end: int) -> str | None:
 def parse(question: str, objects: dict[str, dict[str, Any]]) -> dict[str, Any]:
     text = str(question or "").strip()
     lang = "th" if THAI.search(text) else "en"
-    endpoint_objs, service_objs = _names(objects)
+    endpoint_objs, service_objs, group_objs = _names(objects)
     taken: list[tuple[int, int]] = []
 
     mentions: list[tuple[tuple[int, int], dict[str, Any]]] = []
     for span, o in _find_names(text, endpoint_objs, taken):
         mentions.append((span, {"text": o["name"], "kind": "object", "object": o}))
     svc_named = _find_names(text, service_objs, taken)
+    group_named = _find_names(text, group_objs, taken)
 
     port_from_ip = None
     for m in IPV4.finditer(text):
@@ -198,7 +201,11 @@ def parse(question: str, objects: dict[str, dict[str, Any]]) -> dict[str, Any]:
             clarify.append({"role": role, "text": ep["text"], "why": note["why"],
                             "suggestion": note.get("suggestion")})
         resolved[role] = {"text": ep["text"], "kind": ep["kind"], "value": value}
-    if service is None:
+    if service is None and group_named:
+        g = group_named[0][1]["name"]
+        clarify.append({"role": "service", "text": g, "suggestion": None,
+                        "why": f"{g} is a service group; a trace needs one port or service from it"})
+    elif service is None:
         missing.append("service")
 
     return {"lang": lang, "source": resolved.get("source"),
@@ -236,11 +243,11 @@ def _address_for(ep: dict[str, Any]) -> tuple[str | None, dict[str, Any]]:
 
 # ---- the answer ------------------------------------------------------------------
 
-def _rule(step: dict[str, Any] | None) -> str:
+def _rule(step: dict[str, Any] | None, th: bool = False) -> str:
     if not step:
         return "?"
     name = f" ({step['name']})" if step.get("name") else ""
-    return f"rule {step.get('display_rule')}{name} in {step.get('layer')}"
+    return f"rule {step.get('display_rule')}{name} {'ใน' if th else 'in'} {step.get('layer')}"
 
 
 def _unknown_reasons(step: dict[str, Any] | None) -> list[str]:
@@ -267,7 +274,7 @@ def explain(result: dict[str, Any], parsed: dict[str, Any]) -> dict[str, Any]:
         firm = conf == "exact"
         if th:
             head = ("ได้" if allowed else "ไม่ได้") + ("" if firm else " (น่าจะ — ความมั่นใจไม่เต็ม)")
-            lines.append(f"{head}: {flow} ตรงกับ {_rule(step)} ซึ่ง {action}")
+            lines.append(f"{head}: {flow} ตรงกับ {_rule(step, True)} ซึ่ง {action}")
         else:
             head = ("Allowed" if allowed else "Blocked") + ("" if firm else " (probably - not certain)")
             lines.append(f"{head}: {flow} matches {_rule(step)}, which says {action}.")
@@ -279,10 +286,10 @@ def explain(result: dict[str, Any], parsed: dict[str, Any]) -> dict[str, Any]:
         later = access.get("later_exact_rule")
         reasons = _unknown_reasons(possible)
         if th:
-            lines.append(f"ตอบแน่ชัดไม่ได้: {_rule(possible)} อาจเป็น rule ที่ตัดสิน "
+            lines.append(f"ตอบแน่ชัดไม่ได้: {_rule(possible, True)} อาจเป็น rule ที่ตัดสิน "
                          "แต่มีเงื่อนไขที่ประเมินจาก configuration ไม่ได้")
             if later:
-                lines.append(f"ถ้า rule นั้นไม่ตรง ทราฟฟิกจะไปจบที่ {_rule(later)} ({later.get('action')}) "
+                lines.append(f"ถ้า rule นั้นไม่ตรง ทราฟฟิกจะไปจบที่ {_rule(later, True)} ({later.get('action')}) "
                              "— แต่จะบอกว่านั่นคือคำตอบสุดท้ายไม่ได้")
         else:
             lines.append(f"Cannot say for certain: {_rule(possible)} may decide this flow, "
