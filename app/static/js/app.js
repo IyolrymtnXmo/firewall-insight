@@ -4717,7 +4717,11 @@ async function askTraffic(ev){
     const d = await api('/api/ask?' + new URLSearchParams({q, package: P.value}));
     renderAsk(d);
     if(d.ran && d.parsed){
-      // The same trace, drawn by the same renderer the form uses.
+      // The same trace, drawn by the same renderer the form uses. The form
+      // refuses to run without an Access Layer, and after a reload that
+      // selector is empty - so select the layer this answer was traced in.
+      const layer = d.trace && d.trace.query && d.trace.query.layer;
+      if(layer && !L.value && [...(L.options || [])].some(o => o.value === layer)) L.value = layer;
       src.value = d.parsed.source.value;
       dst.value = d.parsed.destination.value;
       proto.value = d.parsed.service.protocol;
@@ -4849,7 +4853,7 @@ async function runObjects(ev, force){
     const d = await api('/api/objects/hygiene?' + q);
     renderObjects(d);
     return d;
-  }, {blocking: false, button: ev && ev.currentTarget, successMessage: null}).catch(() => {});
+  }, {blocking: false, button: ev && ev.currentTarget, successMessage: 'Objects read.', toast: false}).catch(() => {});
 }
 
 async function whereUsed(uid, btn){
@@ -4868,13 +4872,15 @@ const USAGE_TONE = {'seen':'good', 'no-traffic':'bad', 'not-in-sample':'neutral'
 const USAGE_LABEL = {'seen':'SEEN', 'no-traffic':'NO TRAFFIC', 'not-in-sample':'NOT IN SAMPLE',
                      'not-logged':'NOT LOGGED', 'track-unknown':'TRACK UNKNOWN', 'via-inline':'VIA INLINE'};
 
+/* Log times arrive in UTC ("...Z"). Shown bare, 14:03 UTC reads as 14:03 on
+   a clock that says 21:03 - so the zone is written out. */
+const logTime = t => t ? String(t).replace('T', ' ').slice(0, 16) + (String(t).endsWith('Z') ? ' UTC' : '') : '—';
+
 function renderUsage(d){
   const box = document.getElementById('usageResult');
   if(!box) return;
   const c = d.counts || {};
-  const span = d.oldest_read
-    ? `${String(d.oldest_read).replace('T', ' ').slice(0, 16)} → ${String(d.newest_read || '').replace('T', ' ').slice(0, 16)}`
-    : '—';
+  const span = d.oldest_read ? `${logTime(d.oldest_read)} → ${logTime(d.newest_read)}` : '—';
   box.innerHTML = `<div class="flow">
       <div class="step"><span class="muted">Read</span><br><b>${esc((d.read || 0).toLocaleString('en-US'))} record(s)</b><br><span class="muted">${esc(d.time_frame)}</span></div>
       <div class="arrow">→</div>
@@ -4888,7 +4894,7 @@ function renderUsage(d){
         <td><span class="rule-no">${esc(r.display_rule)}</span> ${esc(r.name || '')}</td>
         <td>${esc(r.layer || '')}</td><td>${esc(r.track || 'unknown')}</td>
         <td>${esc(r.hits ?? '—')}</td><td>${esc(r.logs)}</td>
-        <td class="mono">${esc(r.last_seen ? String(r.last_seen).replace('T', ' ').slice(0, 16) : '—')}</td>
+        <td class="mono">${esc(logTime(r.last_seen))}</td>
         <td><span class="pill ${USAGE_TONE[r.verdict] || 'neutral'}">${esc(USAGE_LABEL[r.verdict] || r.verdict)}</span>${r.disagrees ? '<br><span class="muted" style="font-size:10.5px">counter and logs disagree</span>' : ''}</td>
         <td>${esc(r.note)}</td></tr>`).join('')}</tbody></table></div>
     <div class="hint" style="margin-top:12px">${(d.notes || []).map(esc).join(' · ')}</div>`;
@@ -4906,7 +4912,7 @@ async function runUsage(ev){
     return d;
   }, {button: ev && ev.currentTarget, sub: frame + ' · up to ' + cap + ' records · elapsed',
       steps: ["Loading the package's rules", 'Reading firewall log records', 'Counting records per rule'],
-      successMessage: null}).catch(() => {}).finally(() => stop && stop());
+      successMessage: 'Logs read.', toast: false}).catch(() => {}).finally(() => stop && stop());
 }
 
 /* ---- trends ---- */
@@ -4925,7 +4931,14 @@ function miniChart(points, key, {title, sub, unit = '', failed = () => false} = 
   }
   const t0 = Math.min(...rows.map(r => r.at)), t1 = Math.max(...rows.map(r => r.at));
   const hi = Math.max(...vals), lo = Math.min(0, ...vals);
-  const top = hi === lo ? hi + 1 : hi + (hi - lo) * 0.1;
+  /* Round tops, and whole-number ticks for whole-number data: a count axis
+     reading 1.1 and 2.2 asks the reader what a tenth of a failed check is. */
+  const whole = vals.every(Number.isInteger);
+  const niceUp = v => { if(v <= 0) return 1; const e = Math.pow(10, Math.floor(Math.log10(v)));
+    const f = v / e; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * e; };
+  let top = niceUp(hi);
+  if(whole && hi <= 10) top = Math.max(2, Math.ceil(hi / 2) * 2);
+  if(top === lo) top = lo + 2;
   const X = t => pl + (t1 === t0 ? (W - pl - pr) / 2 : (t - t0) / (t1 - t0) * (W - pl - pr));
   const Y = v => pt + (1 - (v - lo) / ((top - lo) || 1)) * (H - pt - pb);
   const short = n => Math.abs(n) >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : Math.abs(n) >= 1e3 ? Math.round(n / 1e3) + 'k' : String(Math.round(n * 10) / 10);
@@ -4999,7 +5012,7 @@ async function loadTrends(ev){
     const d = await api('/api/trends' + (pkg ? '?package=' + encodeURIComponent(pkg) : ''));
     renderTrends(d);
     return d;
-  }, {blocking: false, button: ev && ev.currentTarget, successMessage: null}).catch(() => {});
+  }, {blocking: false, button: ev && ev.currentTarget, successMessage: 'History loaded.', toast: false}).catch(() => {});
 }
 
 /* ---- alerts ---- */

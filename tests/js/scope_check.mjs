@@ -894,6 +894,7 @@ checks.push(
       ], notes: ["read"] });
     seen("usageResult", "NOT IN SAMPLE", "a rule the capped scan could not judge");
     seen("usageResult", "stopped at the limit", "the scan being capped");
+    seen("usageResult", "12:54 UTC", "the time zone of a log timestamp");
     if (el2("usageResult").innerHTML.includes(">NO TRAFFIC<"))
       throw new Error("a capped scan labelled a rule NO TRAFFIC");
   }],
@@ -923,6 +924,14 @@ checks.push(
     const d = (svg.match(/class="line" d="([^"]*)"/) || [])[1] || "";
     if ((d.match(/M/g) || []).length !== 2)
       throw new Error(`a null reading was bridged by the line: ${d}`);
+  }],
+
+  ["miniChart gives whole-number ticks to counts", () => {
+    const svg = context.miniChart([
+      { at: "2026-09-01T00:00:00Z", v: 3 }, { at: "2026-09-02T00:00:00Z", v: 1 }], p => p.v, { title: "t" });
+    const ticks = [...svg.matchAll(/class="axis"[^>]*text-anchor="end">([^<]*)</g)].map(m => m[1]);
+    if (ticks.some(x => x.includes(".")))
+      throw new Error(`a count axis has fractional ticks: ${ticks.join(", ")}`);
   }],
 
   ["renderAlerts", () => {
