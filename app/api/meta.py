@@ -16,7 +16,8 @@ async def health():
     return {
         "status": "ok",
         "version": APP_VERSION,
-        "phase": "4.0",
+        # "phase": "4.0" used to sit here. It was set in v4.0, never changed,
+        # and meant nothing by v4.38 - a field a monitor might read and trust.
         "mode": "read-only",
         "persistent_api_session": True,
     }

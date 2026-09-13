@@ -5,12 +5,18 @@ Read-only analysis layer over the Check Point Management API.
 
 Layout:
     app/api/        HTTP routes, one module per product area
+    app/auth.py     signed session cookie, sign-in rate limit, setup mode
+    app/credential_store.py  Fernet-encrypted credentials.enc
     app/policy.py   fetch -> hydrate -> analyse orchestration and caching
     app/runtime.py  shared client, cache and rate-limit-aware error mapping
     app/progress.py live phase reporting for long requests
-    app/*.py        pure analysis modules (resolver, analyzer, traffic, ...)
+    app/jobs/       reviews: runner, run store, PDF report, schedule loop
+    app/*.py        pure analysis modules (resolver, analyzer, traffic,
+                    compliance, snapshot_diff, health, gaia, ...)
     app/templates/  index.html
-    app/static/     app.css, app.js
+    app/static/     css/app.css, js/app.js
+
+Every route sits behind require_session() below unless it is in PUBLIC_PATHS.
 """
 
 from __future__ import annotations

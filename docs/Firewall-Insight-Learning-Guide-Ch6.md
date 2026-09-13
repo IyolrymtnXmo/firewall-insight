@@ -3,6 +3,23 @@
 > **บทที่ 6 (บทสุดท้าย): Frontend + `topology_map.py`**
 > เขียนโดยอ่านซอร์สจริงที่ v4.19.1 เมื่อ 7 ก.ย. 2569
 > Lab ปัจจุบัน: 6 objects → 22 map nodes → 11 graph nodes / 14 links
+>
+> **สถานะ ณ v4.38.2 (13 ก.ย. 2569)** — เนื้อหาด้านล่างไม่ได้แก้ย้อนหลัง ยังเป็นของเวอร์ชันที่ระบุไว้ข้างบน
+> หัวข้อ 1 (โครงสร้าง frontend) ล้าสมัยมากที่สุด: ตั้งแต่ v4.30 หน้าตาเป็นระบบ Aurora,
+> มีหน้า Compliance / Policy Diff / Gateway Health / Reviews / Settings และหน้า sign in
+> `app.js` ใหญ่ขึ้นหลายเท่า และ harness `tests/js/scope_check.mjs` รัน renderer จริง (83 check) รวมถึง start-up handler ของหน้าเว็บ
+>
+> สถานะของ "งานที่เหลือ" ในหัวข้อ 8:
+>
+> | # | งาน | ณ v4.38.2 |
+> |---|---|---|
+> | 1 | `correlate_nat()` เป็น tri-state | ทำแล้ว (`app/nat_correlate.py`) |
+> | 2 | Cards mode วาดความสัมพันธ์ cluster/HA | ไม่ได้ตรวจยืนยัน |
+> | 3 | ผูก Traffic Path เข้ากับแผนที่ | ทำแล้ว v4.23.0 (`app/path_map.py`) |
+> | 4 | เปิดเผยสูตรคะแนนบน UI | บางส่วน — การ์ดเขียนว่าเป็น heuristic ที่คำนวณในแอป แต่สูตรอยู่ใน README ไม่ได้อยู่บนหน้าจอ |
+> | 5 | CI workflow | ยังไม่มี |
+> | 6 | แยก `traffic.py` | ทำแล้ว (`matching.py`, `nat_correlate.py`) |
+> | 7 | ruff lint | ยังไม่มี |
 
 ---
 

@@ -1,12 +1,12 @@
 """
 Policy snapshots: capture one, list them, compare two.
 
-Every route here is a GET, like the rest of the application. Capturing does
-write a file to the local disk, which is the only write anywhere in this
-codebase - so the response says where it went rather than leaving the caller
-to discover it. Nothing is sent to the Management Server except the same
-`show-*` calls every other page makes; the read-only guarantee is about the
-estate, and it is untouched.
+Every route here is a GET. Capturing still writes a file to the local disk -
+a GET that writes, which is why the response says where it went rather than
+leaving the caller to discover it. It is not the only local write any more
+(README, "What the application does write", lists them all). Nothing is sent
+to the Management Server except the same `show-*` calls every other page
+makes; the read-only guarantee is about the estate, and it is untouched.
 """
 
 from __future__ import annotations

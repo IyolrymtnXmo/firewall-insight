@@ -4,6 +4,15 @@
 > เขียนโดยอ่านซอร์สจริงที่ v4.19.1 เมื่อ 7 ก.ย. 2569
 > ผลลัพธ์ทุกอันในบทนี้มาจากการรัน `python -m tools.acceptance --package External-FW`
 > กับ Lab จริง ไม่ใช่ตัวอย่างสมมติ
+>
+> **สถานะ ณ v4.38.2 (13 ก.ย. 2569)** — เนื้อหาด้านล่างไม่ได้แก้ย้อนหลัง ยังเป็นของเวอร์ชันที่ระบุไว้ข้างบน
+> หลักการในบทนี้ (tri-state, `UNVERIFIED`, การเดินข้าม Inline Layer) ยังเป็นจริงทุกข้อ แต่โค้ดย้ายที่:
+>
+> - `address_match_state()` และ `resolve_service_query()` ย้ายไป **`app/matching.py`**
+> - `correlate_nat()` ย้ายไป **`app/nat_correlate.py`** และเป็น tri-state แล้ว (`match` / `unknown`)
+> - `trace_layer_candidates()` และ `trace_access_tree()` ยังอยู่ใน `app/traffic.py`
+> - ชื่อโดเมนที่ resolve ไม่ได้ ตอนนี้ตอบ `unknown` ไม่ใช่ `no-match` และผล DNS ถูก memoise 60 วินาที
+> - คอลัมน์ `vpn` ถูกนำมาคิดแล้วตั้งแต่ v4.24.0
 
 ---
 

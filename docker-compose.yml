@@ -4,3 +4,25 @@ services:
     env_file: [.env]
     ports: ["8000:8000"]
     restart: unless-stopped
+    # What the application writes, kept across a rebuild. Without these, every
+    # `docker compose up --build` silently discarded stored reviews, snapshots,
+    # health baselines and PDF reports - the history Policy Diff, the Reviews
+    # page and the dashboard trend are drawn from.
+    #
+    # NOT persisted, and why: credentials.enc, .credential_key, .session_key and
+    # schedules.json are single files at /app. Bind-mounting a file that does
+    # not yet exist on the host makes Docker create a directory in its place,
+    # which breaks the application on first start. So after a rebuild:
+    # credentials fall back to .env, everybody signs in again, and schedules
+    # have to be re-created on the Reviews page.
+    volumes:
+      - runs:/app/runs
+      - snapshots:/app/snapshots
+      - health-baselines:/app/health-baselines
+      - reports:/app/reports
+
+volumes:
+  runs:
+  snapshots:
+  health-baselines:
+  reports:

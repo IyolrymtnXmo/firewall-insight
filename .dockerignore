@@ -1,0 +1,34 @@
+# The build context is everything sent to the Docker daemon, whether or not a
+# COPY line uses it. Without this file that included .env, credentials.enc and
+# the key files - nothing copied them into the image, but they left this
+# directory on every build, which matters the moment the builder is remote.
+
+# secrets
+.env
+.env.*
+!.env.example
+credentials.enc*
+.credential_key
+.session_key
+*.pem
+*.key
+
+# local state - persisted through volumes in docker-compose.yml instead
+runs/
+snapshots/
+health-baselines/
+reports/
+schedules.json
+
+# not needed to run
+.venv/
+venv/
+.git/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+tests/
+docs/
+_rejected-v4.30-frontend/
+.claude/
+*.log

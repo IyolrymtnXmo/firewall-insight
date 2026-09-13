@@ -4,6 +4,194 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.38.2 — the documentation catches up
+
+The README described an application three versions older than the one it ships
+with. Not in details — in the claims a reader would act on:
+
+| README said | What is true |
+|---|---|
+| "Every route is a `GET`" | 37 routes, 8 of them `POST`/`PUT`/`DELETE` |
+| "the only write anywhere in the codebase" (a snapshot) | runs, schedules, PDFs, baselines, snapshots, encrypted credentials, two key files |
+| `pytest -q  # 381 tests` | 906 before this release, 922 after |
+| no mention of signing in | every data route has required a session since v4.35 |
+| 16 routes in the API reference | 37 |
+
+Rewritten against the code, not from memory: the route table was generated from
+the application object, the write list from every `write_bytes`/`write_text` in
+`app/`, the command lists from the client call sites and `gaia.ALLOWED`.
+
+Numbers that drift are gone from the README rather than updated. "381 tests"
+was correct once; so is "906", until the next test. The README says to expect
+every test to pass, and names the file that holds the version.
+
+### Guards, so this does not happen again quietly
+
+- **Every route has to be documented.** A test derives the route list from the
+  application and fails when one is missing from the README's API reference.
+- **Setup files carry documentation addresses only.** v4.35 put that guard on
+  the served page; `.env.example` was not covered, and still shipped the lab's
+  three real gateway addresses. It is covered now, with `README.md` and the
+  Docker files.
+
+### Also found while documenting
+
+- **The container could not use the way back in.** The Dockerfile copied `app/`
+  and not `tools/`, so `python -m tools.reset_credentials` — the recovery path
+  v4.38.1 points people at when nobody can sign in — did not exist inside it.
+- **A rebuild discarded the history.** No volumes: `docker compose up --build`
+  threw away stored reviews, snapshots, health baselines and PDFs. Those four
+  directories persist now. The single files at `/app` (`credentials.enc`, the
+  key files, `schedules.json`) do not, and `docker-compose.yml` says why:
+  bind-mounting a host file that does not exist yet makes Docker create a
+  directory in its place.
+- **No `.dockerignore`.** Every build sent `.env`, `credentials.enc` and the key
+  files to the Docker daemon as build context. Nothing copied them into the
+  image, but they left the directory, which matters once a builder is remote.
+- **`/health` reported `"phase": "4.0"`**, set in v4.0 and never touched since.
+  Removed.
+
+**Not verified:** the Docker engine was not running on the machine these
+changes were made on, so the image was not built. `docker compose config`
+parses the new file; the build itself is untested.
+
+### Dated documents stay dated
+
+`docs/` holds a case study written at v4.28.2, learning guides written at
+v4.19.1 and an assessment written at v4.23.0, each saying so on its first line.
+Rewriting their bodies would make those lines false. Each gains a dated note
+instead, listing what has changed since that affects what it claims — most
+importantly the assessment, which is source material for a report and still
+said the application had no authentication.
+
+906 → 922 tests: `tests/test_v438_docs.py`, each confirmed to fail with its drift
+re-injected — a route removed from the README, a test count pinned in it, a real
+address back in `.env.example`, `tools/` dropped from the image, and the stale
+`/health` field restored.
+
+---
+
+## v4.38.1 — a way back in when the saved Management address is wrong
+
+### The trap
+
+A sign-in is one login against the configured Management Server, the Settings
+page is behind the sign-in, and a saved record overrides `.env`. Put a wrong
+address in the store and all three compose: every sign-in fails, the page where
+the address is corrected cannot be opened, and editing `.env` changes nothing.
+
+It happened. A probe written while debugging v4.38.0 saved `https://x.invalid`
+over the operator's credentials, and there was no way back through the browser.
+The application said only *Could not reach https://x.invalid* — true, and no
+help.
+
+### What changed
+
+The sign-in failure now separates the two cases it was blurring, because they
+call for opposite responses — a server that is merely unreachable (wait) and an
+address that is wrong (it will never work) — and names where the address came
+from, which is the fact that makes this a trap rather than an inconvenience.
+
+`tools/reset_credentials.py` is the way out: it prints what the application
+would use and where each value came from, and removes a saved record so `.env`
+applies again. It never prints or asks for a password, and clearing one record
+leaves the other alone.
+
+The first version read the credential store from `api/auth.py`, and
+`test_v413_structure.py` refused it — that module validates a password and
+drops it, and the test bans the store's name there so nobody finds an import
+already waiting. The test was right. `api/credentials.py` answers the question
+through `address_source()`, and `auth.py` asks.
+
+### Deliberately not closed
+
+If the address is right and the server is down, a new sign-in still cannot
+succeed: there is nothing to check the password against, and a local copy would
+be exactly the secret at rest `app/auth.py` avoids. An existing session is
+unaffected — the cookie is checked locally and never touches the server — which
+is what "keep me signed in" is really buying.
+
+### No test can reach the operator's credentials.enc
+
+The probe that caused all of this POSTed to `/api/credentials` without the
+temp-file fixture the credential tests use. That fixture was a convention, and
+a convention only protects the tests that remember it. The redirection is now
+autouse in `conftest.py` and applies to every test, including ones not yet
+written; re-running a probe of the same shape leaves the file's sha256
+unchanged.
+
+### Also
+
+`.gitignore` globs `credentials.enc*` — a copy taken before a repair is the
+same secret under a name the bare pattern missed. And the first draft of the
+new tests used `172.0.2.1` and called it RFC 5737; it is public address space,
+so those tests were opening connections to a stranger's address and waiting out
+a 90-second timeout. `192.0.2.1` with a 0.25 s timeout: 106 s → 2 s.
+
+893 → 906 tests.
+
+---
+
+## v4.38.0 — the sign-in form comes back, and panels draw inside their own boxes
+
+### Authentication had switched itself off (P0)
+
+*"I cleared my cookies and no sign-in page appeared."* There was no sign-in
+page because the application had concluded there was nobody to check a sign-in
+against.
+
+The sign-in form's "use these for reads too" box posts a save carrying a
+username and a password and nothing else. `CheckPointCreds.mgmt` was declared
+`str = ""`, so Pydantic handed the endpoint an empty address indistinguishable
+from a deliberate one, and it was saved. `auth.configured()` is
+`mgmt and user`; with the address blank the application entered setup mode and
+the middleware opened with it — while the header still read *Connected*.
+RISK-01 had been re-opened by a convenience checkbox.
+
+This is the v4.31 password bug one field over, so it is fixed for the class:
+every credential field defaults to `None`, meaning only "not sent"; real
+defaults live in `DEFAULTS`; a save overlays what was sent onto what is stored,
+so a save that mentions two fields changes two fields; and a blank address or
+username is refused outright, so a record already damaged by the old build
+cannot re-break authentication at startup. In passing: `verify_ssl: bool =
+False` meant every partial save switched certificate verification off.
+
+### Panels that drew outside themselves
+
+Measured in a browser at 1600×900 against the lab, then re-measured:
+
+| | before | after |
+|---|---|---|
+| Hero row card heights | 265 / 299 / 462 — 197 px and 163 px empty | 462 each; the chart and bars grow into it |
+| Dashboard second column | one 234 px card over 383 px of nothing | one column; Selected Context is a four-up strip |
+| Hits-over-time chart | 320 px drawn in a 406 px panel | measures its panel |
+| Topology preview | viewBox 900×220 in a 1301×299 panel; bottom row drawn to 334 px, clipped | viewBox is the panel; content ends at 282 px |
+| Topology links through unrelated nodes | 5 of 13 | 0, sampled every 3 px at 1600 px and 700 px |
+
+Links now leave a node vertically, travel in the empty band between the two
+rows, and return — there are no nodes in that band to cross. One line is drawn
+per pair, a read route beating a declared link.
+
+### Reading the result pages
+
+| | before | after |
+|---|---|---|
+| Explanatory prose | 195–197 characters per line | capped at 68ch (~83), leading 1.6 |
+| A heading and its own explanation | 977 px apart, at opposite ends of one card | explanation directly beneath |
+| Policy Diff's 8 counters | 5-column grid, 2 empty cells | 4 columns |
+| Table cell leading | 1.45 | 1.55 |
+
+Short labels such as `HOUSE-NO-TELNET · severity low` are not sentences and
+stay on the right; the renderer marks explanations with `.hint-sub`. The first
+attempt used `flex: 1 0 100%` and never wrapped, because `max-width` clamps the
+used flex basis. Diff sections that found nothing stay on the page — "no rules
+were added" is a result — but step back so the eye lands on the one with a
+count.
+
+862 → 893 tests. Each new test was confirmed to fail with its defect re-injected.
+
+---
+
 ## v4.37.0 — open a page and it is already loaded
 
 ### Signing in left the application unusable
