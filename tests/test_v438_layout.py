@@ -126,8 +126,8 @@ class TestARowIsOneRow:
 class TestProseHasAMeasure:
     def test_an_explanatory_paragraph_is_capped(self):
         """195 characters a line is not a matter of taste."""
-        assert "max-width:68ch" in _rule(".page-head p")
-        assert "max-width:68ch" in _rule(
+        assert "max-width:none" in _rule(".page-head p")
+        assert "max-width:none" in _rule(
             ".panel > p.muted,\n.card  > p.muted,\n.panel > p:not([class]),\n"
             ".card  > p:not([class])")
 

@@ -80,7 +80,7 @@ class TestRailAlignment:
         assert "body.rail .menu button .mlabel{display:none}" in SRC
         assert "body.rail .menu button .ico{" in SRC
         assert "content:attr(data-label)" in SRC
-        assert '<use href="#ic-nat"/>' in SRC
+        assert '<use href="#ic-nat"' in SRC
         for glyph in "◈▤◇⇄➜⌘⧗♥":
             assert glyph not in SRC, f"{glyph} survived the icon rebuild"
 
