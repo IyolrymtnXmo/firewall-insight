@@ -734,7 +734,7 @@ function renderRuns(rows){
       + 'Press <b>Run a review now</b>, or schedule one below.</p>';
     return;
   }
-  box.innerHTML = `<div class="table-wrap"><table>
+  box.innerHTML = `<div style="padding: 0 var(--space-lg) var(--space-lg)"><div class="table-wrap"><table>
     <thead><tr><th>When</th><th>Package</th><th>Outcome</th><th>Profile</th>
       <th>Took</th><th>Report</th></tr></thead>
     <tbody>${rows.map(r => {
@@ -757,7 +757,7 @@ function renderRuns(rows){
             · <a href="/api/runs/${encodeURIComponent(r.id)}/report.pdf?detail=full"
               title="Adds addresses and services.">full</a>`}</td>
       </tr>`;
-    }).join('')}</tbody></table></div>`;
+    }).join('')}</tbody></table></div></div>`;
 }
 
 async function loadRuns(ev){
@@ -826,7 +826,7 @@ function renderSchedules(d){
       + 'No schedule exists. This application reads the Management Server only when you ask it to.</p>';
     return;
   }
-  box.innerHTML = `<div class="table-wrap"><table>
+  box.innerHTML = `<div style="padding: 0 var(--space-lg) var(--space-lg)"><div class="table-wrap"><table>
     <thead><tr><th>State</th><th>Id</th><th>Package</th><th>When</th>
       <th>Next</th><th>Last result</th><th></th></tr></thead>
     <tbody>${rows.map(s => `<tr>
@@ -839,7 +839,7 @@ function renderSchedules(d){
         s.last_run_at ? `<br><span class="muted" style="font-size:10.5px">${esc(String(s.last_run_at).replace('T', ' ').slice(0, 16))}</span>` : ''}</td>
       <td><button onclick="toggleSchedule('${esc(s.id)}',${s.enabled ? 'false' : 'true'})">${s.enabled ? 'Turn off' : 'Turn on'}</button>
           <button onclick="deleteSchedule('${esc(s.id)}')">Delete</button></td>
-    </tr>`).join('')}</tbody></table></div>`;
+    </tr>`).join('')}</tbody></table></div></div>`;
 }
 
 async function loadSchedules(ev){
@@ -2328,7 +2328,7 @@ async function trace(){
    };
    refreshAuroraDashboard();
 
-   traceResult.innerHTML=`<div class="flow">
+   traceResult.innerHTML=`<div class="flow" style="padding: 0 var(--space-lg) var(--space-lg)">
      <div class="step"><span class="muted">Source</span><br><b>${esc(d.query.source)}</b></div>
      <div class="arrow">→</div>
      <div class="step"><span class="muted">${w?'Matched Access Rule':(possible?'Possible Earlier Rule':'Matched Access Rule')}</span><br>${w?`<b>Rule ${esc(w.display_rule||w.rule)}</b><br>${esc(w.name)}<br><span class="muted">${esc(w.layer||'')}</span>`:(possible?`<b>Rule ${esc(possible.display_rule||possible.rule)}</b><br>${esc(possible.name||'')}<br><span class="muted">Requires gateway context</span>`:'No matching rule')}</div>
@@ -4104,7 +4104,7 @@ async function runDiff(ev){
            <ul style="margin:8px 0 0 18px">${d.warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul>
          </div>` : '';
 
-    diffResult.innerHTML = head + warn
+    diffResult.innerHTML = `<div style="padding: 0 var(--space-lg) var(--space-lg)">` + head + warn
       + `<div class="cards" style="margin-top:16px">`
       + [['Added',s.added],['Removed',s.removed],['Modified',s.modified],['Moved',s.moved],
          ['Scope changed',s.scope_changed],['Unverifiable',s.scope_unverifiable],
@@ -4150,7 +4150,7 @@ async function runDiff(ev){
           [['Rule',r=>`<span class="rule-no">Rule ${esc(r.rule)}</span> ${esc(r.name||'')}`],
            ['Changes',r=>r.changes.map(c=>`<b>${esc(c.field)}</b>: ${esc(String(c.from??'—'))} → ${esc(String(c.to??'—'))}`).join('<br>')]])
 
-      + `<div class="hint" style="margin-top:12px">${(d.notes||[]).map(esc).join(' · ')}</div>`;
+      + `<div class="hint" style="margin-top:12px">${(d.notes||[]).map(esc).join(' · ')}</div>` + `</div>`;
     revealResult(diffResult);
     if(d.identical) notify('success','No change','Every tracked rule matched, in the same order, with the same resolved reach.');
     else notify('warn','Policy changed',
@@ -4300,8 +4300,8 @@ async function runCompliance(ev){
         <tbody>${d.not_checkable.map(n=>`<tr><td>${esc(n.requirement||'')}</td><td>${esc(n.clause||'')}</td><td>${esc(n.why||'')}</td></tr>`).join('')}</tbody>
       </table></div></div>`:'';
 
-    complianceResult.innerHTML=head+cards+body+notChecked
-      +`<div class="hint" style="margin-top:12px">${(d.notes||[]).map(esc).join(' · ')}</div>`;
+    complianceResult.innerHTML= `<div style="padding: 0 var(--space-lg) var(--space-lg)">` + head+cards+body+notChecked
+      +`<div class="hint" style="margin-top:12px">${(d.notes||[]).map(esc).join(' · ')}</div></div>`;
     revealResult(complianceResult);
     if(d.data_quality) reportDataQuality(d.data_quality,'Compliance');
     if(s.unverifiable) notify('warn','Some checks could not be decided',
@@ -4389,8 +4389,8 @@ async function runHealth(ev){
       </table></div>`:'<p style="margin:8px 0 0">Interfaces, cluster roles and builds all match the baseline.</p>'}
       <div class="hint" style="margin-top:10px">${(d.diff.notes||[]).map(esc).join(' · ')}</div></div>`:'';
 
-    healthResult.innerHTML=head+findings+diff+gws+unreachable
-      +`<div class="hint" style="margin-top:12px">${(d.notes||[]).map(esc).join(' · ')}${d.saved_as?' · Saved as baseline '+esc(d.saved_as):''}</div>`;
+    healthResult.innerHTML= `<div style="padding: 0 var(--space-lg) var(--space-lg)">` + head+findings+diff+gws+unreachable 
+      + `<div class="hint" style="margin-top:12px">${(d.notes||[]).map(esc).join(' · ')}${d.saved_as?' · Saved as baseline '+esc(d.saved_as):''}</div>` + `</div>`;
     revealResult(healthResult);
     await loadBaselines();
     if(s.gateways_unreachable) notify('warn','Some gateways were not read',
@@ -4942,11 +4942,27 @@ function miniChart(points, key, {title, sub, unit = '', failed = () => false} = 
   const X = t => pl + (t1 === t0 ? (W - pl - pr) / 2 : (t - t0) / (t1 - t0) * (W - pl - pr));
   const Y = v => pt + (1 - (v - lo) / ((top - lo) || 1)) * (H - pt - pb);
   const short = n => Math.abs(n) >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : Math.abs(n) >= 1e3 ? Math.round(n / 1e3) + 'k' : String(Math.round(n * 10) / 10);
-  let d = '', open = false;
+  let d = '', dFill = '', open = false;
+  let startX = null, endX = null;
   for(const r of rows){
-    if(typeof r.v !== 'number'){ open = false; continue; }
-    d += `${open ? 'L' : 'M'}${X(r.at).toFixed(1)} ${Y(r.v).toFixed(1)} `;
+    if(typeof r.v !== 'number'){ 
+      if(open) { dFill += `L${endX.toFixed(1)} ${Y(lo).toFixed(1)} Z `; }
+      open = false; 
+      continue; 
+    }
+    const x = X(r.at), y = Y(r.v);
+    if (!open) {
+      startX = x;
+      dFill += `M${x.toFixed(1)} ${Y(lo).toFixed(1)} L${x.toFixed(1)} ${y.toFixed(1)} `;
+    } else {
+      dFill += `L${x.toFixed(1)} ${y.toFixed(1)} `;
+    }
+    d += `${open ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)} `;
+    endX = x;
     open = true;
+  }
+  if (open) {
+    dFill += `L${endX.toFixed(1)} ${Y(lo).toFixed(1)} Z`;
   }
   const day = t => { const x = new Date(t); return `${x.getDate()}/${x.getMonth() + 1}`; };
   const grid = [lo, (lo + top) / 2, top].map(v =>
@@ -4965,8 +4981,9 @@ function miniChart(points, key, {title, sub, unit = '', failed = () => false} = 
   }).join('');
   const axis = `<text class="axis" x="${pl}" y="${H - 7}">${esc(day(t0))}</text>
     <text class="axis" x="${W - pr}" y="${H - 7}" text-anchor="end">${esc(day(t1))}</text>`;
+  const defs = `<defs><linearGradient id="grad" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="var(--accent)" stop-opacity="0.25"/><stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>`;
   return `<div class="card flush mini-chart">${head}
-    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}">${grid}<path class="line" d="${d}"/>${marks}${axis}</svg></div>`;
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}">${defs}${grid}<path class="line-fill" d="${dFill}"/><path class="line" d="${d}"/>${marks}${axis}</svg></div>`;
 }
 
 function renderTrends(d){
@@ -4992,7 +5009,7 @@ function renderTrends(d){
     </div>
     <div class="card flush" style="margin-top:16px">
       <div class="card-h"><div><h3>Reviews, as a table</h3><p>The same points as the charts</p></div></div>
-      ${R.length ? `<div class="table-wrap"><table>
+      ${R.length ? `<div style="padding: 0 var(--space-lg) var(--space-lg)"><div class="table-wrap"><table>
         <thead><tr><th>When</th><th>Package</th><th>Score</th><th>Rules</th><th>Compliance</th><th>Changes</th><th>Gateways</th></tr></thead>
         <tbody>${R.slice().reverse().map(p => `<tr>
           <td class="mono">${esc(String(p.at || '').replace('T', ' ').slice(0, 16))}</td><td>${esc(p.package)}</td>
@@ -5000,7 +5017,7 @@ function renderTrends(d){
           <td>${typeof p.compliance === 'object' ? `${esc(p.compliance.failed)} failed · ${esc(p.compliance.unverifiable)} undecided` : esc(p.compliance)}</td>
           <td>${typeof p.changes === 'object' ? `${esc(p.changes.changed)} changed · ${esc(p.changes.could_not_compare)} not compared` : esc(p.changes)}</td>
           <td>${typeof p.gateways === 'object' ? `${esc(p.gateways.findings)} finding(s) · ${esc(p.gateways.not_reached)} not reached` : esc(p.gateways)}</td>
-        </tr>`).join('')}</tbody></table></div>` : '<p class="hint" style="margin:14px 16px">No review has been stored yet.</p>'}
+        </tr>`).join('')}</tbody></table></div></div>` : '<p class="hint" style="margin:14px 16px">No review has been stored yet.</p>'}
     </div>
     <div class="hint" style="margin-top:12px">${(d.notes || []).map(esc).join(' · ')}${(d.unreadable || []).length ? ' · unreadable: ' + d.unreadable.map(esc).join(', ') : ''}</div>`;
 }

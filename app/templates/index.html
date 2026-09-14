@@ -5,7 +5,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Firewall Analysis Platform</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232dd4bf' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3.2l7.2 2.7v5.5c0 4.3-3 7.8-7.2 9.4-4.2-1.6-7.2-5.1-7.2-9.4V5.9z'/%3E%3Cpath d='M9 12.2l2.2 2.2L15.4 10'/%3E%3C/svg%3E">
+  <link rel="icon"
+    href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232dd4bf' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3.2l7.2 2.7v5.5c0 4.3-3 7.8-7.2 9.4-4.2-1.6-7.2-5.1-7.2-9.4V5.9z'/%3E%3Cpath d='M9 12.2l2.2 2.2L15.4 10'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
@@ -17,7 +18,9 @@
 <body>
   <div id="signin" class="signin-veil" hidden>
     <div class="signin-card">
-      <div class="brand" style="margin-bottom:6px"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-shield"/></svg>Firewall <span>Insight</span></div>
+      <div class="brand" style="margin-bottom:6px"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+          <use href="#ic-shield" />
+        </svg>Firewall <span>Insight</span></div>
       <h3 id="signinTitle">Sign in</h3>
       <p class="muted" id="signinNote">Use the Check Point Management API credentials you already
         have. They are checked against the Management Server and then discarded — this application
@@ -27,7 +30,7 @@
         <input id="authUser" type="text" autocomplete="username" autofocus>
         <label for="authPass">Password</label>
         <input id="authPass" type="password" autocomplete="current-password"
-               onkeydown="if(event.key==='Enter')signIn()">
+          onkeydown="if(event.key==='Enter')signIn()">
       </div>
       <label class="signin-opt"><input id="authRemember" type="checkbox" checked>
         <span>Keep me signed in on this machine for 30 days</span></label>
@@ -67,39 +70,127 @@
   </div>
   <svg width="0" height="0" class="sr-only" aria-hidden="true" focusable="false">
     <defs>
-      <g id="ic-dashboard"><path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4.2-5"/></g>
-      <g id="ic-rulebase"><rect x="3.2" y="4.6" width="17.6" height="14.8" rx="2"/><path d="M3.2 9.5h17.6M3.2 14.5h17.6"/></g>
-      <g id="ic-analyze"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M4 12h16"/></g>
-      <g id="ic-nat"><path d="M4 8.5h13.5M14 5l3.5 3.5L14 12"/><path d="M20 15.5H6.5M10 12l-3.5 3.5L10 19"/></g>
-      <g id="ic-trace"><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><path d="M8.2 6h5.3a3 3 0 0 1 0 6h-3a3 3 0 0 0 0 6h5.3"/></g>
-      <g id="ic-map"><rect x="9.4" y="3.6" width="5.2" height="4.4" rx="1"/><rect x="3" y="16" width="5.2" height="4.4" rx="1"/><rect x="15.8" y="16" width="5.2" height="4.4" rx="1"/><path d="M12 8v4.2M5.6 16v-3.8h12.8V16"/></g>
-      <g id="ic-diff"><path d="M4 6.5h9M4 12h6M4 17.5h9"/><path d="M17 5.5v13M14 8.5l3-3 3 3"/></g>
-      <g id="ic-compliance"><rect x="3.6" y="4" width="16.8" height="16" rx="2"/><path d="M8 12.2l2.6 2.6L16 9.4"/></g>
-      <g id="ic-health"><path d="M3 12.5h4l2.2-5 3.6 9 2.4-4h5.8"/></g>
-      <g id="ic-shield"><path d="M12 3.2l7.2 2.7v5.5c0 4.3-3 7.8-7.2 9.4-4.2-1.6-7.2-5.1-7.2-9.4V5.9z"/><path d="M9 12.2l2.2 2.2L15.4 10"/></g>
-      <g id="ic-plug"><path d="M8.5 3.5v5M15.5 3.5v5"/><path d="M5.5 8.5h13v3.2a6.5 6.5 0 0 1-13 0z"/><path d="M12 18v3"/></g>
-      <g id="ic-chev"><path d="M9 6l6 6-6 6"/></g>
-      <g id="ic-plus"><path d="M12 5v14M5 12h14"/></g>
-      <g id="ic-trend"><path d="M3.5 16.5l5-5.5 3.6 3.4 8.4-9"/><path d="M20.5 5.4h-4.6M20.5 5.4V10"/></g>
-      <g id="ic-cases"><rect x="3.5" y="6.5" width="17" height="13" rx="2"/><path d="M9 6.5V5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 5v1.5"/></g>
-      <g id="ic-alert"><path d="M12 4.6L21 19.4H3z"/><path d="M12 10v4.2M12 16.9v.2"/></g>
-      <g id="ic-clock"><circle cx="12" cy="12" r="8.2"/><path d="M12 7.2V12l3.2 2"/></g>
-      <g id="ic-badge"><circle cx="12" cy="12" r="8.2"/><path d="M8.4 12.2l2.4 2.4 4.8-4.8"/></g>
-      <g id="ic-eye"><path d="M2.6 12S6 5.8 12 5.8 21.4 12 21.4 12 18 18.2 12 18.2 2.6 12 2.6 12z"/><circle cx="12" cy="12" r="2.6"/></g>
-      <g id="ic-refresh"><path d="M19.5 12a7.5 7.5 0 1 1-2.3-5.4"/><path d="M19.8 4.6v4.2h-4.2"/></g>
-      <g id="ic-down"><path d="M12 4v11M8 11.4l4 4 4-4M4.5 19.5h15"/></g>
-      <g id="ic-globe"><circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c2.4 2.3 2.4 13.7 0 16M12 4c-2.4 2.3-2.4 13.7 0 16"/></g>
-      <g id="ic-fw"><rect x="4" y="4.5" width="16" height="15" rx="1.8"/><path d="M4 9.5h16M4 14.5h16M9.5 4.5v5M14.5 9.5v5M9.5 14.5v5"/></g>
-      <g id="ic-switch"><rect x="3" y="8.5" width="18" height="7" rx="1.8"/><path d="M7 12h.01M11 12h.01M15 12h.01"/></g>
-      <g id="ic-server"><rect x="4" y="4" width="16" height="7" rx="1.6"/><rect x="4" y="13" width="16" height="7" rx="1.6"/><path d="M7.5 7.5h.01M7.5 16.5h.01"/></g>
-      <g id="ic-hub"><circle cx="12" cy="12" r="3"/><path d="M12 3v6M12 15v6M3 12h6M15 12h6"/></g>
-      <g id="ic-fail"><circle cx="12" cy="12" r="8.4"/><path d="M9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6"/></g>
-      <g id="ic-settings"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></g>
+      <g id="ic-dashboard">
+        <path d="M4 17a8 8 0 1 1 16 0" />
+        <path d="M12 17l4.2-5" />
+      </g>
+      <g id="ic-rulebase">
+        <rect x="3.2" y="4.6" width="17.6" height="14.8" rx="2" />
+        <path d="M3.2 9.5h17.6M3.2 14.5h17.6" />
+      </g>
+      <g id="ic-analyze">
+        <path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" />
+        <path d="M4 12h16" />
+      </g>
+      <g id="ic-nat">
+        <path d="M4 8.5h13.5M14 5l3.5 3.5L14 12" />
+        <path d="M20 15.5H6.5M10 12l-3.5 3.5L10 19" />
+      </g>
+      <g id="ic-trace">
+        <circle cx="6" cy="6" r="2.2" />
+        <circle cx="18" cy="18" r="2.2" />
+        <path d="M8.2 6h5.3a3 3 0 0 1 0 6h-3a3 3 0 0 0 0 6h5.3" />
+      </g>
+      <g id="ic-map">
+        <rect x="9.4" y="3.6" width="5.2" height="4.4" rx="1" />
+        <rect x="3" y="16" width="5.2" height="4.4" rx="1" />
+        <rect x="15.8" y="16" width="5.2" height="4.4" rx="1" />
+        <path d="M12 8v4.2M5.6 16v-3.8h12.8V16" />
+      </g>
+      <g id="ic-diff">
+        <path d="M4 6.5h9M4 12h6M4 17.5h9" />
+        <path d="M17 5.5v13M14 8.5l3-3 3 3" />
+      </g>
+      <g id="ic-compliance">
+        <rect x="3.6" y="4" width="16.8" height="16" rx="2" />
+        <path d="M8 12.2l2.6 2.6L16 9.4" />
+      </g>
+      <g id="ic-health">
+        <path d="M3 12.5h4l2.2-5 3.6 9 2.4-4h5.8" />
+      </g>
+      <g id="ic-shield">
+        <path d="M12 3.2l7.2 2.7v5.5c0 4.3-3 7.8-7.2 9.4-4.2-1.6-7.2-5.1-7.2-9.4V5.9z" />
+        <path d="M9 12.2l2.2 2.2L15.4 10" />
+      </g>
+      <g id="ic-plug">
+        <path d="M8.5 3.5v5M15.5 3.5v5" />
+        <path d="M5.5 8.5h13v3.2a6.5 6.5 0 0 1-13 0z" />
+        <path d="M12 18v3" />
+      </g>
+      <g id="ic-chev">
+        <path d="M9 6l6 6-6 6" />
+      </g>
+      <g id="ic-plus">
+        <path d="M12 5v14M5 12h14" />
+      </g>
+      <g id="ic-trend">
+        <path d="M3.5 16.5l5-5.5 3.6 3.4 8.4-9" />
+        <path d="M20.5 5.4h-4.6M20.5 5.4V10" />
+      </g>
+      <g id="ic-cases">
+        <rect x="3.5" y="6.5" width="17" height="13" rx="2" />
+        <path d="M9 6.5V5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 5v1.5" />
+      </g>
+      <g id="ic-alert">
+        <path d="M12 4.6L21 19.4H3z" />
+        <path d="M12 10v4.2M12 16.9v.2" />
+      </g>
+      <g id="ic-clock">
+        <circle cx="12" cy="12" r="8.2" />
+        <path d="M12 7.2V12l3.2 2" />
+      </g>
+      <g id="ic-badge">
+        <circle cx="12" cy="12" r="8.2" />
+        <path d="M8.4 12.2l2.4 2.4 4.8-4.8" />
+      </g>
+      <g id="ic-eye">
+        <path d="M2.6 12S6 5.8 12 5.8 21.4 12 21.4 12 18 18.2 12 18.2 2.6 12 2.6 12z" />
+        <circle cx="12" cy="12" r="2.6" />
+      </g>
+      <g id="ic-refresh">
+        <path d="M19.5 12a7.5 7.5 0 1 1-2.3-5.4" />
+        <path d="M19.8 4.6v4.2h-4.2" />
+      </g>
+      <g id="ic-down">
+        <path d="M12 4v11M8 11.4l4 4 4-4M4.5 19.5h15" />
+      </g>
+      <g id="ic-globe">
+        <circle cx="12" cy="12" r="8" />
+        <path d="M4 12h16M12 4c2.4 2.3 2.4 13.7 0 16M12 4c-2.4 2.3-2.4 13.7 0 16" />
+      </g>
+      <g id="ic-fw">
+        <rect x="4" y="4.5" width="16" height="15" rx="1.8" />
+        <path d="M4 9.5h16M4 14.5h16M9.5 4.5v5M14.5 9.5v5M9.5 14.5v5" />
+      </g>
+      <g id="ic-switch">
+        <rect x="3" y="8.5" width="18" height="7" rx="1.8" />
+        <path d="M7 12h.01M11 12h.01M15 12h.01" />
+      </g>
+      <g id="ic-server">
+        <rect x="4" y="4" width="16" height="7" rx="1.6" />
+        <rect x="4" y="13" width="16" height="7" rx="1.6" />
+        <path d="M7.5 7.5h.01M7.5 16.5h.01" />
+      </g>
+      <g id="ic-hub">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M12 3v6M12 15v6M3 12h6M15 12h6" />
+      </g>
+      <g id="ic-fail">
+        <circle cx="12" cy="12" r="8.4" />
+        <path d="M9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6" />
+      </g>
+      <g id="ic-settings">
+        <circle cx="12" cy="12" r="3" />
+        <path
+          d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      </g>
     </defs>
   </svg>
   <div class="app">
     <header class="topbar">
-      <div class="brand"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-shield"/></svg>Firewall <span>Insight</span></div>
+      <div class="brand"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+          <use href="#ic-shield" />
+        </svg>Firewall <span>Insight</span></div>
       <div class="ctx-chips">
         <span class="ctx-chip pick" id="packageControl">
           <span class="k">Package</span>
@@ -117,29 +208,78 @@
       </div>
       <div class="topbar-right">
         <button class="icon-only" onclick="testConn(event)" title="Test the Management API connection"
-          aria-label="Test Connection"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-plug"/></svg></button>
+          aria-label="Test Connection"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#ic-plug" />
+          </svg></button>
         <button class="icon-only" onclick="loadMetadata(true,event)" title="Re-read packages, layers and gateways"
-          aria-label="Refresh Metadata"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-refresh"/></svg></button>
+          aria-label="Refresh Metadata"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#ic-refresh" />
+          </svg></button>
         <div id="conn" class="badge conn"><span class="dot"></span><span>Not tested</span></div>
+        <button onclick="signOut()" title="Sign out"
+          style="margin-left: 12px; padding: 4px 12px; font-size: 13px; cursor: pointer; border-radius: 4px; border: 1px solid var(--border);">Sign
+          out</button>
       </div>
     </header>
     <aside class="sidebar">
       <div class="menu">
-        <button class="active" data-page="dashboard" data-label="Dashboard" onclick="showPage('dashboard',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-dashboard"/></svg><span class="mlabel">Dashboard</span></button>
-        <button class="" data-page="browser" data-label="Access Policy" onclick="showPage('browser',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-rulebase"/></svg><span class="mlabel">Access Policy</span></button>
-        <button class="" data-page="access" data-label="Analyze" onclick="showPage('access',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-analyze"/></svg><span class="mlabel">Analyze</span></button>
-        <button class="" data-page="nat" data-label="NAT Policy" onclick="showPage('nat',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-nat"/></svg><span class="mlabel">NAT Policy</span></button>
-        <button class="" data-page="traffic" data-label="Traffic Path" onclick="showPage('traffic',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-trace"/></svg><span class="mlabel">Traffic Path</span></button>
-        <button class="" data-page="mapping" data-label="Network Mapping" onclick="showPage('mapping',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-map"/></svg><span class="mlabel">Network Mapping</span></button>
-        <button class="" data-page="diff" data-label="Policy Diff" onclick="showPage('diff',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-diff"/></svg><span class="mlabel">Policy Diff</span></button>
-        <button class="" data-page="compliance" data-label="Compliance" onclick="showPage('compliance',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-compliance"/></svg><span class="mlabel">Compliance</span></button>
-        <button class="" data-page="health" data-label="Gateway Health" onclick="showPage('health',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-health"/></svg><span class="mlabel">Gateway Health</span></button>
-        <button class="" data-page="objects" data-label="Objects" onclick="showPage('objects',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-cases"/></svg><span class="mlabel">Objects</span></button>
-        <button class="" data-page="usage" data-label="Rule Usage" onclick="showPage('usage',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-eye"/></svg><span class="mlabel">Rule Usage</span></button>
-        <button class="" data-page="trends" data-label="Trends" onclick="showPage('trends',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-trend"/></svg><span class="mlabel">Trends</span></button>
-        <button class="" data-page="runs" data-label="Reviews" onclick="showPage('runs',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-diff"/></svg><span class="mlabel">Reviews</span></button>
+        <button class="active" data-page="dashboard" data-label="Dashboard" onclick="showPage('dashboard',this)"><svg
+            class="ico" viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#ic-dashboard" />
+          </svg><span class="mlabel">Dashboard</span></button>
+        <button class="" data-page="browser" data-label="Access Policy" onclick="showPage('browser',this)"><svg
+            class="ico" viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#ic-rulebase" />
+          </svg><span class="mlabel">Access Policy</span></button>
+        <button class="" data-page="access" data-label="Analyze" onclick="showPage('access',this)"><svg class="ico"
+            viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#ic-analyze" />
+          </svg><span class="mlabel">Analyze</span></button>
+        <button class="" data-page="nat" data-label="NAT Policy" onclick="showPage('nat',this)"><svg class="ico"
+            viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#ic-nat" />
+          </svg><span class="mlabel">NAT Policy</span></button>
+        <button class="" data-page="traffic" data-label="Traffic Path" onclick="showPage('traffic',this)"><svg
+            class="ico" viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#ic-trace" />
+          </svg><span class="mlabel">Traffic Path</span></button>
+        <button class="" data-page="mapping" data-label="Network Mapping" onclick="showPage('mapping',this)"><svg
+            class="ico" viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#ic-map" />
+          </svg><span class="mlabel">Network Mapping</span></button>
+        <button class="" data-page="diff" data-label="Policy Diff" onclick="showPage('diff',this)"><svg class="ico"
+            viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#ic-diff" />
+          </svg><span class="mlabel">Policy Diff</span></button>
+        <button class="" data-page="compliance" data-label="Compliance" onclick="showPage('compliance',this)"><svg
+            class="ico" viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#ic-compliance" />
+          </svg><span class="mlabel">Compliance</span></button>
+        <button class="" data-page="health" data-label="Gateway Health" onclick="showPage('health',this)"><svg
+            class="ico" viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#ic-health" />
+          </svg><span class="mlabel">Gateway Health</span></button>
+        <button class="" data-page="objects" data-label="Objects" onclick="showPage('objects',this)"><svg class="ico"
+            viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#ic-cases" />
+          </svg><span class="mlabel">Objects</span></button>
+        <button class="" data-page="usage" data-label="Rule Usage" onclick="showPage('usage',this)"><svg class="ico"
+            viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#ic-eye" />
+          </svg><span class="mlabel">Rule Usage</span></button>
+        <button class="" data-page="trends" data-label="Trends" onclick="showPage('trends',this)"><svg class="ico"
+            viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#ic-trend" />
+          </svg><span class="mlabel">Trends</span></button>
+        <button class="" data-page="runs" data-label="Reviews" onclick="showPage('runs',this)"><svg class="ico"
+            viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#ic-diff" />
+          </svg><span class="mlabel">Reviews</span></button>
         <div class="menu-sep"></div>
-        <button class="" data-page="settings" data-label="Settings" onclick="showPage('settings',this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-settings"/></svg><span class="mlabel">Settings</span></button>
+        <button class="" data-page="settings" data-label="Settings" onclick="showPage('settings',this)"><svg class="ico"
+            viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#ic-settings" />
+          </svg><span class="mlabel">Settings</span></button>
       </div>
 
       <div class="sidebar-bottom">
@@ -191,11 +331,15 @@
           </div>
           <div class="acts">
             <button class="primary" onclick="dashboardRefresh()">
-              <svg class="ico spin" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-refresh"/></svg>
+              <svg class="ico spin" viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#ic-refresh" />
+              </svg>
               Analyze Selected Policies
             </button>
             <button class="icon-only" onclick="exportRawPolicy()" title="Export the configured rulebase as CSV"
-              aria-label="Export CSV"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-down"/></svg></button>
+              aria-label="Export CSV"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#ic-down" />
+              </svg></button>
           </div>
         </div>
 
@@ -206,109 +350,130 @@
                an analysis has run, so the page opened blank. -->
           <div class="band band-d hero">
             <div class="card flush fold" data-fold="dash-trend">
-            <div class="card-h">
-            <div><h3>Hits over time</h3><p>Totals recorded by your snapshots — nothing interpolated</p></div>
-            <div class="r"><span class="fold-count" id="trendMeta">—</span></div>
-            </div>
-            <div class="trend-legend">
-            <span><i style="background:var(--accent);box-shadow:0 0 6px var(--accent)"></i>Total access hits</span>
-            </div>
-            <div id="trendBox"></div>
+              <div class="card-h">
+                <div>
+                  <h3>Hits over time</h3>
+                  <p>Totals recorded by your snapshots — nothing interpolated</p>
+                </div>
+                <div class="r"><span class="fold-count" id="trendMeta">—</span></div>
+              </div>
+              <div class="trend-legend">
+                <span><i style="background:var(--accent);box-shadow:0 0 6px var(--accent)"></i>Total access hits</span>
+              </div>
+              <div id="trendBox"></div>
             </div>
             <div class="card flush fold" data-fold="dash-hits">
-            <div class="card-h">
-            <div><h3>Where the hits are</h3><p>Counts as the rulebase reports them</p></div>
-            <div class="r"><span class="pill neutral" id="hitsScope">Top 8</span></div>
-            </div>
-            <div class="bars-legend">
-            <span><i style="background:var(--accent)"></i>Accept</span>
-            <span><i style="background:var(--bad)"></i>Drop</span>
-            <span><i style="background:var(--warn)"></i>Never hit</span>
-            </div>
-            <div class="bars" id="hitBars">
-            <p class="hint" style="margin:4px 0 8px">Load the Access Policy to see which rules carry the traffic.</p>
-            </div>
+              <div class="card-h">
+                <div>
+                  <h3>Where the hits are</h3>
+                  <p>Counts as the rulebase reports them</p>
+                </div>
+                <div class="r"><span class="pill neutral" id="hitsScope">Top 8</span></div>
+              </div>
+              <div class="bars-legend">
+                <span><i style="background:var(--accent)"></i>Accept</span>
+                <span><i style="background:var(--bad)"></i>Drop</span>
+                <span><i style="background:var(--warn)"></i>Never hit</span>
+              </div>
+              <div class="bars" id="hitBars">
+                <p class="hint" style="margin:4px 0 8px">Load the Access Policy to see which rules carry the traffic.
+                </p>
+              </div>
             </div>
             <div class="card flush fold" data-fold="dash-score">
               <div class="card-h">
-              <div>
-              <h3>Policy Health Score</h3>
-              <p>A heuristic computed here, not a Check Point score.</p>
-              </div>
-              <div class="r"><span id="healthLive" class="live-tag" hidden><i></i>LIVE</span></div>
+                <div>
+                  <h3>Policy Health Score</h3>
+                  <p>A heuristic computed here, not a Check Point score.</p>
+                </div>
+                <div class="r"><span id="healthLive" class="live-tag" hidden><i></i>LIVE</span></div>
               </div>
               <div class="gauge-wrap">
-              <svg viewBox="0 0 240 150" role="img" aria-labelledby="gaugeDesc">
-              <title id="gaugeDesc">Policy health score</title>
-              <defs>
-              <linearGradient id="gaugeArcGrad" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stop-color="var(--bad)"/>
-              <stop offset="36%" stop-color="var(--warn)"/>
-              <stop offset="72%" stop-color="var(--accent)"/>
-              <stop offset="100%" stop-color="var(--accent-2)"/>
-              </linearGradient>
-              </defs>
-              <path d="M24 128 A96 96 0 0 1 216 128" fill="none" class="gauge-track" stroke-width="15" stroke-linecap="round"/>
-              <path id="gaugeArc" d="M24 128 A96 96 0 0 1 216 128" fill="none" stroke="url(#gaugeArcGrad)"
-              stroke-width="15" stroke-linecap="round" class="gauge-arc"
-              stroke-dasharray="302" stroke-dashoffset="302"/>
-              <text id="gaugeValue" class="gauge-val" x="118" y="113" text-anchor="middle">&mdash;</text>
-              <text id="gaugeOf" class="gauge-of" x="170" y="113" text-anchor="start"></text>
-              <text id="gaugeCaption" class="gauge-cap" x="120" y="134" text-anchor="middle">Not analysed yet</text>
-              </svg>
+                <svg viewBox="0 0 240 150" role="img" aria-labelledby="gaugeDesc">
+                  <title id="gaugeDesc">Policy health score</title>
+                  <defs>
+                    <linearGradient id="gaugeArcGrad" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stop-color="var(--bad)" />
+                      <stop offset="36%" stop-color="var(--warn)" />
+                      <stop offset="72%" stop-color="var(--accent)" />
+                      <stop offset="100%" stop-color="var(--accent-2)" />
+                    </linearGradient>
+                  </defs>
+                  <path d="M24 128 A96 96 0 0 1 216 128" fill="none" class="gauge-track" stroke-width="15"
+                    stroke-linecap="round" />
+                  <path id="gaugeArc" d="M24 128 A96 96 0 0 1 216 128" fill="none" stroke="url(#gaugeArcGrad)"
+                    stroke-width="15" stroke-linecap="round" class="gauge-arc" stroke-dasharray="302"
+                    stroke-dashoffset="302" />
+                  <text id="gaugeValue" class="gauge-val" x="118" y="113" text-anchor="middle">&mdash;</text>
+                  <text id="gaugeOf" class="gauge-of" x="170" y="113" text-anchor="start"></text>
+                  <text id="gaugeCaption" class="gauge-cap" x="120" y="134" text-anchor="middle">Not analysed yet</text>
+                </svg>
               </div>
               <div class="stat-rows">
-              <div class="stat-row" onclick="drillTo('browser')">
-              <span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-cases"/></svg></span>
-              <span>Rules analysed</span><b id="hRules">&mdash;</b>
-              </div>
-              <div class="stat-row" id="hShadowRow" onclick="drillTo('access','shadow')">
-              <span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-alert"/></svg></span>
-              <span>Shadowed / redundant</span><b id="hShadow">&mdash;</b>
-              </div>
-              <div class="stat-row" id="hColdRow" onclick="drillTo('browser')">
-              <span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-clock"/></svg></span>
-              <span>Never-hit rules</span><b id="hCold">&mdash;</b>
-              </div>
-              <div class="stat-row" id="hObjRow">
-              <span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-badge"/></svg></span>
-              <span>Objects fully resolved</span><b id="hObjects">&mdash;</b>
-              </div>
+                <div class="stat-row" onclick="drillTo('browser')">
+                  <span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#ic-cases" />
+                    </svg></span>
+                  <span>Rules analysed</span><b id="hRules">&mdash;</b>
+                </div>
+                <div class="stat-row" id="hShadowRow" onclick="drillTo('access','shadow')">
+                  <span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#ic-alert" />
+                    </svg></span>
+                  <span>Shadowed / redundant</span><b id="hShadow">&mdash;</b>
+                </div>
+                <div class="stat-row" id="hColdRow" onclick="drillTo('browser')">
+                  <span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#ic-clock" />
+                    </svg></span>
+                  <span>Never-hit rules</span><b id="hCold">&mdash;</b>
+                </div>
+                <div class="stat-row" id="hObjRow">
+                  <span class="ic"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#ic-badge" />
+                    </svg></span>
+                  <span>Objects fully resolved</span><b id="hObjects">&mdash;</b>
+                </div>
               </div>
               <div class="card-foot">
-              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-eye"/></svg>
-              Read-only &middot; Management API
-              <span class="pill good">GET only</span>
+                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+                  <use href="#ic-eye" />
+                </svg>
+                Read-only &middot; Management API
+                <span class="pill good">GET only</span>
               </div>
-              </div>
+            </div>
           </div>
 
           <!-- band A — the counts, before anything that interprets them -->
           <div class="band band-a">
             <div class="card flush fold" data-fold="dash-topo">
-            <div class="card-h">
-            <div>
-            <h3>Network Topology</h3>
-            <p>Read at one instant. Physical cabling, switches and live routing are not inferred.</p>
-            </div>
-            <div class="r"><button onclick="goTo('mapping')" style="height:32px;font-size:12px">Open full map</button></div>
-            </div>
-            <div class="topo-preview">
-            <div class="tp-legend">
-            <span><i style="background:var(--accent-2)"></i>Route (read at one instant)</span>
-            <span><i style="background:var(--accent)"></i>Configured link</span>
-            </div>
-            <!-- No viewBox here on purpose: renderTopoPreview() sets one from the panel's
+              <div class="card-h">
+                <div>
+                  <h3>Network Topology</h3>
+                  <p>Read at one instant. Physical cabling, switches and live routing are not inferred.</p>
+                </div>
+                <div class="r"><button onclick="goTo('mapping')" style="height:32px;font-size:12px">Open full
+                    map</button></div>
+              </div>
+              <div class="topo-preview">
+                <div class="tp-legend">
+                  <span><i style="background:var(--accent-2)"></i>Route (read at one instant)</span>
+                  <span><i style="background:var(--accent)"></i>Configured link</span>
+                </div>
+                <!-- No viewBox here on purpose: renderTopoPreview() sets one from the panel's
                  own measurements, and a size written in two places is a size that will
                  disagree with itself. This one said 900x220 while the panel was
                  1301x299, and the second row of the map fell off the bottom. -->
-            <svg id="topoPreview" preserveAspectRatio="xMidYMid meet" aria-label="Gateway topology preview"></svg>
-            <div class="tp-empty" id="topoPreviewEmpty">
-            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-map"/></svg>
-The map is drawn from gateways the Management API returns.
-            <button onclick="goTo('mapping')" style="height:32px;font-size:12px">Load the topology</button>
-            </div>
-            </div>
+                <svg id="topoPreview" preserveAspectRatio="xMidYMid meet" aria-label="Gateway topology preview"></svg>
+                <div class="tp-empty" id="topoPreviewEmpty">
+                  <svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#ic-map" />
+                  </svg>
+                  The map is drawn from gateways the Management API returns.
+                  <button onclick="goTo('mapping')" style="height:32px;font-size:12px">Load the topology</button>
+                </div>
+              </div>
 
             </div>
           </div>
@@ -316,81 +481,111 @@ The map is drawn from gateways the Management API returns.
           <!-- band B — estate and findings on the left, score and trace on the right -->
           <div class="band band-b">
             <div class="stack">
-<div class="card flush fold" data-fold="dash-counts">
-              <div class="card-h">
-                <div><h3>What this read found</h3><p>Every figure comes from the last analysis and from nothing else</p></div>
+              <div class="card flush fold" data-fold="dash-counts">
+                <div class="card-h">
+                  <div>
+                    <h3>What this read found</h3>
+                    <p>Every figure comes from the last analysis and from nothing else</p>
+                  </div>
+                </div>
+                <div class="kpi-strip" id="dashboardCards">
+                  <div class="kpi a drill-card" onclick="drillTo('browser')" title="Open Access Policy">
+                    <div class="t"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#ic-rulebase" />
+                      </svg> Access Rules</div>
+                    <div id="dAccess" class="metric v">&mdash;</div>
+                    <div id="dAccessDetail" class="s">Selected Access Layer</div>
+                  </div>
+                  <div class="kpi b drill-card" onclick="drillTo('access','shadow')" title="Open Shadow / Redundant">
+                    <div class="t"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#ic-alert" />
+                      </svg> Shadow / Redundant</div>
+                    <div id="dShadow" class="metric v">&mdash;</div>
+                    <div class="s">Review candidates</div>
+                  </div>
+                  <div class="kpi c drill-card" onclick="drillTo('access','duplicates')" title="Open Duplicate Access">
+                    <div class="t"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#ic-badge" />
+                      </svg> Duplicate Access</div>
+                    <div id="dDup" class="metric v">&mdash;</div>
+                    <div class="s">Exact duplicate groups</div>
+                  </div>
+                  <div class="kpi d drill-card" onclick="drillTo('nat','rulebase')" title="Open NAT Rulebase">
+                    <div class="t"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#ic-nat" />
+                      </svg> NAT Rules</div>
+                    <div id="dNat" class="metric v">&mdash;</div>
+                    <div class="s">Selected Policy Package</div>
+                  </div>
+                </div>
               </div>
-              <div class="kpi-strip" id="dashboardCards">
-              <div class="kpi a drill-card" onclick="drillTo('browser')" title="Open Access Policy">
-              <div class="t"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-rulebase"/></svg> Access Rules</div>
-              <div id="dAccess" class="metric v">&mdash;</div>
-              <div id="dAccessDetail" class="s">Selected Access Layer</div>
-              </div>
-              <div class="kpi b drill-card" onclick="drillTo('access','shadow')" title="Open Shadow / Redundant">
-              <div class="t"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-alert"/></svg> Shadow / Redundant</div>
-              <div id="dShadow" class="metric v">&mdash;</div>
-              <div class="s">Review candidates</div>
-              </div>
-              <div class="kpi c drill-card" onclick="drillTo('access','duplicates')" title="Open Duplicate Access">
-              <div class="t"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-badge"/></svg> Duplicate Access</div>
-              <div id="dDup" class="metric v">&mdash;</div>
-              <div class="s">Exact duplicate groups</div>
-              </div>
-              <div class="kpi d drill-card" onclick="drillTo('nat','rulebase')" title="Open NAT Rulebase">
-              <div class="t"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-nat"/></svg> NAT Rules</div>
-              <div id="dNat" class="metric v">&mdash;</div>
-              <div class="s">Selected Policy Package</div>
-              </div>
-              </div>
-            </div>
               <div class="card flush fold" data-fold="dash-findings">
-              <div class="card-h">
-              <div><h3>Optimization Findings</h3><p>Latest Access analysis</p></div>
-              <div class="r"><span id="dNatDup" class="pill neutral">Duplicate NAT &mdash;</span></div>
-              </div>
-              <div id="dashFindings" class="table-wrap">
-              <table style="min-width:520px">
-              <thead>
-              <tr><th>Finding</th><th>Count</th><th>Meaning</th></tr>
-              </thead>
-              <tbody>
-              <tr><td>Shadow / Redundant</td><td>&mdash;</td><td>Run Access analysis to populate.</td></tr>
-              <tr><td>Duplicate Access</td><td>&mdash;</td><td>Run Access analysis to populate.</td></tr>
-              <tr><td>Any / Any / Any</td><td>&mdash;</td><td>Run Access analysis to populate.</td></tr>
-              </tbody>
-              </table>
-              </div>
+                <div class="card-h">
+                  <div>
+                    <h3>Optimization Findings</h3>
+                    <p>Latest Access analysis</p>
+                  </div>
+                  <div class="r"><span id="dNatDup" class="pill neutral">Duplicate NAT &mdash;</span></div>
+                </div>
+                <div id="dashFindings" class="table-wrap">
+                  <table style="min-width:520px">
+                    <thead>
+                      <tr>
+                        <th>Finding</th>
+                        <th>Count</th>
+                        <th>Meaning</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>Shadow / Redundant</td>
+                        <td>&mdash;</td>
+                        <td>Run Access analysis to populate.</td>
+                      </tr>
+                      <tr>
+                        <td>Duplicate Access</td>
+                        <td>&mdash;</td>
+                        <td>Run Access analysis to populate.</td>
+                      </tr>
+                      <tr>
+                        <td>Any / Any / Any</td>
+                        <td>&mdash;</td>
+                        <td>Run Access analysis to populate.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
               <div id="inlineAnalysisSummary" class="inline-findings-card" style="display:none">
-              <div class="section-title">
-              <h3>Inline Layer Analysis</h3>
-              <span class="hint">Included in the overall Access analysis</span>
-              </div>
-              <div class="inline-findings-grid">
-              <div class="inline-mini">
-              <div class="hint">Inline Layers</div>
-              <div id="diLayers" class="v">0</div>
-              </div>
-              <div class="inline-mini">
-              <div class="hint">Inline Rules Inspected</div>
-              <div id="diRules" class="v">0</div>
-              </div>
-              <div class="inline-mini drill-card" onclick="drillTo('access','shadow')"
-              title="Open inline Shadow / Redundant findings">
-              <div class="hint">Shadow / Redundant</div>
-              <div id="diShadow" class="v">0</div>
-              </div>
-              <div class="inline-mini drill-card" onclick="drillTo('access','duplicates')"
-              title="Open inline Duplicate findings">
-              <div class="hint">Duplicate Groups</div>
-              <div id="diDup" class="v">0</div>
-              </div>
-              <div class="inline-mini drill-card" onclick="drillTo('access','any')"
-              title="Open inline Any / Any / Any findings">
-              <div class="hint">Any / Any / Any</div>
-              <div id="diAny" class="v">0</div>
-              </div>
-              </div>
+                <div class="section-title">
+                  <h3>Inline Layer Analysis</h3>
+                  <span class="hint">Included in the overall Access analysis</span>
+                </div>
+                <div class="inline-findings-grid">
+                  <div class="inline-mini">
+                    <div class="hint">Inline Layers</div>
+                    <div id="diLayers" class="v">0</div>
+                  </div>
+                  <div class="inline-mini">
+                    <div class="hint">Inline Rules Inspected</div>
+                    <div id="diRules" class="v">0</div>
+                  </div>
+                  <div class="inline-mini drill-card" onclick="drillTo('access','shadow')"
+                    title="Open inline Shadow / Redundant findings">
+                    <div class="hint">Shadow / Redundant</div>
+                    <div id="diShadow" class="v">0</div>
+                  </div>
+                  <div class="inline-mini drill-card" onclick="drillTo('access','duplicates')"
+                    title="Open inline Duplicate findings">
+                    <div class="hint">Duplicate Groups</div>
+                    <div id="diDup" class="v">0</div>
+                  </div>
+                  <div class="inline-mini drill-card" onclick="drillTo('access','any')"
+                    title="Open inline Any / Any / Any findings">
+                    <div class="hint">Any / Any / Any</div>
+                    <div id="diAny" class="v">0</div>
+                  </div>
+                </div>
               </div>
               <div class="card flush fold" data-fold="dash-trace">
                 <div class="card-h">
@@ -405,7 +600,9 @@ The map is drawn from gateways the Management API returns.
                 </div>
                 <div class="timeline" id="tracePreview">
                   <div class="tl-step">
-                    <span class="dot"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-trace"/></svg></span>
+                    <span class="dot"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#ic-trace" />
+                      </svg></span>
                     <div class="txt"><b>Nothing traced yet</b>
                       <small>Enter a source, a destination and a port on Traffic Path.</small>
                     </div>
@@ -418,16 +615,24 @@ The map is drawn from gateways the Management API returns.
               </div>
             </div>
             <div class="stack">
-<div class="card flush fold" data-fold="dash-ctx">
-            <div class="card-h"><div><h3>Selected Context</h3><p>Change it from the Access or NAT page</p></div></div>
-            <div class="stat-rows">
-            <div class="stat-row"><span>Access Layer</span><b id="dashLayer" style="font-family:var(--font-ui);font-size:12.5px;font-weight:500">Not selected</b></div>
-            <div class="stat-row"><span>Policy Package</span><b id="dashPackage" style="font-family:var(--font-ui);font-size:12.5px;font-weight:500">Not selected</b></div>
-            <div class="stat-row"><span>Management API</span><b id="dashApi" style="font-family:var(--font-ui);font-size:12.5px;font-weight:500">Not tested</b></div>
-            <div class="stat-row"><span>Mode</span><b><span class="pill good">Read-only</span></b></div>
-            </div>
-            </div>
+              <div class="card flush fold" data-fold="dash-ctx">
+                <div class="card-h">
+                  <div>
+                    <h3>Selected Context</h3>
+                    <p>Change it from the Access or NAT page</p>
+                  </div>
+                </div>
+                <div class="stat-rows">
+                  <div class="stat-row"><span>Access Layer</span><b id="dashLayer"
+                      style="font-family:var(--font-ui);font-size:12.5px;font-weight:500">Not selected</b></div>
+                  <div class="stat-row"><span>Policy Package</span><b id="dashPackage"
+                      style="font-family:var(--font-ui);font-size:12.5px;font-weight:500">Not selected</b></div>
+                  <div class="stat-row"><span>Management API</span><b id="dashApi"
+                      style="font-family:var(--font-ui);font-size:12.5px;font-weight:500">Not tested</b></div>
+                  <div class="stat-row"><span>Mode</span><b><span class="pill good">Read-only</span></b></div>
+                </div>
               </div>
+            </div>
           </div>
 
         </div>
@@ -461,7 +666,12 @@ The map is drawn from gateways the Management API returns.
           <div id="browserSummary" class="cards access-summary-grid hidden"></div>
           <div id="browserDq"></div>
           <div class="card flush">
-            <div class="card-h"><div><h3>Configured Rulebase</h3><p>Every rule the package returned, top-level and inline</p></div></div>
+            <div class="card-h">
+              <div>
+                <h3>Configured Rulebase</h3>
+                <p>Every rule the package returned, top-level and inline</p>
+              </div>
+            </div>
             <div id="browserResults"></div>
           </div>
         </div>
@@ -482,13 +692,23 @@ The map is drawn from gateways the Management API returns.
           <div id="accessCards" class="cards hidden"></div>
           <div id="accessDq"></div>
           <div class="card flush">
-            <div class="card-h"><div><h3>Findings</h3><p>Shadowing, duplication, any/any/any and unused rules</p></div></div>
+            <div class="card-h">
+              <div>
+                <h3>Findings</h3>
+                <p>Shadowing, duplication, any/any/any and unused rules</p>
+              </div>
+            </div>
             <div id="accessFindings"></div>
           </div>
 
           <div class="card flush" style="margin-top:16px">
-            <div class="card-h"><div><h3>Cleanup script</h3>
-              <p>The findings as commands for a person to review and run. Firewall Insight writes it and cannot run it.</p></div></div>
+            <div class="card-h">
+              <div>
+                <h3>Cleanup script</h3>
+                <p>The findings as commands for a person to review and run. Firewall Insight writes it and cannot run
+                  it.</p>
+              </div>
+            </div>
             <div class="cred-form">
               <div class="controls field-row">
                 <label class="field" style="flex:0 0 220px"><span>Format</span>
@@ -496,13 +716,16 @@ The map is drawn from gateways the Management API returns.
                     <option value="mgmt_cli">mgmt_cli — shell on the Management Server</option>
                     <option value="ansible">Ansible — check_point.mgmt collection</option>
                   </select></label>
-                <label class="check-inline"><input id="cleanZeroHit" type="checkbox"> zero-hit rules <span class="muted">(counters reset on install)</span></label>
+                <label class="check-inline"><input id="cleanZeroHit" type="checkbox"> zero-hit rules <span
+                    class="muted">(counters reset on install)</span></label>
                 <label class="check-inline"><input id="cleanDisabled" type="checkbox"> delete disabled rules</label>
                 <label class="check-inline"><input id="cleanUnused" type="checkbox"> delete unused objects</label>
                 <button onclick="previewCleanup(event)">Preview</button>
                 <button class="primary" onclick="downloadCleanup(event)">Download</button>
               </div>
-              <p class="hint-sub" style="margin:10px 0 0">Rules are disabled, never deleted, unless you tick it. A layer's cleanup rule and a rule that holds an inline layer are never touched. Nothing is published until whoever runs it types PUBLISH, and nothing is installed.</p>
+              <p class="hint-sub" style="margin:10px 0 0">Rules are disabled, never deleted, unless you tick it. A
+                layer's cleanup rule and a rule that holds an inline layer are never touched. Nothing is published until
+                whoever runs it types PUBLISH, and nothing is installed.</p>
             </div>
             <div id="cleanupResult"></div>
           </div>
@@ -514,17 +737,25 @@ The map is drawn from gateways the Management API returns.
           <div class="controls"><button id="natBtn" class="primary" onclick="runNat()">Analyze NAT Policy</button></div>
           <div id="natCards" class="cards hidden"></div>
           <div class="card flush">
-            <div class="card-h"><div><h3>NAT Results</h3><p>Rulebase, duplicates, disabled and possible no-translation</p></div></div>
-            
+            <div class="card-h">
+              <div>
+                <h3>NAT Results</h3>
+                <p>Rulebase, duplicates, disabled and possible no-translation</p>
+              </div>
+            </div>
+
             <div class="tabs" id="natTabs" style="display:none; padding: var(--space-md) var(--space-lg) 0">
               <button class="active" onclick="showNatTab('rulebase',this)">NAT Rulebase</button>
               <button onclick="showNatTab('duplicates',this)">Duplicate NAT</button>
               <button onclick="showNatTab('broad',this)">Broad NAT Rules</button>
-              <button onclick="showNatTab('disabled',this)">Disabled NAT <span id="nat-disabled-tab-count"></span></button>
-              <button onclick="showNatTab('notrans',this)">Possible No-Translation <span id="nat-notrans-tab-count"></span></button>
-              <button onclick="showNatTab('installon',this)">Install-On Targets <span id="nat-installon-tab-count"></span></button>
+              <button onclick="showNatTab('disabled',this)">Disabled NAT <span
+                  id="nat-disabled-tab-count"></span></button>
+              <button onclick="showNatTab('notrans',this)">Possible No-Translation <span
+                  id="nat-notrans-tab-count"></span></button>
+              <button onclick="showNatTab('installon',this)">Install-On Targets <span
+                  id="nat-installon-tab-count"></span></button>
             </div>
-            
+
             <div id="natResults"></div>
 
             <div id="nat-disabled-view" style="display:none; padding: 0 var(--space-lg) var(--space-lg)">
@@ -534,7 +765,14 @@ The map is drawn from gateways the Management API returns.
               <div class="table-wrap">
                 <table>
                   <thead>
-                    <tr><th>Rule</th><th>Name</th><th>Original Source</th><th>Original Destination</th><th>Original Service</th><th>Method</th></tr>
+                    <tr>
+                      <th>Rule</th>
+                      <th>Name</th>
+                      <th>Original Source</th>
+                      <th>Original Destination</th>
+                      <th>Original Service</th>
+                      <th>Method</th>
+                    </tr>
                   </thead>
                   <tbody id="nat-disabled-body"></tbody>
                 </table>
@@ -545,13 +783,23 @@ The map is drawn from gateways the Management API returns.
               <div class="section-title" style="margin-bottom:var(--space-md)">
                 <div>
                   <h3>Possible No-Translation</h3>
-                  <p class="muted">Rules where all translated fields remain Original / unchanged. Review before deciding whether the rule is unnecessary.</p>
+                  <p class="muted">Rules where all translated fields remain Original / unchanged. Review before deciding
+                    whether the rule is unnecessary.</p>
                 </div>
               </div>
               <div class="table-wrap">
                 <table>
                   <thead>
-                    <tr><th>Rule</th><th>Name</th><th>Original Source</th><th>Original Destination</th><th>Original Service</th><th>Translated Source</th><th>Translated Destination</th><th>Translated Service</th></tr>
+                    <tr>
+                      <th>Rule</th>
+                      <th>Name</th>
+                      <th>Original Source</th>
+                      <th>Original Destination</th>
+                      <th>Original Service</th>
+                      <th>Translated Source</th>
+                      <th>Translated Destination</th>
+                      <th>Translated Service</th>
+                    </tr>
                   </thead>
                   <tbody id="nat-notrans-body"></tbody>
                 </table>
@@ -562,13 +810,20 @@ The map is drawn from gateways the Management API returns.
               <div class="section-title" style="margin-bottom:var(--space-md)">
                 <div>
                   <h3>Install-On Targets</h3>
-                  <p class="muted" id="nat-installon-note">Each NAT rule's install-on target compared with the gateways show-gateways-and-servers returns. "Policy Targets" means every gateway in the package and is never reported here.</p>
+                  <p class="muted" id="nat-installon-note">Each NAT rule's install-on target compared with the gateways
+                    show-gateways-and-servers returns. "Policy Targets" means every gateway in the package and is never
+                    reported here.</p>
                 </div>
               </div>
               <div class="table-wrap">
                 <table>
                   <thead>
-                    <tr><th>Rule</th><th>Name</th><th>Install On</th><th>Why it is reported</th></tr>
+                    <tr>
+                      <th>Rule</th>
+                      <th>Name</th>
+                      <th>Install On</th>
+                      <th>Why it is reported</th>
+                    </tr>
                   </thead>
                   <tbody id="nat-installon-body"></tbody>
                 </table>
@@ -585,7 +840,8 @@ The map is drawn from gateways the Management API returns.
             need to exist.</p>
           <div class="controls field-row ask-row">
             <label class="field"><span>Ask in plain language — Thai or English</span>
-              <input id="askInput" placeholder="ทำไม 192.0.2.10 เข้า 198.51.100.5 ด้วย rdp ไม่ได้ · can 192.0.2.10 reach 198.51.100.5 on https?"
+              <input id="askInput"
+                placeholder="ทำไม 192.0.2.10 เข้า 198.51.100.5 ด้วย rdp ไม่ได้ · can 192.0.2.10 reach 198.51.100.5 on https?"
                 onkeydown="if(event.key==='Enter')askTraffic(event)"></label>
             <button class="primary" onclick="askTraffic(event)">Ask</button>
           </div>
@@ -606,7 +862,12 @@ The map is drawn from gateways the Management API returns.
             <button class="primary" onclick="trace()">Analyze Path</button>
           </div>
           <div class="card flush">
-            <div class="card-h"><div><h3>Trace Result</h3><p>Simulated from configuration — it never sends a packet</p></div></div>
+            <div class="card-h">
+              <div>
+                <h3>Trace Result</h3>
+                <p>Simulated from configuration — it never sends a packet</p>
+              </div>
+            </div>
             <div id="traceResult"></div>
           </div>
         </div>
@@ -622,12 +883,19 @@ The map is drawn from gateways the Management API returns.
           <div class="controls field-row">
             <button class="primary" onclick="runHealth(event)">Read State Now</button>
             <label class="field"><span>Compare with baseline</span>
-              <select id="healthBaseline"><option value="">Do not compare</option></select></label>
+              <select id="healthBaseline">
+                <option value="">Do not compare</option>
+              </select></label>
             <button onclick="loadBaselines(event)">Refresh Baselines</button>
           </div>
           <p id="healthNote" class="hint"></p>
           <div class="card flush">
-            <div class="card-h"><div><h3>Gateway Readings</h3><p>One reading at one instant, per gateway</p></div></div>
+            <div class="card-h">
+              <div>
+                <h3>Gateway Readings</h3>
+                <p>One reading at one instant, per gateway</p>
+              </div>
+            </div>
             <div id="healthResult"></div>
           </div>
         </div>
@@ -656,7 +924,12 @@ The map is drawn from gateways the Management API returns.
           </div>
           <p id="profileNote" class="hint"></p>
           <div class="card flush">
-            <div class="card-h"><div><h3>Compliance Result</h3><p>Checks, provenance and what could not be verified</p></div></div>
+            <div class="card-h">
+              <div>
+                <h3>Compliance Result</h3>
+                <p>Checks, provenance and what could not be verified</p>
+              </div>
+            </div>
             <div id="complianceResult"></div>
           </div>
         </div>
@@ -682,7 +955,12 @@ The map is drawn from gateways the Management API returns.
           </div>
           <p id="snapNote" class="hint"></p>
           <div class="card flush">
-            <div class="card-h"><div><h3>Snapshot Difference</h3><p>Added, removed, moved and modified rules</p></div></div>
+            <div class="card-h">
+              <div>
+                <h3>Snapshot Difference</h3>
+                <p>Added, removed, moved and modified rules</p>
+              </div>
+            </div>
             <div id="diffResult"></div>
           </div>
         </div>
@@ -701,7 +979,8 @@ The map is drawn from gateways the Management API returns.
             <b>Load with Routing</b> does not change that: it <i>reads</i> each gateway's routing table over the
             read-only Gaia API rather than inferring one — a snapshot at read time, not a live view — and needs
             <code>GAIA_ENABLED</code> in <code>.env</code>. Route entries the reader could not parse are counted and
-            named, never dropped.</p>
+            named, never dropped.
+          </p>
 
           <div class="topo-bar">
             <div class="topo-seg" role="group" aria-label="Map layout">
@@ -846,7 +1125,8 @@ The map is drawn from gateways the Management API returns.
           <p class="muted">The hit counter resets on install and on restart, so a second source helps: the firewall
             logs. But a rule that does not log leaves no record however busy it is, and this Management API cannot
             count — records are read newest first, up to a limit. Only a rule that logs, in a window read to the end,
-            can be called <b>no traffic</b>. Everything else without a record is a statement about what the logs cannot show.</p>
+            can be called <b>no traffic</b>. Everything else without a record is a statement about what the logs cannot
+            show.</p>
           <div class="controls field-row">
             <label class="field" style="flex:0 0 190px"><span>Window</span>
               <select id="usageFrame">
@@ -872,10 +1152,13 @@ The map is drawn from gateways the Management API returns.
         <div class="panel">
           <h2>Trends</h2>
           <p class="muted">Drawn only from reviews, snapshots and health readings that were actually taken. A gap is a
-            gap: nothing between two points is known, and a section that could not be read is marked, never drawn as zero.</p>
+            gap: nothing between two points is known, and a section that could not be read is marked, never drawn as
+            zero.</p>
           <div class="controls field-row">
             <label class="field" style="flex:0 0 240px"><span>Package</span>
-              <select id="trendsPackage" onchange="loadTrends(event)"><option value="">every package</option></select></label>
+              <select id="trendsPackage" onchange="loadTrends(event)">
+                <option value="">every package</option>
+              </select></label>
             <button onclick="loadTrends(event)">Refresh</button>
           </div>
           <div id="trendsResult"></div>
@@ -888,7 +1171,8 @@ The map is drawn from gateways the Management API returns.
           <p class="muted">A review reads the package, analyses access and NAT, stores a snapshot,
             compares it with the previous one, evaluates a compliance profile and reads gateway state —
             the work five pages do, in one pass, without anybody watching. It issues the same read-only
-            <code>show-*</code> calls those pages issue.</p>
+            <code>show-*</code> calls those pages issue.
+          </p>
 
           <div class="controls field-row">
             <button class="primary" onclick="startRun(event)">Run a review now</button>
@@ -898,13 +1182,21 @@ The map is drawn from gateways the Management API returns.
           </div>
 
           <div class="card flush">
-            <div class="card-h"><div><h3>Past reviews</h3><p>Newest first · click a row for the detail</p></div></div>
+            <div class="card-h">
+              <div>
+                <h3>Past reviews</h3>
+                <p>Newest first · click a row for the detail</p>
+              </div>
+            </div>
             <div id="runsList"></div>
           </div>
 
           <div class="card flush" style="margin-top:16px">
             <div class="card-h">
-              <div><h3>Schedules</h3><p>When this application reads the Management Server on its own</p></div>
+              <div>
+                <h3>Schedules</h3>
+                <p>When this application reads the Management Server on its own</p>
+              </div>
             </div>
             <div id="schedulesBody">
               <div class="cred-form">
@@ -914,13 +1206,17 @@ The map is drawn from gateways the Management API returns.
 
                 <div class="form-stack-2col">
                   <div><label for="schPackage">Policy package</label>
-                    <input id="schPackage" type="text" placeholder="the package to review"></div>
+                    <input id="schPackage" type="text" placeholder="the package to review">
+                  </div>
                   <div><label for="schAt">At (HH:MM, local)</label>
-                    <input id="schAt" type="text" placeholder="09:00"></div>
+                    <input id="schAt" type="text" placeholder="09:00">
+                  </div>
                   <div><label for="schProfile">Compliance profile (optional)</label>
-                    <input id="schProfile" type="text" placeholder="nist-800-41-baseline"></div>
+                    <input id="schProfile" type="text" placeholder="nist-800-41-baseline">
+                  </div>
                   <div><label for="schDays">Days</label>
-                    <input id="schDays" type="text" placeholder="mon,tue,wed,thu,fri"></div>
+                    <input id="schDays" type="text" placeholder="mon,tue,wed,thu,fri">
+                  </div>
                 </div>
 
                 <label style="display:flex;align-items:center;gap:8px;margin-top:10px">
@@ -944,11 +1240,15 @@ The map is drawn from gateways the Management API returns.
 
           <div class="card flush" style="margin-top:16px">
             <div class="card-h">
-              <div><h3>Alerts</h3><p>Where a review goes when it needs looking at</p></div>
+              <div>
+                <h3>Alerts</h3>
+                <p>Where a review goes when it needs looking at</p>
+              </div>
             </div>
             <div class="cred-form">
               <p class="muted" style="margin-top:0">Scheduled reviews are sent to every destination whose triggers
-                they meet. <b>Could not be read</b> is on by default: a review that failed to read the gateways is the one
+                they meet. <b>Could not be read</b> is on by default: a review that failed to read the gateways is the
+                one
                 whose silence would be mistaken for good news. Summary alerts carry counts and verdicts only — no rule
                 contents, no addresses. Webhook URLs and SMTP passwords are encrypted and never shown again.</p>
               <div class="form-stack-2col">
@@ -958,32 +1258,48 @@ The map is drawn from gateways the Management API returns.
                     <option value="slack">Slack (incoming webhook)</option>
                     <option value="webhook">Webhook (JSON)</option>
                     <option value="email">Email (SMTP)</option>
-                  </select></div>
+                  </select>
+                </div>
                 <div><label for="alName">Name</label><input id="alName" type="text" placeholder="secops"></div>
                 <div id="alUrlRow"><label for="alUrl">Webhook URL (https)</label>
-                  <input id="alUrl" type="password" autocomplete="off" placeholder="leave blank to keep the saved one"></div>
+                  <input id="alUrl" type="password" autocomplete="off" placeholder="leave blank to keep the saved one">
+                </div>
                 <div><label for="alDetail">Detail</label>
                   <select id="alDetail">
                     <option value="summary">summary — counts and verdicts</option>
                     <option value="findings">findings — adds rule numbers, check titles, gateway addresses</option>
-                  </select></div>
+                  </select>
+                </div>
               </div>
               <div id="alEmailRows" class="form-stack-2col" hidden>
-                <div><label for="alSmtpHost">SMTP host</label><input id="alSmtpHost" type="text" placeholder="smtp.example.com"></div>
+                <div><label for="alSmtpHost">SMTP host</label><input id="alSmtpHost" type="text"
+                    placeholder="smtp.example.com"></div>
                 <div><label for="alSmtpPort">Port</label><input id="alSmtpPort" type="text" placeholder="587"></div>
                 <div><label for="alSecurity">Security</label>
-                  <select id="alSecurity"><option value="starttls">STARTTLS</option><option value="ssl">SSL/TLS</option><option value="none">none</option></select></div>
+                  <select id="alSecurity">
+                    <option value="starttls">STARTTLS</option>
+                    <option value="ssl">SSL/TLS</option>
+                    <option value="none">none</option>
+                  </select>
+                </div>
                 <div><label for="alUser">Username</label><input id="alUser" type="text" autocomplete="off"></div>
-                <div><label for="alPass">Password</label><input id="alPass" type="password" autocomplete="off" placeholder="leave blank to keep the saved one"></div>
-                <div><label for="alSender">From</label><input id="alSender" type="text" placeholder="firewall-insight@example.com"></div>
-                <div><label for="alTo">To (comma-separated)</label><input id="alTo" type="text" placeholder="ciso@example.com"></div>
-                <div><label class="check-inline" style="margin-top:22px"><input id="alAttach" type="checkbox" checked> attach the summary PDF</label></div>
+                <div><label for="alPass">Password</label><input id="alPass" type="password" autocomplete="off"
+                    placeholder="leave blank to keep the saved one"></div>
+                <div><label for="alSender">From</label><input id="alSender" type="text"
+                    placeholder="firewall-insight@example.com"></div>
+                <div><label for="alTo">To (comma-separated)</label><input id="alTo" type="text"
+                    placeholder="ciso@example.com"></div>
+                <div><label class="check-inline" style="margin-top:22px"><input id="alAttach" type="checkbox" checked>
+                    attach the summary PDF</label></div>
               </div>
               <div class="controls" style="margin-top:10px">
                 <span class="muted" style="font-size:12px">Send when:</span>
-                <label class="check-inline"><input type="checkbox" class="alOn" value="attention" checked> needs attention</label>
-                <label class="check-inline"><input type="checkbox" class="alOn" value="undecided" checked> could not be read</label>
-                <label class="check-inline"><input type="checkbox" class="alOn" value="health" checked> gateway problem</label>
+                <label class="check-inline"><input type="checkbox" class="alOn" value="attention" checked> needs
+                  attention</label>
+                <label class="check-inline"><input type="checkbox" class="alOn" value="undecided" checked> could not be
+                  read</label>
+                <label class="check-inline"><input type="checkbox" class="alOn" value="health" checked> gateway
+                  problem</label>
                 <label class="check-inline"><input type="checkbox" class="alOn" value="clean"> no change</label>
                 <label class="check-inline"><input type="checkbox" class="alOn" value="every-run"> every review</label>
               </div>
@@ -1027,7 +1343,8 @@ The map is drawn from gateways the Management API returns.
                 <label for="cpPass">Password</label>
                 <div class="pass-wrap">
                   <input id="cpPass" type="password" placeholder="••••••••" autocomplete="new-password">
-                  <button type="button" class="pass-toggle" onclick="togglePassVis('cpPass',this)" title="Show password">Show</button>
+                  <button type="button" class="pass-toggle" onclick="togglePassVis('cpPass',this)"
+                    title="Show password">Show</button>
                 </div>
 
                 <label for="cpDomain">Domain <span class="hint">(optional)</span></label>
@@ -1064,7 +1381,8 @@ The map is drawn from gateways the Management API returns.
                 <label for="gaiaPass">Password</label>
                 <div class="pass-wrap">
                   <input id="gaiaPass" type="password" placeholder="••••••••" autocomplete="new-password">
-                  <button type="button" class="pass-toggle" onclick="togglePassVis('gaiaPass',this)" title="Show password">Show</button>
+                  <button type="button" class="pass-toggle" onclick="togglePassVis('gaiaPass',this)"
+                    title="Show password">Show</button>
                 </div>
 
                 <label for="gaiaHosts">Gateway Hosts <span class="hint">(comma-separated)</span></label>
@@ -1082,7 +1400,10 @@ The map is drawn from gateways the Management API returns.
           <!-- Row 2: Advanced + Security side by side -->
           <div class="card flush fold" data-fold="settings-advanced">
             <div class="card-h">
-              <div><h3>Advanced Settings</h3><p>Timeouts, rate limits and caching behaviour</p></div>
+              <div>
+                <h3>Advanced Settings</h3>
+                <p>Timeouts, rate limits and caching behaviour</p>
+              </div>
             </div>
             <div class="cred-form">
               <div class="form-stack form-stack-2col">
@@ -1111,12 +1432,17 @@ The map is drawn from gateways the Management API returns.
 
           <div class="card flush">
             <div class="card-h">
-              <div><h3>Credential Security</h3><p>How saved credentials are protected</p></div>
+              <div>
+                <h3>Credential Security</h3>
+                <p>How saved credentials are protected</p>
+              </div>
               <div class="r"><span class="pill good">Encrypted at rest</span></div>
             </div>
             <div class="cred-form" style="font-size:12.5px;color:var(--muted);line-height:1.7">
-              Saved credentials are encrypted at rest using a server-side key that is auto-generated on first use and excluded from version control.<br>
-              <span class="hint">Fallback: <code>.env</code> values are used if no encrypted credentials are saved.</span>
+              Saved credentials are encrypted at rest using a server-side key that is auto-generated on first use and
+              excluded from version control.<br>
+              <span class="hint">Fallback: <code>.env</code> values are used if no encrypted credentials are
+                saved.</span>
             </div>
           </div>
         </div>
@@ -1129,17 +1455,40 @@ The map is drawn from gateways the Management API returns.
   <div class="dial-scrim" id="dialScrim" onclick="toggleDial(false)"></div>
   <div class="dial" id="actionDial">
     <div class="dial-items" role="menu" aria-label="Quick actions">
-      <button class="dial-item" tabindex="-1" role="menuitem" onclick="dialGo('compliance')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-compliance"/></svg>Run a Compliance Profile</button>
-      <button class="dial-item" tabindex="-1" role="menuitem" onclick="dialGo('diff')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-diff"/></svg>Compare Two Snapshots</button>
-      <button class="dial-item" tabindex="-1" role="menuitem" onclick="dialGo('mapping')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-map"/></svg>Open Network Topology</button>
-      <button class="dial-item" tabindex="-1" role="menuitem" onclick="dialGo('traffic')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-trace"/></svg>Trace Source &rarr; Destination</button>
-      <button class="dial-item" tabindex="-1" role="menuitem" onclick="dialGo('nat')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-nat"/></svg>Analyze NAT Policy</button>
-      <button class="dial-item" tabindex="-1" role="menuitem" onclick="dialGo('access')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-analyze"/></svg>Open Analyze</button>
-      <button class="dial-item" tabindex="-1" role="menuitem" onclick="dialGo('browser')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-rulebase"/></svg>Open Access Policy</button>
+      <button class="dial-item" tabindex="-1" role="menuitem" onclick="dialGo('compliance')"><svg class="ico"
+          viewBox="0 0 24 24" aria-hidden="true">
+          <use href="#ic-compliance" />
+        </svg>Run a Compliance Profile</button>
+      <button class="dial-item" tabindex="-1" role="menuitem" onclick="dialGo('diff')"><svg class="ico"
+          viewBox="0 0 24 24" aria-hidden="true">
+          <use href="#ic-diff" />
+        </svg>Compare Two Snapshots</button>
+      <button class="dial-item" tabindex="-1" role="menuitem" onclick="dialGo('mapping')"><svg class="ico"
+          viewBox="0 0 24 24" aria-hidden="true">
+          <use href="#ic-map" />
+        </svg>Open Network Topology</button>
+      <button class="dial-item" tabindex="-1" role="menuitem" onclick="dialGo('traffic')"><svg class="ico"
+          viewBox="0 0 24 24" aria-hidden="true">
+          <use href="#ic-trace" />
+        </svg>Trace Source &rarr; Destination</button>
+      <button class="dial-item" tabindex="-1" role="menuitem" onclick="dialGo('nat')"><svg class="ico"
+          viewBox="0 0 24 24" aria-hidden="true">
+          <use href="#ic-nat" />
+        </svg>Analyze NAT Policy</button>
+      <button class="dial-item" tabindex="-1" role="menuitem" onclick="dialGo('access')"><svg class="ico"
+          viewBox="0 0 24 24" aria-hidden="true">
+          <use href="#ic-analyze" />
+        </svg>Open Analyze</button>
+      <button class="dial-item" tabindex="-1" role="menuitem" onclick="dialGo('browser')"><svg class="ico"
+          viewBox="0 0 24 24" aria-hidden="true">
+          <use href="#ic-rulebase" />
+        </svg>Open Access Policy</button>
     </div>
-    <button class="dial-fab" id="dialFab" onclick="toggleDial()" aria-expanded="false"
-      aria-haspopup="menu" title="Quick actions" aria-label="Quick actions">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-plus"/></svg>
+    <button class="dial-fab" id="dialFab" onclick="toggleDial()" aria-expanded="false" aria-haspopup="menu"
+      title="Quick actions" aria-label="Quick actions">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+        <use href="#ic-plus" />
+      </svg>
     </button>
   </div>
   <script src="/static/js/app.js"></script>

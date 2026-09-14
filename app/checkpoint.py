@@ -86,6 +86,8 @@ class CheckPointClient:
         self.login_info: dict[str, Any] = {}
         self.client = httpx.AsyncClient(verify=settings.checkpoint_verify_ssl, timeout=settings.checkpoint_timeout, headers={"Content-Type":"application/json"})
         self._request_lock = asyncio.Lock()
+        self._login_lock = asyncio.Lock()
+        self._login_failed_at = 0.0
         self._last_request_at = 0.0
         # None = not probed yet, True/False = this Management API's answer.
         self.nat_show_hits_supported: bool | None = None
@@ -140,13 +142,28 @@ class CheckPointClient:
 
     async def login(self, force:bool=False)->dict[str,Any]:
         if self.sid and not force: return self.login_info
-        payload={"user":settings.checkpoint_user,"password":settings.checkpoint_password}
-        if settings.checkpoint_domain: payload["domain"]=settings.checkpoint_domain
-        data=await self._raw_post("login",payload,use_sid=False)
-        self.sid=data.get("sid")
-        if not self.sid: raise CheckPointAPIError("Login succeeded but no session ID was returned.")
-        self.login_info=data
-        return data
+        
+        async with self._login_lock:
+            # Check again in case another task logged in while we waited
+            if self.sid and not force: return self.login_info
+            
+            # Prevent spamming the API if we recently failed
+            if not force and time.monotonic() - getattr(self, "_login_failed_at", 0) < 10.0:
+                raise CheckPointAPIError("Login temporarily disabled due to recent failed attempts. Check credentials.")
+
+            payload={"user":settings.checkpoint_user,"password":settings.checkpoint_password}
+            if settings.checkpoint_domain: payload["domain"]=settings.checkpoint_domain
+            
+            try:
+                data=await self._raw_post("login",payload,use_sid=False)
+                self.sid=data.get("sid")
+                if not self.sid: raise CheckPointAPIError("Login succeeded but no session ID was returned.")
+                self.login_info=data
+                self._login_failed_at = 0.0
+                return data
+            except CheckPointAPIError:
+                self._login_failed_at = time.monotonic()
+                raise
 
     async def call(self, command:str, payload:dict[str,Any]|None=None)->dict[str,Any]:
         if not self.sid: await self.login()
