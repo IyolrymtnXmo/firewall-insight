@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>High-level architecture · End-to-end stack</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:  #f5f5f5;
+      --color-ink:    #2d3142;
+      --color-muted:  #4f5d75;
+      --color-accent: #eb6c36;
+      --font-sans:    'Geist', system-ui, sans-serif;
+      --font-serif:   'Instrument Serif', serif;
+      --font-mono:    'Geist Mono', ui-monospace, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1200px; width: 100%; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+    svg { width: 100%; min-width: 960px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Architecture · Diagram Design</p>
+    <h1>Firewall Insight v4.7 · High-level stack</h1>
+
+    <svg viewBox="0 0 1000 540" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="high-level-title high-level-desc">
+      <title id="high-level-title">Firewall Insight v4.7 · High-level stack</title>
+      <desc id="high-level-desc">High-level architecture showing the end-to-end flow from Client Browser to FastAPI Application Monolith, down to Check Point Infrastructure and Local Storage.</desc>
+      <defs>
+        <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.9" fill="rgba(45,49,66,0.10)"/>
+        </pattern>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+        </marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/>
+        </marker>
+        <marker id="arrow-sm" markerWidth="6" markerHeight="5" refX="5" refY="2.5" orient="auto">
+          <polygon points="0 0, 6 2.5, 0 5" fill="#4f5d75"/>
+        </marker>
+      </defs>
+
+      <!-- Background -->
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+      <rect width="100%" height="100%" fill="url(#dots)" opacity="0.55"/>
+
+      <!-- ═══════════════════════════════════════════
+           PHASE CHEVRON BANNER
+           ═══════════════════════════════════════════ -->
+      <polygon points="0,4 238,4 250,18 238,32 0,32" fill="#2d3142"/>
+      <polygon points="250,4 488,4 500,18 488,32 250,32 262,18" fill="#3d4460"/>
+      <polygon points="500,4 738,4 750,18 738,32 500,32 512,18" fill="#2d3142"/>
+      <polygon points="750,4 1000,4 1000,32 750,32 762,18" fill="#3d4460"/>
+
+      <text x="125" y="21" fill="#f5f5f5" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.14em" text-anchor="middle">CLIENT / UI</text>
+      <text x="375" y="21" fill="#f5f5f5" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.14em" text-anchor="middle">API GATEWAY</text>
+      <text x="625" y="21" fill="#f5f5f5" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.14em" text-anchor="middle">CORE LOGIC</text>
+      <text x="875" y="21" fill="#f5f5f5" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.13em" text-anchor="middle">INFRASTRUCTURE</text>
+
+      <!-- ═══════════════════════════════════════════
+           STRUCTURAL ZONES
+           ═══════════════════════════════════════════ -->
+      <!-- Data sources zone (external, dashed border) -->
+      <rect x="4" y="40" width="152" height="344" rx="6" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.20)" stroke-width="0.8" stroke-dasharray="6,3"/>
+      <text x="80" y="52" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.14em" text-anchor="middle">SOURCES</text>
+
+      <!-- FastAPI boundary (solid) -->
+      <rect x="244" y="40" width="438" height="344" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.18)" stroke-width="1.2"/>
+      <text x="463" y="375" fill="#4f5d75" font-size="8" font-weight="500" font-family="'Geist', sans-serif" text-anchor="middle">FastAPI Application Monolith (app/)</text>
+
+      <!-- External Infra zone (dashed) -->
+      <rect x="744" y="40" width="176" height="264" rx="6" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.20)" stroke-width="0.8" stroke-dasharray="6,3"/>
+      <text x="832" y="52" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.14em" text-anchor="middle">EXTERNAL APIS & STORAGE</text>
+
+      <!-- Credential Manager bar -->
+      <rect x="254" y="320" width="418" height="40" rx="6" fill="rgba(45,49,66,0.05)" stroke="rgba(45,49,66,0.20)" stroke-width="0.8"/>
+      <svg x="266" y="330" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4f5d75" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+      </svg>
+      <text x="463" y="342" fill="#2d3142" font-size="10" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Credential Management</text>
+      <text x="463" y="354" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">.env / credentials.enc (Local)</text>
+
+      <!-- ═══════════════════════════════════════════
+           ARROWS
+           ═══════════════════════════════════════════ -->
+
+      <!-- Browser → FastAPI -->
+      <line x1="144" y1="172" x2="262" y2="172" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrow)"/>
+      <rect x="175" y="166" width="56" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="203" y="175" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">REST / GET</text>
+
+      <!-- FastAPI → Policy -->
+      <path d="M 394,156 H 420 Q 428,156 428,148 V 92 Q 428,84 436,84 H 512" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrow)"/>
+      
+      <!-- FastAPI → Traffic (ACCENT) -->
+      <line x1="394" y1="172" x2="512" y2="172" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+      
+      <!-- FastAPI → Analyzer -->
+      <path d="M 394,188 H 420 Q 428,188 428,196 V 252 Q 428,260 436,260 H 512" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrow)"/>
+
+      <!-- API Router → Credentials (dashed lookup) -->
+      <line x1="328" y1="204" x2="328" y2="320" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow-sm)"/>
+
+      <!-- Policy → Mgmt -->
+      <line x1="652" y1="92" x2="762" y2="92" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrow)"/>
+
+      <!-- Traffic → Mgmt (Up) -->
+      <path d="M 652,164 H 680 Q 688,164 688,156 V 104 Q 688,96 696,96 H 762" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrow)"/>
+      
+      <!-- Traffic → Gaia (Straight, ACCENT) -->
+      <line x1="652" y1="172" x2="762" y2="172" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+
+      <!-- Analyzer → Storage -->
+      <line x1="652" y1="252" x2="762" y2="252" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrow)"/>
+
+      <!-- ═══════════════════════════════════════════
+           NODES
+           ═══════════════════════════════════════════ -->
+
+      <!-- ── Browser ── -->
+      <rect x="12" y="140" width="132" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="12" y="140" width="132" height="64" rx="6" fill="white" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+      <rect x="20" y="146" width="22" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.28)" stroke-width="0.8"/>
+      <text x="31" y="155" fill="rgba(45,49,66,0.55)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EXT</text>
+      <svg x="66" y="146" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2d3142" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M3.6 9h16.8M3.6 15h16.8"/>
+        <path d="M11.5 3a17 17 0 0 0 0 18M12.5 3a17 17 0 0 1 0 18"/>
+      </svg>
+      <text x="78" y="182" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Browser / UI</text>
+      <text x="78" y="194" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Vanilla JS Frontend</text>
+
+      <!-- ── API Router ── -->
+      <rect x="262" y="140" width="132" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="262" y="140" width="132" height="64" rx="6" fill="white" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+      <rect x="270" y="146" width="22" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.28)" stroke-width="0.8"/>
+      <text x="281" y="155" fill="rgba(45,49,66,0.55)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">API</text>
+      <svg x="316" y="146" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2d3142" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+        <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+        <line x1="6" y1="6" x2="6.01" y2="6"></line>
+        <line x1="6" y1="18" x2="6.01" y2="18"></line>
+      </svg>
+      <text x="328" y="182" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">API Gateway</text>
+      <text x="328" y="194" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">main.py · FastAPI</text>
+
+      <!-- ── Policy Engine ── -->
+      <rect x="512" y="60" width="140" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="512" y="60" width="140" height="64" rx="6" fill="white" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+      <rect x="520" y="66" width="26" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.28)" stroke-width="0.8"/>
+      <text x="533" y="75" fill="rgba(45,49,66,0.55)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">LGC</text>
+      <svg x="570" y="66" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2d3142" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+      </svg>
+      <text x="582" y="102" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Policy Engine</text>
+      <text x="582" y="114" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">inline_layers</text>
+
+      <!-- ── Traffic Sim (FOCAL) ── -->
+      <rect x="512" y="140" width="140" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="512" y="140" width="140" height="64" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.2"/>
+      <rect x="520" y="146" width="36" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="538" y="155" fill="rgba(235,108,54,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">FOCAL</text>
+      <svg x="570" y="146" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#eb6c36" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+      </svg>
+      <text x="582" y="182" fill="#eb6c36" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Traffic Simulator</text>
+      <text x="582" y="194" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" opacity="0.75">nat_correlate</text>
+
+      <!-- ── Analyzer & Health ── -->
+      <rect x="512" y="220" width="140" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="512" y="220" width="140" height="64" rx="6" fill="white" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+      <rect x="520" y="226" width="26" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.28)" stroke-width="0.8"/>
+      <text x="533" y="235" fill="rgba(45,49,66,0.55)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">ANLZ</text>
+      <svg x="570" y="226" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2d3142" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="20" x2="18" y2="10"></line>
+        <line x1="12" y1="20" x2="12" y2="4"></line>
+        <line x1="6" y1="20" x2="6" y2="14"></line>
+      </svg>
+      <text x="582" y="262" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Health Check</text>
+      <text x="582" y="274" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">compliance</text>
+
+      <!-- ── Mgmt ── -->
+      <rect x="762" y="60" width="140" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="762" y="60" width="140" height="64" rx="6" fill="white" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+      <rect x="770" y="66" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.28)" stroke-width="0.8"/>
+      <text x="784" y="75" fill="rgba(45,49,66,0.55)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MGMT</text>
+      <svg x="820" y="66" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2d3142" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+      </svg>
+      <text x="832" y="102" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Security Mgmt</text>
+      <text x="832" y="114" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">show-access-*</text>
+
+      <!-- ── Gaia ── -->
+      <rect x="762" y="140" width="140" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="762" y="140" width="140" height="64" rx="6" fill="white" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+      <rect x="770" y="146" width="26" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.28)" stroke-width="0.8"/>
+      <text x="783" y="155" fill="rgba(45,49,66,0.55)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">API</text>
+      <svg x="820" y="146" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2d3142" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+        <polyline points="2 17 12 22 22 17"></polyline>
+        <polyline points="2 12 12 17 22 12"></polyline>
+      </svg>
+      <text x="832" y="182" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Gaia Gateway</text>
+      <text x="832" y="194" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">show-route</text>
+
+      <!-- ── Storage ── -->
+      <rect x="762" y="220" width="140" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="762" y="220" width="140" height="64" rx="6" fill="white" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+      <rect x="770" y="226" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.28)" stroke-width="0.8"/>
+      <text x="784" y="235" fill="rgba(45,49,66,0.55)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DISK</text>
+      <svg x="820" y="226" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2d3142" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+        <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+      </svg>
+      <text x="832" y="262" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Local Storage</text>
+      <text x="832" y="274" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">snapshots/ JSON</text>
+
+
+      <!-- ═══════════════════════════════════
+           LEGEND
+           ═══════════════════════════════════ -->
+      <line x1="40" y1="440" x2="960" y2="440" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="40" y="456" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+
+      <rect x="40"  y="464" width="20" height="12" rx="3" fill="transparent" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="68"  y="474" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">External system / boundary</text>
+
+      <rect x="252" y="464" width="20" height="12" rx="3" fill="rgba(45,49,66,0.04)" stroke="rgba(45,49,66,0.25)" stroke-width="1"/>
+      <text x="280" y="474" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Monolith boundary</text>
+
+      <rect x="410" y="464" width="20" height="12" rx="3" fill="rgba(235,108,54,0.10)" stroke="#eb6c36" stroke-width="1.2"/>
+      <text x="438" y="474" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Focal logic (Traffic Sim)</text>
+
+      <line x1="610" y1="470" x2="630" y2="470" stroke="#eb6c36" stroke-width="1.2"/>
+      <text x="638" y="474" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Primary packet trace path</text>
+
+      <line x1="810" y1="470" x2="830" y2="470" stroke="rgba(45,49,66,0.35)" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="838" y="474" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Auth / Credential lookup</text>
+    </svg>
+  </div>
+</body>
+</html>

@@ -2006,10 +2006,10 @@ function renderPolicyBrowser(rows){
       <table class="ledger">
         <thead>
           <tr>
-            <th style="width:1%">Rule</th>
+            <th style="width:1%;cursor:pointer" onclick="setBrowserSort('rule')">Rule ${browserSortCol==='rule'?(browserSortAsc?'▲':'▼'):''}</th>
             <th>Name &amp; scope</th>
-            <th style="width:1%">Action</th>
-            <th style="width:1%;text-align:right">Hits</th>
+            <th style="width:1%;cursor:pointer" onclick="setBrowserSort('action')">Action ${browserSortCol==='action'?(browserSortAsc?'▲':'▼'):''}</th>
+            <th style="width:1%;text-align:right;cursor:pointer" onclick="setBrowserSort('hits')">Hits ${browserSortCol==='hits'?(browserSortAsc?'▲':'▼'):''}</th>
             <th style="width:1%">State</th>
           </tr>
         </thead>
@@ -2067,21 +2067,85 @@ function renderPolicyBrowser(rows){
     </div>`;
 }
 
+let browserSortCol = null;
+let browserSortAsc = true;
+
+function setBrowserSort(col) {
+  if (browserSortCol === col) {
+    browserSortAsc = !browserSortAsc;
+  } else {
+    browserSortCol = col;
+    browserSortAsc = true;
+  }
+  filterPolicyBrowser();
+}
+
 function filterPolicyBrowser(){
   if(!browserData)return;
-  const q=String(policySearch.value||'').trim().toLowerCase();
+  const q=String(policySearch.value||'').trim();
   const af=String(actionFilter.value||'').toLowerCase();
 
-  const rows=browserData.rules.filter(r=>{
+  // Parse SmartConsole-like query (e.g. source:10.0.0.1 action:accept)
+  const queryParts = q.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
+  const filters = [];
+  let genericText = "";
+
+  for(const part of queryParts){
+    let m = part.match(/^(source|destination|service|action|name|rule):(.+)$/i);
+    if(m){
+      filters.push({field: m[1].toLowerCase(), value: m[2].replace(/"/g, '').toLowerCase()});
+    } else {
+      genericText += part.replace(/"/g, '').toLowerCase() + " ";
+    }
+  }
+  genericText = genericText.trim();
+
+  let rows=browserData.rules.filter(r=>{
+    // Generic match
     const text=[
       r.layer,r.layer_path,r.parent_rule,r.rule,r.section,r.name,r.source,r.destination,r.vpn,r.service,
       r.action,r.track,r.install_on,r.comments
     ].join(' ').toLowerCase();
 
-    const qok=!q||text.includes(q);
+    if(genericText && !text.includes(genericText)) return false;
+
+    // Field match
+    for(const f of filters){
+      let val = String(r[f.field]||'').toLowerCase();
+      if(f.field === 'rule') {
+        if(String(r.rule) !== f.value && !String(r.display_rule).includes(f.value)) return false;
+      } else {
+        if(!val.includes(f.value)) return false;
+      }
+    }
+
     const aok=!af||String(r.action||'').toLowerCase().includes(af);
-    return qok&&aok;
+    return aok;
   });
+
+  // Sorting
+  if(browserSortCol){
+    // Keep a copy so we don't mutate the original array if we don't want to, but filter() already returns a new array
+    rows.sort((a,b)=>{
+      let va = a[browserSortCol];
+      let vb = b[browserSortCol];
+      
+      if (browserSortCol === 'hits') {
+        va = Number(va) || 0;
+        vb = Number(vb) || 0;
+      } else if (browserSortCol === 'rule') {
+        va = Number(a.display_rule || a.rule || 0);
+        vb = Number(b.display_rule || b.rule || 0);
+      } else {
+        va = String(va || '').toLowerCase();
+        vb = String(vb || '').toLowerCase();
+      }
+
+      if(va < vb) return browserSortAsc ? -1 : 1;
+      if(va > vb) return browserSortAsc ? 1 : -1;
+      return 0;
+    });
+  }
 
   renderPolicyBrowser(rows);
 }

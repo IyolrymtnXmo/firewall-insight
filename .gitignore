@@ -46,3 +46,7 @@ schedules.json
 alerts.json
 reports/
 .session_key
+
+# Temporary diagram skills
+diagram-design/
+.agents/skills/diagram-design/
