@@ -4,6 +4,109 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.42.0 — a definite answer has to survive implied rules and the parts of an object the model leaves out
+
+Review round three of the co-op paper found two places where the tool still
+said "exact" about something it had not looked at. Both are closed here, and
+both by the same rule the project already uses: what is not known caps the
+answer at *unknown*; it never becomes a proven miss.
+
+### Implied rules (`app/implied.py`, new)
+
+Implied rules come from Global Properties. The gateway enforces them First,
+Before Last or Last around the explicit rules, and `show-access-rulebase` does
+not return them. v4.41 attached a warning to every trace and left the result
+marked exact. A warning beside "Drop · exact" is still a definite answer about
+a connection an implied rule may have accepted.
+
+The tracer now reads `show-global-properties` and `show-gateways-and-servers`
+(both reads) and decides per connection whether an implied rule could apply:
+
+- **clear** — none can; the explicit result stands
+- **possible** — one may; a matched rule becomes *inferred*, "no rule matched"
+  becomes UNVERIFIED
+- **unread** — Global Properties or the gateway list could not be read, or a
+  switched-on implied rule is one this version does not recognise; every trace
+  is demoted
+
+A connection that starts or ends on an address of a Check Point gateway or
+server is never definite, whatever the checkboxes say: most implied rules
+concern exactly that traffic, and blades add more that have no checkbox.
+ICMP requests, DNS over UDP/TCP and RIP are matched by service.
+
+This does not model what an implied rule decides. It only keeps a result from
+being called definite when one could decide instead.
+
+`trace_access_tree()` takes the context as `implied=`. Called without it, it
+answers for the explicit rulebase only, says so in `implied_rules`, and no
+longer sets `gateway_final`. The route and the acceptance runner both pass a
+context; a test checks that they do.
+
+### Objects that say more than the model keeps (`resolver.py`, `matching.py`, `analyzer.py`)
+
+- A TCP/UDP service with a **source port**, a service matched by **protocol
+  signature**, an ICMP service with a **code**, and a `service-other` with a
+  **match expression** are all narrower than their port. A hit on one is now
+  *unknown*, a miss is still a miss, and such a service cannot be the covering
+  rule of a shadowing pair (the very same object still can).
+- A host or network carrying **both an IPv4 and an IPv6** definition kept only
+  the first one found, so the other family was a proven no-match. Both are
+  kept now.
+
+### Measured (experiments/v442_patch)
+
+| | v4.41 | v4.42 |
+|---|---|---|
+| E2d, connections an implied rule may concern 10 / 20 / 30 % — wrong definite | 5.1 / 11.6 / 17.1 % | 0 / 0 / 0 % (undecided 8.2 / 15.4 / 21.1 %) |
+| E2e, rules using a restricted object 10 / 20 / 30 % — wrong definite | 5.9 / 11.2 / 16.1 % | 0 / 0 / 0 % (undecided 7.9 / 15.3 / 22.2 %) |
+| E1e, seeded shadowing pairs behind a restricted service — precision | 0.50 | 1.00 |
+
+E1, E2, E2b and E2c give the same numbers as before on this version.
+
+### Tests
+
+30 new tests. Nine older tests had been failing in the working tree since the
+long routes were moved to background jobs after v4.39 (they read the answer
+from the response body; it is on `/api/progress` now). They read it from there
+through `conftest.settled()`, which fails if the job did not finish.
+
+1,021 → 1,051 tests.
+
+### Not verified, stated plainly
+
+The shape of `show-global-properties` is taken from the Management API
+reference, not from the lab. Run `python -m tools.acceptance --package
+External-FW` once against the lab server: the line *Global Properties read for
+implied rules* says whether the read worked, and the evidence file lists the
+implied rules it found. If the server refuses the command the application
+still works; it reports no trace as definite.
+
+Nothing here has been compared with `fw up_execute` on a gateway.
+
+---
+
+## v4.41.0 — the supported-policy envelope, enforced instead of assumed
+
+Time, Content and Install On narrow a rule in ways neither analysis models.
+v4.40 listed them as things the user had to check. `app/envelope.py` now
+checks them per rule: such a rule cannot be a proven match in a trace
+(capped at *unknown*) and cannot be the covering rule of a shadowing pair.
+A package with more than one Ordered Layer never gives a final answer from
+one layer. E2c: wrong definite 3.7 / 8.1 / 12.3 % → 0 %; shadowing precision
+with time-limited rules 0.78 → 1.00.
+
+---
+
+## v4.40.0 — an Inline Layer cannot turn an uncertain path into a certain one
+
+E2b found three ways the tracer reported a definite result through an Inline
+Layer: an unknown rule above a parent that matched exactly, an unknown rule
+inside the child layer above a child rule that matched, and an unknown parent
+whose child layer had no match. All three now stop at the uncertain rule.
+Wrong definite 5.4–8.4 % → 0 %, at the price of more undecided traces.
+
+---
+
 ## v4.39.0 — from finding problems to acting on them, without writing anything
 
 Seven extensions were proposed. Five are built and verified against the lab, one is

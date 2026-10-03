@@ -268,6 +268,34 @@ async def run(package: str, out_path: str) -> int:
                     objects[obj["uid"]] = obj
         resolver = ObjectResolver(objects)
 
+        # v4.42: the same implied-rule context the UI path builds. A failed
+        # read is kept as a failed read - every case is then demoted, which is
+        # what the application would show a person.
+        from app.implied import build_context
+        try:
+            properties = await c.show_global_properties()
+        except Exception as exc:                                  # noqa: BLE001
+            properties = None
+            evidence["implied_rules_error"] = str(exc)
+        try:
+            devices = await c.show_gateways_and_servers()
+        except Exception:                                         # noqa: BLE001
+            devices = None
+        implied_ctx = build_context(properties, devices)
+        evidence["implied_rules"] = {
+            "properties_read": implied_ctx["properties_read"],
+            "gateways_read": implied_ctx["gateways_read"],
+            "enabled": implied_ctx["enabled"],
+            "positions": implied_ctx["positions"],
+            "unrecognised": implied_ctx["unrecognised"],
+            "device_addresses": len(implied_ctx["addresses"]),
+        }
+        rep.check("traffic", "Global Properties read for implied rules",
+                  True if implied_ctx["properties_read"] else None,
+                  f"{len(implied_ctx['enabled'])} implied rule(s) switched on"
+                  if implied_ctx["properties_read"] else
+                  "show-global-properties unavailable: no trace is reported as definite")
+
         traffic_ev = []
         if per_pkg is None and cases.get("packages"):
             rep.check("traffic", f"no traffic cases defined for '{package}'", None,
@@ -278,7 +306,8 @@ async def run(package: str, out_path: str) -> int:
                     str(case.get("service", "443")), case.get("protocol", "tcp"), resolver)
                 got = trace_access_tree(
                     tree, case["src"], case["dst"],
-                    case.get("protocol", "tcp"), query, selected_root=layer)
+                    case.get("protocol", "tcp"), query, selected_root=layer,
+                    implied=implied_ctx)
             except Exception as exc:                              # noqa: BLE001
                 rep.check("traffic", case["name"], False, f"error: {exc}")
                 continue
@@ -300,6 +329,7 @@ async def run(package: str, out_path: str) -> int:
             traffic_ev.append({"case": case["name"], "action": action,
                                "confidence": conf, "decided_by": decided,
                                "path": path,
+                               "implied_rules": (got.get("implied_rules") or {}).get("state"),
                                "reason": got.get("reason") or ""})
             want = case.get("expect")
             if not want:

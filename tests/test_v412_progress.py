@@ -165,7 +165,12 @@ class TestRealPhases:
         c.get("/api/package-analyze", params={"package": "Standard", "rid": "b"})
         d = c.get("/api/progress", params={"rid": "b"}).json()
         assert d["done"] is True
-        assert d["label"] == "Served from cache"
+        # v4.42: the route now finishes the job itself and puts the answer on
+        # the progress record, so the last label is the route's. What matters
+        # is unchanged: a cached analysis is done at once and carries its
+        # result, so the overlay cannot hang on step 1.
+        assert d["label"] in ("Served from cache", "Analysis complete")
+        assert d.get("result") is not None and not d.get("error")
 
     def test_traffic_path_walks_its_four_phases_in_order(self):
         # Both modules do `from ..progress import progress_set`, so the name is

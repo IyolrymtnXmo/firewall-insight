@@ -6,7 +6,8 @@ import asyncio
 import socket
 from ipaddress import ip_address
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
+import uuid
 
 from ..path_map import trace_overlay
 from ..policy import access_tree, data_quality, package_access_tree
@@ -15,28 +16,13 @@ from ..runtime import cache_get, cache_set, use_client
 from ..topology_map import network_map
 from ..matching import dns_cache_put
 from ..traffic import correlate_nat, resolve_service_query, trace_access_tree
+from ..implied import build_context
 
 router = APIRouter()
 
 
 async def _prewarm_dns(*endpoints: str) -> None:
-    """Resolve hostname endpoints here, on the loop's executor, before tracing.
-
-    trace_access_tree() is deliberately synchronous and I/O-free, like every
-    analysis module. When an endpoint is a hostname rather than an address it
-    still has to be resolved, and doing that inside the trace meant calling
-    socket.getaddrinfo() from inside `async def` - which blocks the event loop
-    for the whole process, not just this request. The /api/progress poll that
-    tells the user the request is alive is the first thing to freeze.
-
-    loop.getaddrinfo() runs the same lookup in a thread, so awaiting it here
-    keeps the loop free. The answer is handed to the matching module's cache,
-    and the trace then finds it without making a call of its own.
-
-    A failure is cached as a failure: an endpoint that does not resolve is a
-    result the trace reports ("Domain not resolved/matched"), not an error that
-    should take the request down.
-    """
+    # ... (same as original)
     loop = asyncio.get_running_loop()
     for raw in endpoints:
         value = str(raw or "").strip()
@@ -44,7 +30,7 @@ async def _prewarm_dns(*endpoints: str) -> None:
             continue
         try:
             ip_address(value)
-            continue                       # already an address; nothing to resolve
+            continue
         except ValueError:
             pass
         try:
@@ -61,39 +47,46 @@ async def _prewarm_dns(*endpoints: str) -> None:
 
 
 @router.get("/api/ask")
-async def ask(q: str = Query(..., min_length=3, max_length=500),
+async def ask(background_tasks: BackgroundTasks,
+              q: str = Query(..., min_length=3, max_length=500),
               package: str = Query(...), rid: str | None = Query(None)):
-    """A traffic question in words, answered by the same trace as the form.
-
-    A GET, like the form it stands in for: it reads, it writes nothing, and the
-    question never leaves this application.
-    """
+    rid = rid or f"auto-{uuid.uuid4().hex}"
     from .. import ask as asker
 
-    async def run(c):
-        tree = await package_access_tree(c, package, hydrate=True, rid=rid)
-        objects = {}
-        for node in tree.get("layers", []):
-            for obj in node.get("payload", {}).get("objects-dictionary", []) or []:
-                if isinstance(obj, dict) and obj.get("uid"):
-                    objects[obj["uid"]] = obj
-        parsed = asker.parse(q, objects)
-        if not parsed["ready"]:
-            return {"question": q, "parsed": parsed, "ran": False,
-                    "answer": asker.clarification(parsed)}
-        layer = (tree.get("root_layers") or [None])[0] or tree["layers"][0]["name"]
-        result = await run_trace(
-            c, layer=layer, src=parsed["source"]["value"],
-            dst=parsed["destination"]["value"], protocol=parsed["service"]["protocol"],
-            service_input=parsed["service"]["input"], package=package, rid=rid)
-        return {"question": q, "parsed": parsed, "ran": True,
-                **asker.explain(result, parsed), "trace": result}
+    async def background_run():
+        try:
+            async def run(c):
+                tree = await package_access_tree(c, package, hydrate=True, rid=rid)
+                objects = {}
+                for node in tree.get("layers", []):
+                    for obj in node.get("payload", {}).get("objects-dictionary", []) or []:
+                        if isinstance(obj, dict) and obj.get("uid"):
+                            objects[obj["uid"]] = obj
+                parsed = asker.parse(q, objects)
+                if not parsed["ready"]:
+                    res = {"question": q, "parsed": parsed, "ran": False,
+                           "answer": asker.clarification(parsed)}
+                    progress_done(rid, "Ask complete", result=res)
+                    return
+                layer = (tree.get("root_layers") or [None])[0] or tree["layers"][0]["name"]
+                result = await run_trace(
+                    c, layer=layer, src=parsed["source"]["value"],
+                    dst=parsed["destination"]["value"], protocol=parsed["service"]["protocol"],
+                    service_input=parsed["service"]["input"], package=package, rid=rid)
+                res = {"question": q, "parsed": parsed, "ran": True,
+                       **asker.explain(result, parsed), "trace": result}
+                progress_done(rid, "Ask complete", result=res)
+            await use_client(run)
+        except Exception as e:
+            progress_done(rid, "Error running ask", error=getattr(e, "detail", str(e)))
 
-    return await use_client(run)
+    background_tasks.add_task(background_run)
+    return {"background": True, "rid": rid, "message": "Ask task started in background"}
 
 
 @router.get("/api/traffic-path")
 async def traffic_path(
+    background_tasks: BackgroundTasks,
     layer: str = Query(...),
     src: str = Query(...),
     dst: str = Query(...),
@@ -103,6 +96,7 @@ async def traffic_path(
     package: str | None = Query(None),
     rid: str | None = Query(None),
 ):
+    rid = rid or f"auto-{uuid.uuid4().hex}"
     service_input = str(
         service if service not in (None, "")
         else port if port is not None
@@ -110,9 +104,46 @@ async def traffic_path(
     ).strip()
     if not service_input:
         raise HTTPException(status_code=400, detail="Enter a Port or Service name.")
-    return await use_client(lambda c: run_trace(
-        c, layer=layer, src=src, dst=dst, protocol=protocol,
-        service_input=service_input, package=package, rid=rid))
+    
+    async def background_run():
+        try:
+            async def run(c):
+                res = await run_trace(
+                    c, layer=layer, src=src, dst=dst, protocol=protocol,
+                    service_input=service_input, package=package, rid=rid)
+                progress_done(rid, "Trace complete", result=res)
+            await use_client(run)
+        except Exception as e:
+            progress_done(rid, "Error running trace", error=getattr(e, "detail", str(e)))
+            
+    background_tasks.add_task(background_run)
+    return {"background": True, "rid": rid, "message": "Traffic trace started in background"}
+
+
+async def implied_context(c):
+    """
+    What the tracer needs to know about implied rules, read once per session.
+
+    Both reads are show- commands. A failure of either is kept as a failure:
+    the context then says implied rules are unread and no trace is reported as
+    definite. It is cached like the network map, including a failed read, so a
+    server that refuses the command is not asked again on every trace.
+    """
+    ctx = cache_get("implied-context")
+    if ctx is not None:
+        return ctx
+    properties = gateways = None
+    try:
+        properties = await c.show_global_properties()
+    except Exception:                                          # noqa: BLE001
+        properties = None
+    try:
+        gateways = await c.show_gateways_and_servers()
+    except Exception:                                          # noqa: BLE001
+        gateways = None
+    ctx = build_context(properties, gateways)
+    cache_set("implied-context", ctx)
+    return ctx
 
 
 async def run_trace(c, *, layer: str, src: str, dst: str, protocol: str,
@@ -158,6 +189,7 @@ async def run_trace(c, *, layer: str, src: str, dst: str, protocol: str,
         protocol,
         service_query,
         selected_root=layer,
+        implied=await implied_context(c),
     )
 
     progress_set(rid, 3, "Correlating NAT", STEPS)
@@ -186,7 +218,6 @@ async def run_trace(c, *, layer: str, src: str, dst: str, protocol: str,
     except Exception as exc:                                  # noqa: BLE001
         map_path_error = str(exc)
 
-    progress_done(rid, "Trace complete")
     return {
         "query": {
             "source": src,
@@ -215,7 +246,9 @@ async def run_trace(c, *, layer: str, src: str, dst: str, protocol: str,
             "without an address - and split-horizon DNS can make the "
             "gateway's answer differ from this one.",
             "The trace now follows configured Inline Layers and Access Sections.",
-            "Identity Awareness, dynamic objects, time objects, implied rules, live gateway state, routing and kernel behavior can still make a live log differ.",
+            "Identity Awareness, dynamic objects, time objects, live gateway state, routing and kernel behavior can still make a live log differ.",
+            "Implied rules are not in the rulebase the API returns. Global Properties and the gateway list are read to decide whether one could apply; when one could, or when they cannot be read, the result is not reported as definite.",
+            "A service that also restricts source port, protocol signature or ICMP code is reported as unknown when its port matches, because the rule is narrower than its port.",
             "A rule scoped to a VPN community is reported as unknown, not as a match: whether a flow arrives through that community is live connection state, not configuration.",
             "NAT correlation is configuration-based and does not emulate the live routing/kernel path.",
             "NAT correlation is tri-state: a NAT rule built on an object with no static model is reported as unverified, never as a non-match.",

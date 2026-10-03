@@ -117,3 +117,24 @@ def signed_in(request, monkeypatch):
     if "anonymous" in request.keywords:
         return
     monkeypatch.setattr("app.auth.read", lambda token: "test-operator")
+
+
+def settled(client, response):
+    """
+    The finished answer of a route that may run in the background.
+
+    After v4.39 the long routes (analysis, trace, snapshot, compliance) return
+    `{"background": true, "rid": ...}` at once and put their answer on
+    /api/progress, so a slow Management Server no longer holds a request open.
+    Tests written against the old contract read the answer from the response
+    body. This reads it from where it now is, and fails loudly if the job did
+    not finish or finished with an error - a test must not pass on a pending
+    job.
+    """
+    body = response.json()
+    if not (isinstance(body, dict) and body.get("background") and body.get("rid")):
+        return body
+    state = client.get("/api/progress", params={"rid": body["rid"]}).json()
+    assert state.get("done") is True, f"background job did not finish: {state}"
+    assert not state.get("error"), f"background job failed: {state.get('error')}"
+    return state.get("result")

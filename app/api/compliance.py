@@ -17,7 +17,8 @@ a file somebody can re-open and re-evaluate later.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
+import uuid
 
 from .. import compliance as engine
 from .. import snapshot as store
@@ -45,11 +46,13 @@ async def compliance_profiles():
 
 @router.get("/api/compliance")
 async def compliance(
+    background_tasks: BackgroundTasks,
     profile: str = Query(...),
     package: str | None = Query(None),
     snapshot: str | None = Query(None),
     rid: str | None = Query(None),
 ):
+    rid = rid or f"auto-{uuid.uuid4().hex}"
     if not package and not snapshot:
         raise HTTPException(
             status_code=400,
@@ -79,38 +82,45 @@ async def compliance(
         ]
         return result
 
-    async def run(c):
-        STEPS = 4
-        progress_set(rid, 0, "Loading package and inline layers", STEPS)
-        tree = await package_access_tree(c, package, hydrate=True, rid=rid)
-
-        progress_set(rid, 1, "Reading the NAT rulebase", STEPS)
-        nat_payload = cache_get(f"nat:{package}")
-        if nat_payload is None:
-            try:
-                nat_payload = await c.show_nat_rulebase(package)
-                cache_set(f"nat:{package}", nat_payload)
-            except Exception:                                     # noqa: BLE001
-                nat_payload = None
-
-        progress_set(rid, 2, "Analysing the rulebase", STEPS)
-        analysis = await analyze_package(c, package)
+    async def background_run():
         try:
-            nat_analysis = await analyze_nat(c, package)
-        except Exception:                                         # noqa: BLE001
-            nat_analysis = None
+            async def run(c):
+                STEPS = 4
+                progress_set(rid, 0, "Loading package and inline layers", STEPS)
+                tree = await package_access_tree(c, package, hydrate=True, rid=rid)
 
-        progress_set(rid, 3, "Evaluating the profile", STEPS)
-        captured = store.build_snapshot(tree, nat_payload, package)
-        sid = store.save_snapshot(captured)
-        result = engine.evaluate_profile(loaded, captured, analysis, nat_analysis)
-        result["evaluated"] = {"kind": "live", "package": package, "snapshot_id": sid}
-        result["data_quality"] = (analysis or {}).get("data_quality")
-        result["notes"] = result["notes"] + [
-            f"A snapshot of this run was saved as {sid}, so the same evidence can "
-            "be re-evaluated against a different profile later.",
-        ]
-        progress_done(rid, "Compliance run complete")
-        return result
+                progress_set(rid, 1, "Reading the NAT rulebase", STEPS)
+                nat_payload = cache_get(f"nat:{package}")
+                if nat_payload is None:
+                    try:
+                        nat_payload = await c.show_nat_rulebase(package)
+                        cache_set(f"nat:{package}", nat_payload)
+                    except Exception:                                     # noqa: BLE001
+                        nat_payload = None
 
-    return await use_client(run)
+                progress_set(rid, 2, "Analysing the rulebase", STEPS)
+                analysis = await analyze_package(c, package)
+                try:
+                    nat_analysis = await analyze_nat(c, package)
+                except Exception:                                         # noqa: BLE001
+                    nat_analysis = None
+
+                progress_set(rid, 3, "Evaluating the profile", STEPS)
+                captured = store.build_snapshot(tree, nat_payload, package)
+                sid = store.save_snapshot(captured)
+                result = engine.evaluate_profile(loaded, captured, analysis, nat_analysis)
+                result["evaluated"] = {"kind": "live", "package": package, "snapshot_id": sid}
+                result["data_quality"] = (analysis or {}).get("data_quality")
+                result["notes"] = result["notes"] + [
+                    f"A snapshot of this run was saved as {sid}, so the same evidence can "
+                    "be re-evaluated against a different profile later.",
+                ]
+                progress_done(rid, "Compliance run complete", result=result)
+
+            await use_client(run)
+        except Exception as e:
+            error_msg = getattr(e, "detail", str(e))
+            progress_done(rid, "Error evaluating compliance", error=error_msg)
+
+    background_tasks.add_task(background_run)
+    return {"background": True, "rid": rid, "message": "Compliance evaluation started in background"}

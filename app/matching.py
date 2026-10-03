@@ -390,11 +390,19 @@ def service_match_state(values: Any, query: dict[str, Any], res: ObjectResolver)
         # fixed port, but a TCP/389 query still matches its ldap member.
         atoms, complete = res.service_atoms_partial(uid)
 
+        # v4.42: a hit on a service that also restricts source port, protocol
+        # signature or ICMP code is not a proven match - the rule is narrower
+        # than its port. Only a hit on an unrestricted service proves it.
         for qp, qs, qe in q_atoms:
-            for a in atoms:
+            for a, quals, leaf_name in res.service_atoms_qualified(uid):
                 proto_ok = a.proto == "any" or qp == "any" or a.proto == qp
                 if proto_ok and not (qe < a.start or qs > a.end):
-                    return "match", res.describe_uid(uid)
+                    if not quals:
+                        return "match", res.describe_uid(uid)
+                    saw_unknown = True
+                    entry = f"{leaf_name} (also requires {', '.join(quals)})"
+                    if entry not in unknown_names:
+                        unknown_names.append(entry)
 
         if not complete:
             obj = res.obj(uid)

@@ -144,34 +144,48 @@ class ObjectResolver:
         if self.is_any_uid(uid):
             return [AddrAtom(0, 2**32 - 1, 4), AddrAtom(0, 2**128 - 1, 6)], True
 
-        ip = o.get("ip-address") or o.get("ipv4-address") or o.get("ipv6-address")
-        if ip:
-            try:
-                a = ip_address(str(ip))
-                return [AddrAtom(int(a), int(a), a.version)], True
-            except ValueError:
-                pass
+        # v4.42: an object may carry an IPv4 and an IPv6 definition at once.
+        # Taking the first one found made the other family a proven no-match.
+        found = []
+        for key in ("ip-address", "ipv4-address", "ipv6-address"):
+            if o.get(key):
+                try:
+                    a = ip_address(str(o.get(key)))
+                    found.append(AddrAtom(int(a), int(a), a.version))
+                except ValueError:
+                    pass
+        if found:
+            return list(dict.fromkeys(found)), True
 
-        subnet = o.get("subnet4") or o.get("subnet") or o.get("subnet6")
-        ml = o.get("mask-length4") if o.get("mask-length4") is not None else o.get("mask-length")
-        if ml is None:
-            ml = o.get("mask-length6")
-        if subnet is not None and ml is not None:
+        for sub_key, len_keys in (("subnet4", ("mask-length4", "mask-length")),
+                                  ("subnet", ("mask-length", "mask-length4")),
+                                  ("subnet6", ("mask-length6",))):
+            subnet = o.get(sub_key)
+            ml = next((o.get(k) for k in len_keys if o.get(k) is not None), None)
+            if subnet is None or ml is None:
+                continue
             try:
                 n = ip_network(f"{subnet}/{ml}", strict=False)
-                return [AddrAtom(int(n.network_address), int(n.broadcast_address), n.version)], True
+                found.append(AddrAtom(int(n.network_address), int(n.broadcast_address), n.version))
             except ValueError:
                 pass
+        if found:
+            return list(dict.fromkeys(found)), True
 
-        first = o.get("ipv4-address-first") or o.get("first-ip") or o.get("ipv6-address-first")
-        last = o.get("ipv4-address-last") or o.get("last-ip") or o.get("ipv6-address-last")
-        if first and last:
+        for first_key, last_key in (("ipv4-address-first", "ipv4-address-last"),
+                                    ("first-ip", "last-ip"),
+                                    ("ipv6-address-first", "ipv6-address-last")):
+            first, last = o.get(first_key), o.get(last_key)
+            if not (first and last):
+                continue
             try:
                 a, b = ip_address(str(first)), ip_address(str(last))
                 if a.version == b.version:
-                    return [AddrAtom(int(a), int(b), a.version)], True
+                    found.append(AddrAtom(int(a), int(b), a.version))
             except ValueError:
                 pass
+        if found:
+            return list(dict.fromkeys(found)), True
 
         if isinstance(o.get("members"), list) or "group" in t:
             atoms = []
@@ -287,6 +301,65 @@ class ObjectResolver:
         if not atoms and not self._member_uids(o):
             return [], False
         return atoms, complete
+
+    def leaf_service_qualifiers(self, obj: dict[str, Any]) -> list[str]:
+        """
+        v4.42: conditions on a service object that the port model leaves out.
+
+        A PortAtom holds a protocol and a destination port (or an ICMP type).
+        Check Point services can narrow a match further, and each of these
+        makes the real rule narrower than its atom:
+
+          source-port          TCP/UDP only from these source ports
+          protocol signature   only when the payload is recognised as it
+          icmp-code            only this code of the ICMP type
+          match expression     service-other with an INSPECT expression
+
+        A hit on such an atom is therefore not a proven match. A miss is still
+        a proven miss, because these conditions only ever narrow.
+        """
+        typ = str(obj.get("type") or "").lower()
+        out = []
+        if "tcp" in typ or "udp" in typ or "sctp" in typ:
+            if str(obj.get("source-port") or "").strip():
+                out.append("source port " + str(obj.get("source-port")).strip())
+            if obj.get("match-by-protocol-signature") and obj.get("protocol"):
+                out.append("protocol signature " + str(obj.get("protocol")))
+        elif "icmp" in typ:
+            if obj.get("icmp-code") not in (None, ""):
+                out.append("ICMP code " + str(obj.get("icmp-code")))
+        elif "service-other" in typ:
+            if str(obj.get("match") or "").strip():
+                out.append("match expression")
+        return out
+
+    def service_atoms_qualified(
+        self, uid: str, seen: set[str] | None = None
+    ) -> list[tuple[PortAtom, tuple[str, ...], str]]:
+        """Every atom of `uid` with the qualifiers and name of its leaf object."""
+        seen = set() if seen is None else seen
+        if uid in seen:
+            return []
+        seen.add(uid)
+        o = self.obj(uid)
+        t = str(o.get("type", "")).lower()
+        if self.is_any_uid(uid):
+            return [(PortAtom(0, 65535, "any"), (), "Any")]
+        is_group = (isinstance(o.get("members"), list) or "service-group" in t or t.endswith("group"))
+        if not is_group:
+            leaf = self._leaf_service_atoms(o, t)
+            if leaf is None:
+                return []
+            quals = tuple(self.leaf_service_qualifiers(o))
+            return [(a, quals, str(o.get("name") or uid)) for a in leaf[0]]
+        out = []
+        for cu in self._member_uids(o):
+            out.extend(self.service_atoms_qualified(cu, seen.copy()))
+        return out
+
+    def service_is_qualified(self, uid: str) -> bool:
+        """True when any leaf under `uid` carries a condition the model omits."""
+        return any(quals for _atom, quals, _name in self.service_atoms_qualified(uid))
 
     def service_atoms(self, uid: str, seen: set[str] | None=None) -> list[PortAtom] | None:
         """Strict resolution: None unless the object is fully modelled."""

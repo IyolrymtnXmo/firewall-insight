@@ -1,0 +1,32 @@
+{
+ "0.1": {
+  "policies": 30,
+  "opaque_frac": 0.1,
+  "flows": 12000,
+  "counts": {
+   "abstain": 5883,
+   "correct": 6117
+  },
+  "wrong_kinds": {}
+ },
+ "0.2": {
+  "policies": 30,
+  "opaque_frac": 0.2,
+  "flows": 12000,
+  "counts": {
+   "correct": 2409,
+   "abstain": 9591
+  },
+  "wrong_kinds": {}
+ },
+ "0.3": {
+  "policies": 30,
+  "opaque_frac": 0.3,
+  "flows": 12000,
+  "counts": {
+   "abstain": 10913,
+   "correct": 1087
+  },
+  "wrong_kinds": {}
+ }
+}

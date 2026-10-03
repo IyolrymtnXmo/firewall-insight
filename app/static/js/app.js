@@ -151,7 +151,7 @@ function busyShow(title, sub='', steps=[]){
       hint.textContent = 'Still working. The first load of a package fetches '
         + 'full object detail one object at a time, paced to stay under the '
         + 'Management API rate limit, so 10–20s is normal. Results are '
-        + 'then cached for 5 minutes.';
+        + 'then cached for 8 hours.';
     }
   }, 100);
 }
@@ -257,12 +257,18 @@ function fail(e, context=''){
 /* ---------- the task wrapper ---------- */
 const uxRunning = new Set();
 
+let uxBlockingCount = 0;
 async function task(key, label, fn, opts={}){
+  if(opts.blocking !== false && uxBlockingCount > 0){
+    notify('warn', 'Task in progress', 'Another background task is already running. Please wait for it to finish.');
+    return;
+  }
   if(uxRunning.has(key)){
     notify('info', 'Already running', label + ' is still in progress.');
     return;
   }
   uxRunning.add(key);
+  if(opts.blocking !== false) uxBlockingCount++;
   const btn = opts.button || null;
   if(btn){ btn.dataset.busy = '1'; btn.disabled = true; }
   setStatus(label + '…', 'busy');
@@ -286,8 +292,15 @@ async function task(key, label, fn, opts={}){
     throw e;
   }finally{
     uxRunning.delete(key);
+    if(opts.blocking !== false) uxBlockingCount--;
     if(btn){ delete btn.dataset.busy; btn.disabled = false; }
     if(opts.blocking !== false) busyHide();
+    if(opts.successMessage === null){
+      const st = document.getElementById('status');
+      if(st && st.textContent.startsWith(label)){
+        setStatus(uxRunning.size > 0 ? 'Tasks still running…' : 'Ready.', uxRunning.size > 0 ? 'busy' : '');
+      }
+    }
   }
 }
 
@@ -408,6 +421,16 @@ document.addEventListener('keydown', ev => {
    is what the overlay says rather than implying the server was stopped. */
 const uxAbortable = new Set();
 let uxCancelled = false;
+function minimizeBusy(){
+  busyHideAll();
+  setStatus('Task is still running in the background…','busy');
+}
+function restoreBusy(){
+  if(uxRunning.size > 0){
+    const ov = document.getElementById('busyOverlay');
+    if(ov) ov.classList.add('on');
+  }
+}
 function cancelBusy(){
   if(!uxAbortable.size){ busyHideAll(); return; }
   uxCancelled = true;
@@ -420,17 +443,30 @@ function isAbort(e){
   return !!e && (e.name === 'AbortError' || String(e.message||'').includes('aborted'));
 }
 
-async function api(u){
+async function api(u, opts={}){
   uxRequestStart();
   const ctl=new AbortController();
   uxAbortable.add(ctl);
   const to=setTimeout(()=>ctl.abort(),UX_TIMEOUT_MS);
   try{
-    const r=await fetch(u,{signal:ctl.signal});
+    const r=await fetch(u,{signal:ctl.signal, ...opts});
     const t=await r.text();
     let d;
     try{d=JSON.parse(t)}catch{throw new Error('HTTP '+r.status+': '+t.slice(0,300))}
     if(!r.ok)throw new Error('HTTP '+r.status+': '+(d.detail||JSON.stringify(d)));
+    if(d && d.background && d.rid){
+      clearTimeout(to);
+      while(!ctl.signal.aborted){
+        await new Promise(res => setTimeout(res, 2000));
+        if(ctl.signal.aborted) throw new Error('Aborted by user');
+        const p = await fetch('/api/progress?rid=' + encodeURIComponent(d.rid), {signal: ctl.signal}).then(x => x.json()).catch(()=>({}));
+        if(p.done){
+          if(p.error) throw new Error(p.error);
+          d = p.result;
+          break;
+        }
+      }
+    }
     // One place, so the chip cannot fall behind the reads again.
     lastReadLabel = new Date().toLocaleTimeString();
     if(typeof renderContextChips === 'function') renderContextChips();
@@ -460,7 +496,7 @@ function showPage(id,b){
   document.querySelectorAll('.menu button').forEach(x=>x.classList.remove('active'));
   if(b)b.classList.add('active');
   if(typeof layerControl!=='undefined') layerControl.style.display=(id==='traffic')?'inline-block':'none';
-  if(typeof packageControl!=='undefined') packageControl.style.display=(id==='dashboard'||id==='browser'||id==='access'||id==='nat'||id==='traffic'||id==='diff'||id==='compliance')?'inline-block':'none';
+  if(typeof packageControl!=='undefined') packageControl.style.display=(id==='dashboard'||id==='browser'||id==='access'||id==='nat'||id==='traffic'||id==='diff'||id==='compliance'||id==='usage'||id==='runs')?'inline-block':'none';
   // Both new pages are useless with an empty selector, and both lists are one
   // cheap local read - so fill them on arrival rather than making the first
   // thing a new user does be pressing Refresh.
@@ -791,9 +827,8 @@ async function startRun(ev){
      'Comparing with the previous run', 'Evaluating the compliance profile',
      'Reading gateway state']);
   try{
-    const r = await fetch('/api/runs?' + q, {method: 'POST'});
-    const d = await r.json();
-    if(!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+    busyShow('Running manual review', 'Package: ' + P.value, ['Read policy & NAT', 'Compare with previous', 'Evaluate compliance profile']);
+    const d = await api('/api/runs?' + q, {method: 'POST'});
 
     /* A run that could not read something is not a run that found nothing. */
     if(d.complete === false){

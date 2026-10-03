@@ -1,0 +1,20 @@
+--- app/analyzer.py	2026-10-01 05:22:50.835256166 +0700
++++ /mnt/user-data/outputs/nccy_v5/v441_patch/app/analyzer.py	2026-10-01 21:31:06.009630681 +0700
+@@ -2,6 +2,7 @@
+ from typing import Any
+ from collections import defaultdict
+ from .resolver import ObjectResolver, AddrAtom, PortAtom
++from .envelope import can_cover
+ 
+ RULE_FIELDS = ("source","destination","service","vpn","action")
+ 
+@@ -111,6 +112,9 @@
+         for earlier in enabled[:idx]:
+             if any(earlier.get(k,False) for k in ("source-negate","destination-negate","service-negate")): continue
+             if earlier.get("inline-layer"): continue
++            # v4.41: a rule narrowed by Time / Content / Install On matches
++            # nothing outside that window, so it cannot prove a later rule dead.
++            if not can_cover(earlier,res): continue
+             # VPN must be exact/Any-equivalent for conservative result.
+             ev,lv=set(res.uids(earlier.get("vpn"))),set(res.uids(later.get("vpn")))
+             if ev != lv: continue

@@ -35,11 +35,12 @@ def progress_set(rid, phase: int, label: str = "", total: int = 0, detail: str =
     }
 
 
-def progress_done(rid, label: str = "Complete"):
+def progress_done(rid, label: str = "Complete", result=None, error=None):
     if not rid:
         return
     item = _progress.get(rid) or {}
     _progress[rid] = {
         "phase": item.get("total", 0), "label": label,
         "total": item.get("total", 0), "detail": "", "ts": time.time(), "done": True,
+        "result": result, "error": error,
     }

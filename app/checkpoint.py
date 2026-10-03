@@ -454,6 +454,16 @@ class CheckPointClient:
             offset+=len(batch)
         return out
 
+    async def show_global_properties(self):
+        """
+        v4.42: Global Properties, read to learn which implied rules are on.
+
+        A read like every other call here. Raises CheckPointAPIError when the
+        account may not read it or the server does not know the command; the
+        caller reports implied rules as unread instead of guessing.
+        """
+        return await self.call("show-global-properties", {})
+
     async def _nat_rulebase_page(self, package: str, limit: int, offset: int):
         """
         Request one NAT rulebase page, probing show-hits support once.

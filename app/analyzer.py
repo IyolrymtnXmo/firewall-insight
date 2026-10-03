@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any
 from collections import defaultdict
 from .resolver import ObjectResolver, AddrAtom, PortAtom
+from .envelope import can_cover
 
 RULE_FIELDS = ("source","destination","service","vpn","action")
 
@@ -65,6 +66,10 @@ def _dimension_cover(earlier_values,later_values,res: ObjectResolver,kind:str):
     if set(lu).issubset(set(eu)): return True,"Exact object/group UID coverage"
     ea=[]; la=[]
     for uid in eu:
+        # v4.42: a service that also restricts source port, protocol signature
+        # or ICMP code matches less than its port says, so it proves nothing
+        # about a later rule.
+        if kind=="service" and res.service_is_qualified(uid): return False,"Earlier service carries a condition the port model omits"
         part=res.address_atoms(uid) if kind=="address" else res.service_atoms(uid)
         if part is None: return False,"Unsupported object type"
         ea.extend(part)
@@ -111,6 +116,9 @@ def analyze_rulebase(payload: dict[str,Any]) -> dict[str,Any]:
         for earlier in enabled[:idx]:
             if any(earlier.get(k,False) for k in ("source-negate","destination-negate","service-negate")): continue
             if earlier.get("inline-layer"): continue
+            # v4.41: a rule narrowed by Time / Content / Install On matches
+            # nothing outside that window, so it cannot prove a later rule dead.
+            if not can_cover(earlier,res): continue
             # VPN must be exact/Any-equivalent for conservative result.
             ev,lv=set(res.uids(earlier.get("vpn"))),set(res.uids(later.get("vpn")))
             if ev != lv: continue

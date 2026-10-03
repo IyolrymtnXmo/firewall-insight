@@ -1,0 +1,1294 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index fca3337..0e3eabf 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -4,7 +4,110 @@ All notable changes to Firewall Insight.
+ 
+ ---
+ 
+-## v4.41.0 — from finding problems to acting on them, without writing anything
++## v4.42.0 — a definite answer has to survive implied rules and the parts of an object the model leaves out
++
++Review round three of the co-op paper found two places where the tool still
++said "exact" about something it had not looked at. Both are closed here, and
++both by the same rule the project already uses: what is not known caps the
++answer at *unknown*; it never becomes a proven miss.
++
++### Implied rules (`app/implied.py`, new)
++
++Implied rules come from Global Properties. The gateway enforces them First,
++Before Last or Last around the explicit rules, and `show-access-rulebase` does
++not return them. v4.41 attached a warning to every trace and left the result
++marked exact. A warning beside "Drop · exact" is still a definite answer about
++a connection an implied rule may have accepted.
++
++The tracer now reads `show-global-properties` and `show-gateways-and-servers`
++(both reads) and decides per connection whether an implied rule could apply:
++
++- **clear** — none can; the explicit result stands
++- **possible** — one may; a matched rule becomes *inferred*, "no rule matched"
++  becomes UNVERIFIED
++- **unread** — Global Properties or the gateway list could not be read, or a
++  switched-on implied rule is one this version does not recognise; every trace
++  is demoted
++
++A connection that starts or ends on an address of a Check Point gateway or
++server is never definite, whatever the checkboxes say: most implied rules
++concern exactly that traffic, and blades add more that have no checkbox.
++ICMP requests, DNS over UDP/TCP and RIP are matched by service.
++
++This does not model what an implied rule decides. It only keeps a result from
++being called definite when one could decide instead.
++
++`trace_access_tree()` takes the context as `implied=`. Called without it, it
++answers for the explicit rulebase only, says so in `implied_rules`, and no
++longer sets `gateway_final`. The route and the acceptance runner both pass a
++context; a test checks that they do.
++
++### Objects that say more than the model keeps (`resolver.py`, `matching.py`, `analyzer.py`)
++
++- A TCP/UDP service with a **source port**, a service matched by **protocol
++  signature**, an ICMP service with a **code**, and a `service-other` with a
++  **match expression** are all narrower than their port. A hit on one is now
++  *unknown*, a miss is still a miss, and such a service cannot be the covering
++  rule of a shadowing pair (the very same object still can).
++- A host or network carrying **both an IPv4 and an IPv6** definition kept only
++  the first one found, so the other family was a proven no-match. Both are
++  kept now.
++
++### Measured (experiments/v442_patch)
++
++| | v4.41 | v4.42 |
++|---|---|---|
++| E2d, connections an implied rule may concern 10 / 20 / 30 % — wrong definite | 5.1 / 11.6 / 17.1 % | 0 / 0 / 0 % (undecided 8.2 / 15.4 / 21.1 %) |
++| E2e, rules using a restricted object 10 / 20 / 30 % — wrong definite | 5.9 / 11.2 / 16.1 % | 0 / 0 / 0 % (undecided 7.9 / 15.3 / 22.2 %) |
++| E1e, seeded shadowing pairs behind a restricted service — precision | 0.50 | 1.00 |
++
++E1, E2, E2b and E2c give the same numbers as before on this version.
++
++### Tests
++
++30 new tests. Nine older tests had been failing in the working tree since the
++long routes were moved to background jobs after v4.39 (they read the answer
++from the response body; it is on `/api/progress` now). They read it from there
++through `conftest.settled()`, which fails if the job did not finish.
++
++1,021 → 1,051 tests.
++
++### Not verified, stated plainly
++
++The shape of `show-global-properties` is taken from the Management API
++reference, not from the lab. Run `python -m tools.acceptance --package
++External-FW` once against the lab server: the line *Global Properties read for
++implied rules* says whether the read worked, and the evidence file lists the
++implied rules it found. If the server refuses the command the application
++still works; it reports no trace as definite.
++
++Nothing here has been compared with `fw up_execute` on a gateway.
++
++---
++
++## v4.41.0 — the supported-policy envelope, enforced instead of assumed
++
++Time, Content and Install On narrow a rule in ways neither analysis models.
++v4.40 listed them as things the user had to check. `app/envelope.py` now
++checks them per rule: such a rule cannot be a proven match in a trace
++(capped at *unknown*) and cannot be the covering rule of a shadowing pair.
++A package with more than one Ordered Layer never gives a final answer from
++one layer. E2c: wrong definite 3.7 / 8.1 / 12.3 % → 0 %; shadowing precision
++with time-limited rules 0.78 → 1.00.
++
++---
++
++## v4.40.0 — an Inline Layer cannot turn an uncertain path into a certain one
++
++E2b found three ways the tracer reported a definite result through an Inline
++Layer: an unknown rule above a parent that matched exactly, an unknown rule
++inside the child layer above a child rule that matched, and an unknown parent
++whose child layer had no match. All three now stop at the uncertain rule.
++Wrong definite 5.4–8.4 % → 0 %, at the price of more undecided traces.
++
++---
++
++## v4.39.0 — from finding problems to acting on them, without writing anything
+ 
+ Seven extensions were proposed. Five are built and verified against the lab, one is
+ built without the part that could not be verified, and one is not built. That split
+diff --git a/app/analyzer.py b/app/analyzer.py
+index 33ec512..7ec2adf 100644
+--- a/app/analyzer.py
++++ b/app/analyzer.py
+@@ -66,6 +66,10 @@ def _dimension_cover(earlier_values,later_values,res: ObjectResolver,kind:str):
+     if set(lu).issubset(set(eu)): return True,"Exact object/group UID coverage"
+     ea=[]; la=[]
+     for uid in eu:
++        # v4.42: a service that also restricts source port, protocol signature
++        # or ICMP code matches less than its port says, so it proves nothing
++        # about a later rule.
++        if kind=="service" and res.service_is_qualified(uid): return False,"Earlier service carries a condition the port model omits"
+         part=res.address_atoms(uid) if kind=="address" else res.service_atoms(uid)
+         if part is None: return False,"Unsupported object type"
+         ea.extend(part)
+diff --git a/app/api/traffic.py b/app/api/traffic.py
+index 15c36bc..bd926d4 100644
+--- a/app/api/traffic.py
++++ b/app/api/traffic.py
+@@ -16,6 +16,7 @@ from ..runtime import cache_get, cache_set, use_client
+ from ..topology_map import network_map
+ from ..matching import dns_cache_put
+ from ..traffic import correlate_nat, resolve_service_query, trace_access_tree
++from ..implied import build_context
+ 
+ router = APIRouter()
+ 
+@@ -119,6 +120,32 @@ async def traffic_path(
+     return {"background": True, "rid": rid, "message": "Traffic trace started in background"}
+ 
+ 
++async def implied_context(c):
++    """
++    What the tracer needs to know about implied rules, read once per session.
++
++    Both reads are show- commands. A failure of either is kept as a failure:
++    the context then says implied rules are unread and no trace is reported as
++    definite. It is cached like the network map, including a failed read, so a
++    server that refuses the command is not asked again on every trace.
++    """
++    ctx = cache_get("implied-context")
++    if ctx is not None:
++        return ctx
++    properties = gateways = None
++    try:
++        properties = await c.show_global_properties()
++    except Exception:                                          # noqa: BLE001
++        properties = None
++    try:
++        gateways = await c.show_gateways_and_servers()
++    except Exception:                                          # noqa: BLE001
++        gateways = None
++    ctx = build_context(properties, gateways)
++    cache_set("implied-context", ctx)
++    return ctx
++
++
+ async def run_trace(c, *, layer: str, src: str, dst: str, protocol: str,
+                     service_input: str, package: str | None, rid: str | None):
+     """The trace itself, shared by /api/traffic-path and /api/ask.
+@@ -162,6 +189,7 @@ async def run_trace(c, *, layer: str, src: str, dst: str, protocol: str,
+         protocol,
+         service_query,
+         selected_root=layer,
++        implied=await implied_context(c),
+     )
+ 
+     progress_set(rid, 3, "Correlating NAT", STEPS)
+@@ -218,7 +246,9 @@ async def run_trace(c, *, layer: str, src: str, dst: str, protocol: str,
+             "without an address - and split-horizon DNS can make the "
+             "gateway's answer differ from this one.",
+             "The trace now follows configured Inline Layers and Access Sections.",
+-            "Identity Awareness, dynamic objects, time objects, implied rules, live gateway state, routing and kernel behavior can still make a live log differ.",
++            "Identity Awareness, dynamic objects, time objects, live gateway state, routing and kernel behavior can still make a live log differ.",
++            "Implied rules are not in the rulebase the API returns. Global Properties and the gateway list are read to decide whether one could apply; when one could, or when they cannot be read, the result is not reported as definite.",
++            "A service that also restricts source port, protocol signature or ICMP code is reported as unknown when its port matches, because the rule is narrower than its port.",
+             "A rule scoped to a VPN community is reported as unknown, not as a match: whether a flow arrives through that community is live connection state, not configuration.",
+             "NAT correlation is configuration-based and does not emulate the live routing/kernel path.",
+             "NAT correlation is tri-state: a NAT rule built on an object with no static model is reported as unverified, never as a non-match.",
+diff --git a/app/checkpoint.py b/app/checkpoint.py
+index efcc1ee..f0c28d3 100644
+--- a/app/checkpoint.py
++++ b/app/checkpoint.py
+@@ -454,6 +454,16 @@ class CheckPointClient:
+             offset+=len(batch)
+         return out
+ 
++    async def show_global_properties(self):
++        """
++        v4.42: Global Properties, read to learn which implied rules are on.
++
++        A read like every other call here. Raises CheckPointAPIError when the
++        account may not read it or the server does not know the command; the
++        caller reports implied rules as unread instead of guessing.
++        """
++        return await self.call("show-global-properties", {})
++
+     async def _nat_rulebase_page(self, package: str, limit: int, offset: int):
+         """
+         Request one NAT rulebase page, probing show-hits support once.
+diff --git a/app/implied.py b/app/implied.py
+new file mode 100644
+index 0000000..0e064ad
+--- /dev/null
++++ b/app/implied.py
+@@ -0,0 +1,246 @@
++"""
++v4.42 - implied rules stop a result from being reported as definite.
++
++Implied rules are generated from Global Properties, not written in the
++rulebase, so `show-access-rulebase` never returns them. The gateway still
++enforces them, and it places each one First, Before Last or Last relative to
++the explicit rules. A rule placed First decides before rule 1 is looked at.
++
++v4.41 attached a warning to every trace and left the result marked exact.
++That is not enough: a warning next to "Drop, confidence exact" is still a
++definite answer about a connection an implied rule may have accepted.
++
++v4.42 reads the two things it needs, both with show- commands:
++
++  * show-global-properties      which implied rules are switched on
++  * show-gateways-and-servers   which addresses belong to Check Point devices
++
++and then decides, per connection, whether an implied rule could apply:
++
++  clear     no implied rule this module knows of can match the connection;
++            the explicit-rulebase result stands
++  possible  an implied rule may match it; the result is demoted
++  unread    Global Properties or the gateway list could not be read, or a
++            switched-on implied rule is one this module does not recognise;
++            every result is demoted
++
++The test is deliberately wider than the implied rules themselves. Most of
++them (control connections, outgoing packets from the gateway, Remote Access,
++SmartUpdate, VRRP, gateway administration) only concern traffic that starts
++or ends on a Check Point device, and blades add more of the same kind that
++have no checkbox at all. So a connection with a Check Point device at either
++end is never reported as definite, whatever the checkboxes say. The remaining
++implied rules are matched by service.
++
++This module does not model what an implied rule decides. It only answers
++"could one apply?", which is all that is needed to keep a wrong answer from
++being called definite.
++"""
++
++from __future__ import annotations
++
++from ipaddress import ip_address, ip_network
++from typing import Any
++
++# Implied rules that only concern traffic to or from a Check Point device.
++# They are covered by the endpoint test, so being switched on adds nothing.
++ENDPOINT_KEYS = {
++    "accept-control-connections",
++    "accept-ips1-management-connections",
++    "accept-remote-access-control-connections",
++    "accept-smart-update-connections",
++    "accept-outgoing-packets-originating-from-gw",
++    "accept-outgoing-packets-originating-from-connectra-gw",
++    "accept-outgoing-packets-to-cp-online-services",
++    "accept-dynamic-addr-modules-outgoing-internet-connections",
++    "accept-identity-awareness-control-connections",
++    "accept-incoming-traffic-to-dhcp-and-dns-services-of-gws",
++    "accept-vrrp-packets-originating-from-cluster-members",
++    "accept-web-and-ssh-connections-for-gw-administration",
++}
++
++# Implied rules that match by service, whatever the endpoints are.
++# key -> (protocols, first port/type, last port/type)
++SERVICE_KEYS: dict[str, tuple[tuple[str, ...], int, int]] = {
++    "accept-icmp-requests": (("icmp", "icmp6"), 0, 255),
++    "accept-domain-name-over-udp": (("udp",), 53, 53),
++    "accept-domain-name-over-tcp": (("tcp",), 53, 53),
++    "accept-rip": (("udp",), 520, 520),
++}
++
++
++def _addresses_of(obj: dict[str, Any]) -> tuple[list[tuple[int, int]], bool]:
++    """(addresses as (int, version), has_dynamic_address) for one device."""
++    out: list[tuple[int, int]] = []
++
++    def add(value: Any) -> None:
++        if not value:
++            return
++        try:
++            a = ip_address(str(value))
++        except ValueError:
++            return
++        out.append((int(a), a.version))
++
++    for key in ("ipv4-address", "ipv6-address", "ip-address"):
++        add(obj.get(key))
++    for itf in obj.get("interfaces") or []:
++        if isinstance(itf, dict):
++            for key in ("ipv4-address", "ipv6-address", "ip-address"):
++                add(itf.get(key))
++    for member in obj.get("cluster-members") or []:
++        if isinstance(member, dict):
++            more, _dyn = _addresses_of(member)
++            out.extend(more)
++    return out, bool(obj.get("dynamic-ip"))
++
++
++def build_context(global_properties: Any, gateways: Any) -> dict[str, Any]:
++    """
++    Turn the two API answers into what assess() needs.
++
++    Either argument may be None (the read failed). That is recorded, not
++    hidden: assess() then answers `unread` for every connection.
++    """
++    ctx: dict[str, Any] = {
++        "properties_read": False, "gateways_read": False,
++        "enabled": [], "unrecognised": [], "positions": {},
++        "addresses": set(), "dynamic_devices": [], "problems": [],
++    }
++
++    firewall = None
++    if isinstance(global_properties, dict):
++        firewall = global_properties.get("firewall")
++    if isinstance(firewall, dict):
++        ctx["properties_read"] = True
++        for key, value in firewall.items():
++            if not key.startswith("accept-") or key.endswith("-position"):
++                continue
++            if value is not True:
++                continue
++            ctx["enabled"].append(key)
++            ctx["positions"][key] = str(firewall.get(key + "-position") or "")
++            if key not in ENDPOINT_KEYS and key not in SERVICE_KEYS:
++                ctx["unrecognised"].append(key)
++    else:
++        ctx["problems"].append("Global Properties were not read")
++
++    if isinstance(gateways, list):
++        ctx["gateways_read"] = True
++        for obj in gateways:
++            if not isinstance(obj, dict):
++                continue
++            found, dynamic = _addresses_of(obj)
++            ctx["addresses"].update(found)
++            if dynamic or not found:
++                ctx["dynamic_devices"].append(str(obj.get("name") or obj.get("uid") or "?"))
++    else:
++        ctx["problems"].append("the list of gateways and servers was not read")
++
++    return ctx
++
++
++def _endpoint_addresses(text: str) -> list[tuple[int, int]] | None:
++    """Addresses a trace endpoint stands for; None when it cannot be decided."""
++    raw = str(text or "").strip()
++    try:
++        a = ip_address(raw)
++        return [(int(a), a.version)]
++    except ValueError:
++        pass
++    try:
++        n = ip_network(raw, strict=False)
++        if n.num_addresses == 1:
++            return [(int(n.network_address), n.version)]
++        return None
++    except ValueError:
++        pass
++    # A hostname: use the answers the tracer itself used.
++    from .matching import _domain_candidates
++    ips, _error = _domain_candidates(raw)
++    out = []
++    for value in ips:
++        try:
++            a = ip_address(value)
++            out.append((int(a), a.version))
++        except ValueError:
++            continue
++    return out or None
++
++
++def assess(ctx: dict[str, Any] | None, src: str, dst: str, service_query: dict[str, Any]) -> dict[str, Any]:
++    """Could an implied rule apply to this connection?"""
++    if ctx is None:
++        return {"state": "unread", "reasons": ["Implied rules were not assessed for this trace."], "rules": []}
++
++    if ctx.get("problems"):
++        return {"state": "unread", "rules": [],
++                "reasons": ["Implied rules cannot be assessed: " + "; ".join(ctx["problems"]) + "."]}
++
++    if ctx.get("unrecognised"):
++        return {"state": "unread", "rules": list(ctx["unrecognised"]),
++                "reasons": ["Global Properties switch on implied rule(s) this version does not recognise: "
++                            + ", ".join(ctx["unrecognised"]) + "."]}
++
++    reasons: list[str] = []
++    rules: list[str] = []
++
++    if ctx.get("dynamic_devices"):
++        reasons.append(
++            "Check Point device(s) with no fixed address ("
++            + ", ".join(ctx["dynamic_devices"][:4])
++            + "): it cannot be shown that this connection does not start or end on one.")
++
++    for label, text in (("source", src), ("destination", dst)):
++        found = _endpoint_addresses(text)
++        if found is None:
++            reasons.append(f"The {label} {text} has no single address, so it cannot be "
++                           "shown that it is not a Check Point device.")
++            continue
++        if any(item in ctx["addresses"] for item in found):
++            reasons.append(
++                f"The {label} {text} is an address of a Check Point gateway or server. "
++                "Implied rules for control, administration and gateway-originated "
++                "traffic are enforced outside the rulebase the API returns.")
++            rules.extend(k for k in ctx.get("enabled", []) if k in ENDPOINT_KEYS)
++
++    atoms = service_query.get("atoms") or []
++    for key in ctx.get("enabled", []):
++        if key not in SERVICE_KEYS:
++            continue
++        protos, first, last = SERVICE_KEYS[key]
++        for proto, start, end in atoms:
++            if proto in protos or proto == "any":
++                if not (end < first or start > last):
++                    position = ctx["positions"].get(key) or "position not reported"
++                    reasons.append(f"Implied rule {key} is switched on ({position}) and matches this service.")
++                    rules.append(key)
++                    break
++
++    if reasons:
++        return {"state": "possible", "reasons": reasons, "rules": sorted(set(rules))}
++    return {"state": "clear", "rules": [],
++            "reasons": ["No implied rule that is switched on can match this connection."]}
++
++
++def apply(out: dict[str, Any], assessment: dict[str, Any]) -> dict[str, Any]:
++    """
++    Fold the assessment into a trace result.
++
++    `clear` leaves the result as it is. Anything else removes the definite
++    status: a matched rule becomes `inferred`, and "no rule matched" becomes
++    UNVERIFIED, because an implied rule may have accepted the connection.
++    """
++    out["implied_rules"] = assessment
++    if assessment.get("state") == "clear":
++        return out
++
++    note = " ".join(assessment.get("reasons") or [])
++    if out.get("matched") and out.get("confidence") == "exact":
++        out["confidence"] = "inferred"
++    elif not out.get("matched") and out.get("confidence") in ("exact", "none"):
++        out["result"] = "UNVERIFIED"
++        out["confidence"] = "unknown"
++    out["reason"] = ((out.get("reason") or "") + " " + note).strip()
++    out["gateway_final"] = False
++    return out
+diff --git a/app/matching.py b/app/matching.py
+index 0c1c7dd..990505d 100644
+--- a/app/matching.py
++++ b/app/matching.py
+@@ -390,11 +390,19 @@ def service_match_state(values: Any, query: dict[str, Any], res: ObjectResolver)
+         # fixed port, but a TCP/389 query still matches its ldap member.
+         atoms, complete = res.service_atoms_partial(uid)
+ 
++        # v4.42: a hit on a service that also restricts source port, protocol
++        # signature or ICMP code is not a proven match - the rule is narrower
++        # than its port. Only a hit on an unrestricted service proves it.
+         for qp, qs, qe in q_atoms:
+-            for a in atoms:
++            for a, quals, leaf_name in res.service_atoms_qualified(uid):
+                 proto_ok = a.proto == "any" or qp == "any" or a.proto == qp
+                 if proto_ok and not (qe < a.start or qs > a.end):
+-                    return "match", res.describe_uid(uid)
++                    if not quals:
++                        return "match", res.describe_uid(uid)
++                    saw_unknown = True
++                    entry = f"{leaf_name} (also requires {', '.join(quals)})"
++                    if entry not in unknown_names:
++                        unknown_names.append(entry)
+ 
+         if not complete:
+             obj = res.obj(uid)
+diff --git a/app/resolver.py b/app/resolver.py
+index b10d9b7..dc6bdb3 100644
+--- a/app/resolver.py
++++ b/app/resolver.py
+@@ -144,34 +144,48 @@ class ObjectResolver:
+         if self.is_any_uid(uid):
+             return [AddrAtom(0, 2**32 - 1, 4), AddrAtom(0, 2**128 - 1, 6)], True
+ 
+-        ip = o.get("ip-address") or o.get("ipv4-address") or o.get("ipv6-address")
+-        if ip:
+-            try:
+-                a = ip_address(str(ip))
+-                return [AddrAtom(int(a), int(a), a.version)], True
+-            except ValueError:
+-                pass
+-
+-        subnet = o.get("subnet4") or o.get("subnet") or o.get("subnet6")
+-        ml = o.get("mask-length4") if o.get("mask-length4") is not None else o.get("mask-length")
+-        if ml is None:
+-            ml = o.get("mask-length6")
+-        if subnet is not None and ml is not None:
++        # v4.42: an object may carry an IPv4 and an IPv6 definition at once.
++        # Taking the first one found made the other family a proven no-match.
++        found = []
++        for key in ("ip-address", "ipv4-address", "ipv6-address"):
++            if o.get(key):
++                try:
++                    a = ip_address(str(o.get(key)))
++                    found.append(AddrAtom(int(a), int(a), a.version))
++                except ValueError:
++                    pass
++        if found:
++            return list(dict.fromkeys(found)), True
++
++        for sub_key, len_keys in (("subnet4", ("mask-length4", "mask-length")),
++                                  ("subnet", ("mask-length", "mask-length4")),
++                                  ("subnet6", ("mask-length6",))):
++            subnet = o.get(sub_key)
++            ml = next((o.get(k) for k in len_keys if o.get(k) is not None), None)
++            if subnet is None or ml is None:
++                continue
+             try:
+                 n = ip_network(f"{subnet}/{ml}", strict=False)
+-                return [AddrAtom(int(n.network_address), int(n.broadcast_address), n.version)], True
++                found.append(AddrAtom(int(n.network_address), int(n.broadcast_address), n.version))
+             except ValueError:
+                 pass
+-
+-        first = o.get("ipv4-address-first") or o.get("first-ip") or o.get("ipv6-address-first")
+-        last = o.get("ipv4-address-last") or o.get("last-ip") or o.get("ipv6-address-last")
+-        if first and last:
++        if found:
++            return list(dict.fromkeys(found)), True
++
++        for first_key, last_key in (("ipv4-address-first", "ipv4-address-last"),
++                                    ("first-ip", "last-ip"),
++                                    ("ipv6-address-first", "ipv6-address-last")):
++            first, last = o.get(first_key), o.get(last_key)
++            if not (first and last):
++                continue
+             try:
+                 a, b = ip_address(str(first)), ip_address(str(last))
+                 if a.version == b.version:
+-                    return [AddrAtom(int(a), int(b), a.version)], True
++                    found.append(AddrAtom(int(a), int(b), a.version))
+             except ValueError:
+                 pass
++        if found:
++            return list(dict.fromkeys(found)), True
+ 
+         if isinstance(o.get("members"), list) or "group" in t:
+             atoms = []
+@@ -288,6 +302,65 @@ class ObjectResolver:
+             return [], False
+         return atoms, complete
+ 
++    def leaf_service_qualifiers(self, obj: dict[str, Any]) -> list[str]:
++        """
++        v4.42: conditions on a service object that the port model leaves out.
++
++        A PortAtom holds a protocol and a destination port (or an ICMP type).
++        Check Point services can narrow a match further, and each of these
++        makes the real rule narrower than its atom:
++
++          source-port          TCP/UDP only from these source ports
++          protocol signature   only when the payload is recognised as it
++          icmp-code            only this code of the ICMP type
++          match expression     service-other with an INSPECT expression
++
++        A hit on such an atom is therefore not a proven match. A miss is still
++        a proven miss, because these conditions only ever narrow.
++        """
++        typ = str(obj.get("type") or "").lower()
++        out = []
++        if "tcp" in typ or "udp" in typ or "sctp" in typ:
++            if str(obj.get("source-port") or "").strip():
++                out.append("source port " + str(obj.get("source-port")).strip())
++            if obj.get("match-by-protocol-signature") and obj.get("protocol"):
++                out.append("protocol signature " + str(obj.get("protocol")))
++        elif "icmp" in typ:
++            if obj.get("icmp-code") not in (None, ""):
++                out.append("ICMP code " + str(obj.get("icmp-code")))
++        elif "service-other" in typ:
++            if str(obj.get("match") or "").strip():
++                out.append("match expression")
++        return out
++
++    def service_atoms_qualified(
++        self, uid: str, seen: set[str] | None = None
++    ) -> list[tuple[PortAtom, tuple[str, ...], str]]:
++        """Every atom of `uid` with the qualifiers and name of its leaf object."""
++        seen = set() if seen is None else seen
++        if uid in seen:
++            return []
++        seen.add(uid)
++        o = self.obj(uid)
++        t = str(o.get("type", "")).lower()
++        if self.is_any_uid(uid):
++            return [(PortAtom(0, 65535, "any"), (), "Any")]
++        is_group = (isinstance(o.get("members"), list) or "service-group" in t or t.endswith("group"))
++        if not is_group:
++            leaf = self._leaf_service_atoms(o, t)
++            if leaf is None:
++                return []
++            quals = tuple(self.leaf_service_qualifiers(o))
++            return [(a, quals, str(o.get("name") or uid)) for a in leaf[0]]
++        out = []
++        for cu in self._member_uids(o):
++            out.extend(self.service_atoms_qualified(cu, seen.copy()))
++        return out
++
++    def service_is_qualified(self, uid: str) -> bool:
++        """True when any leaf under `uid` carries a condition the model omits."""
++        return any(quals for _atom, quals, _name in self.service_atoms_qualified(uid))
++
+     def service_atoms(self, uid: str, seen: set[str] | None=None) -> list[PortAtom] | None:
+         """Strict resolution: None unless the object is fully modelled."""
+         atoms, complete = self.service_atoms_partial(uid, seen)
+diff --git a/app/traffic.py b/app/traffic.py
+index c749388..9656c48 100644
+--- a/app/traffic.py
++++ b/app/traffic.py
+@@ -10,6 +10,7 @@ from .matching import (  # noqa: F401  (re-exported: importers use app.traffic)
+ )
+ from .resolver import ObjectResolver
+ from .envelope import SCOPE_NOTES, envelope_state
++from . import implied as implied_rules
+ 
+ 
+ def _rules(items):
+@@ -197,10 +198,17 @@ def trace_access_tree(
+     proto: str,
+     service: Any,
+     selected_root: str | None = None,
++    implied: dict[str, Any] | None = None,
+ ) -> dict[str, Any]:
+     """
+     Inline-aware Access trace with tri-state rule evaluation.
+ 
++    v4.42: `implied` is the context built by app.implied.build_context().
++    With it, a connection an implied rule could decide is never reported as
++    definite. Without it (None) the function answers for the explicit
++    rulebase only and says so in `implied_rules`; callers that report to a
++    person must pass a context - tests/test_v442_implied.py checks they do.
++
+     Unknown parent conditions (for example Security Zone / dynamic-style
+     objects) are not treated as No-Match. If their Inline Layer contains an
+     exact child match, the result is returned as an inferred configured path.
+@@ -411,7 +419,15 @@ def trace_access_tree(
+         out["gateway_final"]=False
+     else:
+         out["gateway_final"]=out.get("confidence") in ("exact","none")
+-    out["scope_notes"]=list(SCOPE_NOTES)
++    # v4.42: implied rules are enforced outside the rulebase the API returns.
++    if implied is None:
++        out["implied_rules"]={"state":"not-assessed","rules":[],
++            "reasons":["Explicit rulebase only: implied rules were not assessed."]}
++        out["gateway_final"]=False
++        out["scope_notes"]=list(SCOPE_NOTES)
++    else:
++        implied_rules.apply(out,implied_rules.assess(implied,src,dst,service_query))
++        out["scope_notes"]=[]
+     return out
+ 
+ 
+diff --git a/app/version.py b/app/version.py
+index 45dfdf4..b4a22cb 100644
+--- a/app/version.py
++++ b/app/version.py
+@@ -1,3 +1,3 @@
+ """Single source of truth for the application version."""
+ 
+-APP_VERSION = "4.41.0"
++APP_VERSION = "4.42.0"
+diff --git a/tests/conftest.py b/tests/conftest.py
+index 10fce8e..3b30b02 100644
+--- a/tests/conftest.py
++++ b/tests/conftest.py
+@@ -117,3 +117,24 @@ def signed_in(request, monkeypatch):
+     if "anonymous" in request.keywords:
+         return
+     monkeypatch.setattr("app.auth.read", lambda token: "test-operator")
++
++
++def settled(client, response):
++    """
++    The finished answer of a route that may run in the background.
++
++    After v4.39 the long routes (analysis, trace, snapshot, compliance) return
++    `{"background": true, "rid": ...}` at once and put their answer on
++    /api/progress, so a slow Management Server no longer holds a request open.
++    Tests written against the old contract read the answer from the response
++    body. This reads it from where it now is, and fails loudly if the job did
++    not finish or finished with an error - a test must not pass on a pending
++    job.
++    """
++    body = response.json()
++    if not (isinstance(body, dict) and body.get("background") and body.get("rid")):
++        return body
++    state = client.get("/api/progress", params={"rid": body["rid"]}).json()
++    assert state.get("done") is True, f"background job did not finish: {state}"
++    assert not state.get("error"), f"background job failed: {state.get('error')}"
++    return state.get("result")
+diff --git a/tests/test_v412_progress.py b/tests/test_v412_progress.py
+index a17bb96..0e87033 100644
+--- a/tests/test_v412_progress.py
++++ b/tests/test_v412_progress.py
+@@ -165,7 +165,12 @@ class TestRealPhases:
+         c.get("/api/package-analyze", params={"package": "Standard", "rid": "b"})
+         d = c.get("/api/progress", params={"rid": "b"}).json()
+         assert d["done"] is True
+-        assert d["label"] == "Served from cache"
++        # v4.42: the route now finishes the job itself and puts the answer on
++        # the progress record, so the last label is the route's. What matters
++        # is unchanged: a cached analysis is done at once and carries its
++        # result, so the overlay cannot hang on step 1.
++        assert d["label"] in ("Served from cache", "Analysis complete")
++        assert d.get("result") is not None and not d.get("error")
+ 
+     def test_traffic_path_walks_its_four_phases_in_order(self):
+         # Both modules do `from ..progress import progress_set`, so the name is
+diff --git a/tests/test_v423_route_overlay.py b/tests/test_v423_route_overlay.py
+index 2108549..f640b23 100644
+--- a/tests/test_v423_route_overlay.py
++++ b/tests/test_v423_route_overlay.py
+@@ -58,6 +58,10 @@ class _Fake:
+     async def show_nat_rulebase(self, package):
+         return {"package": package, "rulebase": [], "objects-dictionary": [], "total": 0}
+ 
++    async def show_global_properties(self):
++        # v4.42: read for implied rules. None switched on in this fixture.
++        return {"firewall": {}}
++
+     async def show_gateways_and_servers(self):
+         if self.gateways_fail:
+             from app.checkpoint import CheckPointAPIError
+@@ -71,16 +75,21 @@ class _Fake:
+ def _trace(fake):
+     R.cp = fake
+     R.cache_clear()
+-    return TestClient(M.app).get("/api/traffic-path", params={
++    client = TestClient(M.app)
++    r = client.get("/api/traffic-path", params={
+         "layer": "Network", "src": "192.168.10.50", "dst": "192.168.20.100",
+         "protocol": "tcp", "service": "3389", "package": "External-FW",
+     })
++    # v4.42: the route answers in the background; read the finished trace.
++    from conftest import settled
++    r.settled = settled(client, r)
++    return r
+ 
+ 
+ def test_the_route_joins_the_trace_to_the_map():
+     r = _trace(_Fake())
+     assert r.status_code == 200, r.text
+-    d = r.json()
++    d = r.settled
+     assert d["access"]["matched"] is True
+     mp = d["map_path"]
+     assert mp is not None
+@@ -98,7 +107,7 @@ def test_a_failing_gateway_call_costs_the_overlay_and_nothing_else():
+     fake.gateways_fail = True
+     r = _trace(fake)
+     assert r.status_code == 200, r.text
+-    d = r.json()
++    d = r.settled
+     assert d["access"]["matched"] is True          # the answer survives
+     assert d["access"]["winner"]["action"] == "Accept"
+     assert d["map_path"] is None
+diff --git a/tests/test_v425_snapshot_routes.py b/tests/test_v425_snapshot_routes.py
+index 2072c45..ea34b27 100644
+--- a/tests/test_v425_snapshot_routes.py
++++ b/tests/test_v425_snapshot_routes.py
+@@ -61,6 +61,9 @@ class Fake:
+         pass
+ 
+ 
++from conftest import settled  # noqa: E402
++
++
+ def client(tmp_path, monkeypatch, fake=None):
+     R.cp = fake or Fake()
+     R.cache_clear()
+@@ -76,7 +79,7 @@ def test_capture_list_and_compare(tmp_path, monkeypatch):
+ 
+     first = c.get("/api/snapshot", params={"package": "External-FW"})
+     assert first.status_code == 200, first.text
+-    a = first.json()
++    a = settled(c, first)      # v4.42: the capture runs in the background
+     assert a["summary"]["access_rules"] == 1
+     assert a["saved_to"].endswith(".json")
+     assert str(tmp_path) in a["saved_to"], "the only write in the app must say where"
+@@ -84,7 +87,7 @@ def test_capture_list_and_compare(tmp_path, monkeypatch):
+     # The group grows. The rule itself is not touched at all.
+     fake.members = ["n10", "n20"]
+     R.cache_clear()
+-    b = c.get("/api/snapshot", params={"package": "External-FW"}).json()
++    b = settled(c, c.get("/api/snapshot", params={"package": "External-FW"}))
+     assert b["id"] != a["id"]
+ 
+     listed = c.get("/api/snapshots").json()
+diff --git a/tests/test_v426_compliance_routes.py b/tests/test_v426_compliance_routes.py
+index 3699ec6..92878d4 100644
+--- a/tests/test_v426_compliance_routes.py
++++ b/tests/test_v426_compliance_routes.py
+@@ -69,6 +69,9 @@ class Fake:
+         pass
+ 
+ 
++from conftest import settled  # noqa: E402
++
++
+ def client(tmp_path, monkeypatch):
+     R.cp = Fake()
+     R.cache_clear()
+@@ -91,7 +94,7 @@ def test_a_live_run_decides_the_analysis_backed_checks(tmp_path, monkeypatch):
+     c = client(tmp_path, monkeypatch)
+     r = c.get("/api/compliance", params={"profile": "house-hygiene", "package": "External-FW"})
+     assert r.status_code == 200, r.text
+-    d = r.json()
++    d = settled(c, r)          # v4.42: a live run answers in the background
+ 
+     # The telnet rule is real and provable, so it fails - by name.
+     assert status_of(d, "HOUSE-NO-TELNET") == "fail"
+@@ -108,12 +111,12 @@ def test_a_live_run_decides_the_analysis_backed_checks(tmp_path, monkeypatch):
+ 
+ def test_the_same_profile_on_a_stored_snapshot_admits_what_it_cannot_decide(tmp_path, monkeypatch):
+     c = client(tmp_path, monkeypatch)
+-    live = c.get("/api/compliance",
+-                 params={"profile": "house-hygiene", "package": "External-FW"}).json()
++    live = settled(c, c.get("/api/compliance",
++                            params={"profile": "house-hygiene", "package": "External-FW"}))
+     sid = live["evaluated"]["snapshot_id"]
+ 
+-    d = c.get("/api/compliance",
+-              params={"profile": "house-hygiene", "snapshot": sid}).json()
++    d = settled(c, c.get("/api/compliance",
++                         params={"profile": "house-hygiene", "snapshot": sid}))
+     assert d["evaluated"] == {"kind": "snapshot", "id": sid}
+     # Rule-level checks still decide.
+     assert status_of(d, "HOUSE-NO-TELNET") == "fail"
+@@ -126,8 +129,8 @@ def test_the_same_profile_on_a_stored_snapshot_admits_what_it_cannot_decide(tmp_
+ 
+ def test_the_nist_profile_passes_where_the_policy_earns_it(tmp_path, monkeypatch):
+     c = client(tmp_path, monkeypatch)
+-    d = c.get("/api/compliance",
+-              params={"profile": "nist-800-41-baseline", "package": "External-FW"}).json()
++    d = settled(c, c.get("/api/compliance",
++                         params={"profile": "nist-800-41-baseline", "package": "External-FW"}))
+     assert status_of(d, "NIST-DENY-DEFAULT-ANY-PERMIT") == "pass"
+     assert status_of(d, "NIST-DENY-DEFAULT-CLEANUP") == "pass"
+     assert status_of(d, "NIST-REVIEWABLE-RULES") == "pass"
+diff --git a/tests/test_v431_chrome.py b/tests/test_v431_chrome.py
+index 2846848..b0e7054 100644
+--- a/tests/test_v431_chrome.py
++++ b/tests/test_v431_chrome.py
+@@ -74,12 +74,12 @@ class TestTheReadChipTracksActualReads:
+         Setting it in three handlers meant every reader added later started out
+         silently not counting.
+         """
+-        body = APPJS.split("async function api(u)", 1)[1].split("\n}", 1)[0]
++        body = APPJS.split("async function api(u", 1)[1].split("\n}", 1)[0]
+         assert "lastReadLabel" in body, "api() does not record the read"
+ 
+     def test_a_failed_read_is_not_recorded_as_a_read(self):
+         """The stamp sits after the not-ok throw, so a 502 does not count."""
+-        body = APPJS.split("async function api(u)", 1)[1].split("\n}", 1)[0]
++        body = APPJS.split("async function api(u", 1)[1].split("\n}", 1)[0]
+         assert body.index("if(!r.ok)") < body.index("lastReadLabel"), (
+             "a failed request would stamp the chip")
+ 
+diff --git a/tests/test_v441_envelope.py b/tests/test_v441_envelope.py
+index 68bd4cd..98de2a6 100644
+--- a/tests/test_v441_envelope.py
++++ b/tests/test_v441_envelope.py
+@@ -49,7 +49,10 @@ def trace(t):
+ def test_defaults_still_give_an_exact_answer():
+     out = trace(tree([rule(1, "n10", "web", "https", "accept"), rule(2, "any", "any", "any", "drop")]))
+     assert out["matched"] and out["confidence"] == "exact" and out["winner"]["rule"] == 1
+-    assert out["gateway_final"] is True
++    # v4.42: called without an implied-rule context, the function answers for
++    # the explicit rulebase only, so it no longer claims the gateway's answer.
++    assert out["gateway_final"] is False
++    assert out["implied_rules"]["state"] == "not-assessed"
+ 
+ 
+ def test_a_time_window_blocks_a_definite_answer():
+diff --git a/tests/test_v442_implied.py b/tests/test_v442_implied.py
+new file mode 100644
+index 0000000..39244d2
+--- /dev/null
++++ b/tests/test_v442_implied.py
+@@ -0,0 +1,194 @@
++"""
++v4.42 - implied rules stop a result from being reported as definite.
++
++Implied rules come from Global Properties and are enforced First, Before Last
++or Last around the explicit rules. `show-access-rulebase` does not return
++them. Up to v4.41 a trace carried a warning about them and still said
++"confidence: exact". These tests pin the replacement: the result itself is
++demoted whenever an implied rule could apply, or when that cannot be decided.
++"""
++import asyncio
++import re
++from pathlib import Path
++
++from app import implied
++from app.traffic import trace_access_tree
++
++ROOT = Path(__file__).resolve().parent.parent
++
++OBJS = [
++    {"uid": "any", "name": "Any", "type": "CpmiAnyObject"},
++    {"uid": "accept", "name": "Accept", "type": "RulebaseAction"},
++    {"uid": "drop", "name": "Drop", "type": "RulebaseAction"},
++    {"uid": "n10", "name": "Net10", "type": "network", "subnet4": "192.168.10.0", "mask-length4": 24},
++    {"uid": "web", "name": "Web", "type": "host", "ipv4-address": "10.0.0.80"},
++    {"uid": "https", "name": "https", "type": "service-tcp", "port": "443"},
++]
++
++GATEWAYS = [
++    {"uid": "gw", "name": "External-GW01", "type": "cluster-member", "ipv4-address": "172.16.0.1",
++     "interfaces": [{"name": "eth1", "ipv4-address": "192.168.10.254"}]},
++    {"uid": "mgmt", "name": "CP-MGMT-01", "type": "checkpoint-host", "ipv4-address": "172.16.0.10"},
++]
++
++
++def rule(n, src, dst, svc, action):
++    return {"type": "access-rule", "rule-number": n, "name": f"r{n}", "enabled": True,
++            "source": [src], "destination": [dst], "service": [svc], "vpn": [], "action": action}
++
++
++def tree(rules):
++    pl = {"rulebase": rules, "objects-dictionary": OBJS}
++    return {"root_layer": "L", "root_layers": ["L"],
++            "layers": [{"name": "L", "depth": 0, "path": "L", "display_prefix": "", "payload": pl}]}
++
++
++POLICY = [rule(1, "n10", "web", "https", "accept"), rule(2, "any", "any", "any", "drop")]
++
++
++def q(proto, port):
++    return {"atoms": [(proto, port, port)], "protocol": proto, "port": port, "display": f"{proto}/{port}"}
++
++
++def props(**firewall):
++    return {"firewall": firewall}
++
++
++def trace(src, dst, proto, port, ctx):
++    return trace_access_tree(tree(POLICY), src, dst, proto, q(proto, port), "L", implied=ctx)
++
++
++# ---- reading the two API answers -------------------------------------------
++
++def test_only_switched_on_rules_are_collected_and_positions_are_kept():
++    ctx = implied.build_context(props(**{
++        "accept-control-connections": True,
++        "accept-icmp-requests": True, "accept-icmp-requests-position": "before last",
++        "accept-rip": False, "log-implied-rules": True}), GATEWAYS)
++    assert sorted(ctx["enabled"]) == ["accept-control-connections", "accept-icmp-requests"]
++    assert ctx["positions"]["accept-icmp-requests"] == "before last"
++    assert not ctx["unrecognised"] and not ctx["problems"]
++
++
++def test_device_addresses_include_interfaces():
++    ctx = implied.build_context(props(), GATEWAYS)
++    text = {int(__import__("ipaddress").ip_address(a)) for a in
++            ("172.16.0.1", "192.168.10.254", "172.16.0.10")}
++    assert text <= {a for a, _v in ctx["addresses"]}
++
++
++# ---- clear: the explicit result stands -------------------------------------
++
++def test_a_flow_no_implied_rule_can_touch_stays_exact():
++    ctx = implied.build_context(props(**{"accept-control-connections": True}), GATEWAYS)
++    out = trace("192.168.10.5", "10.0.0.80", "tcp", 443, ctx)
++    assert out["matched"] and out["confidence"] == "exact" and out["gateway_final"] is True
++    assert out["implied_rules"]["state"] == "clear"
++
++
++# ---- possible: demoted ------------------------------------------------------
++
++def test_a_flow_from_a_gateway_address_is_not_exact():
++    """Rule 2 says Drop. 'Accept outgoing packets originating from gateway' may say otherwise."""
++    ctx = implied.build_context(props(**{"accept-outgoing-packets-originating-from-gw": True}), GATEWAYS)
++    out = trace("172.16.0.1", "8.8.8.8", "tcp", 443, ctx)
++    assert out["confidence"] == "inferred" and out["gateway_final"] is False
++    assert out["implied_rules"]["state"] == "possible"
++    assert "accept-outgoing-packets-originating-from-gw" in out["implied_rules"]["rules"]
++
++
++def test_a_gateway_endpoint_is_demoted_even_with_every_checkbox_off():
++    """Blades add implied rules for the gateway that have no checkbox."""
++    ctx = implied.build_context(props(), GATEWAYS)
++    out = trace("192.168.10.5", "192.168.10.254", "tcp", 443, ctx)
++    assert out["confidence"] != "exact" and out["gateway_final"] is False
++
++
++def test_icmp_is_demoted_only_when_the_icmp_implied_rule_is_on():
++    on = implied.build_context(props(**{"accept-icmp-requests": True,
++                                        "accept-icmp-requests-position": "first"}), GATEWAYS)
++    off = implied.build_context(props(**{"accept-icmp-requests": False}), GATEWAYS)
++    assert trace("192.168.10.5", "10.0.0.80", "icmp", 8, on)["confidence"] == "inferred"
++    assert trace("192.168.10.5", "10.0.0.80", "icmp", 8, off)["confidence"] == "exact"
++
++
++def test_dns_and_rip_are_matched_by_service():
++    ctx = implied.build_context(props(**{"accept-domain-name-over-udp": True, "accept-rip": True}), GATEWAYS)
++    assert trace("192.168.10.5", "10.9.9.9", "udp", 53, ctx)["confidence"] == "inferred"
++    assert trace("192.168.10.5", "10.9.9.9", "udp", 520, ctx)["confidence"] == "inferred"
++    assert trace("192.168.10.5", "10.9.9.9", "tcp", 53, ctx)["confidence"] == "exact"
++    assert trace("192.168.10.5", "10.9.9.9", "udp", 54, ctx)["confidence"] == "exact"
++
++
++def test_no_matching_rule_becomes_unverified_not_a_definite_miss():
++    ctx = implied.build_context(props(**{"accept-icmp-requests": True}), GATEWAYS)
++    only = [rule(1, "n10", "web", "https", "accept")]
++    out = trace_access_tree(tree(only), "10.1.1.1", "10.2.2.2", "icmp", q("icmp", 8), "L", implied=ctx)
++    assert out["result"] == "UNVERIFIED" and out["confidence"] == "unknown"
++
++
++# ---- unread: everything is demoted -----------------------------------------
++
++def test_unreadable_global_properties_demote_every_trace():
++    ctx = implied.build_context(None, GATEWAYS)
++    out = trace("192.168.10.5", "10.0.0.80", "tcp", 443, ctx)
++    assert out["confidence"] == "inferred" and out["implied_rules"]["state"] == "unread"
++
++
++def test_an_unreadable_gateway_list_demotes_every_trace():
++    ctx = implied.build_context(props(), None)
++    assert trace("192.168.10.5", "10.0.0.80", "tcp", 443, ctx)["implied_rules"]["state"] == "unread"
++
++
++def test_a_switched_on_rule_this_version_does_not_know_demotes_every_trace():
++    ctx = implied.build_context(props(**{"accept-something-added-in-a-later-release": True}), GATEWAYS)
++    out = trace("192.168.10.5", "10.0.0.80", "tcp", 443, ctx)
++    assert out["implied_rules"]["state"] == "unread" and out["confidence"] != "exact"
++
++
++def test_a_gateway_with_a_dynamic_address_demotes_every_trace():
++    daip = GATEWAYS + [{"uid": "d", "name": "Branch-DAIP", "type": "simple-gateway", "dynamic-ip": True}]
++    ctx = implied.build_context(props(), daip)
++    assert trace("192.168.10.5", "10.0.0.80", "tcp", 443, ctx)["confidence"] != "exact"
++
++
++# ---- a demotion never invents certainty ------------------------------------
++
++def test_an_already_uncertain_result_is_left_uncertain():
++    ctx = implied.build_context(props(**{"accept-icmp-requests": True}), GATEWAYS)
++    objs = OBJS + [{"uid": "z", "name": "Zone", "type": "security-zone"}]
++    pl = {"rulebase": [rule(1, "z", "web", "any", "accept"), rule(2, "any", "any", "any", "drop")],
++          "objects-dictionary": objs}
++    t = {"root_layer": "L", "root_layers": ["L"],
++         "layers": [{"name": "L", "depth": 0, "path": "L", "display_prefix": "", "payload": pl}]}
++    out = trace_access_tree(t, "192.168.10.5", "10.0.0.80", "icmp", q("icmp", 8), "L", implied=ctx)
++    assert out["result"] == "UNVERIFIED" and out["confidence"] == "unknown"
++
++
++# ---- the paths a person sees must pass a context ---------------------------
++
++def test_every_reporting_caller_passes_an_implied_context():
++    for rel in ("app/api/traffic.py", "tools/acceptance.py"):
++        text = (ROOT / rel).read_text(encoding="utf-8")
++        calls = re.findall(r"trace_access_tree\((?:[^()]|\([^()]*\))*\)", text)
++        assert calls, rel
++        for call in calls:
++            assert "implied=" in call, f"{rel} calls the tracer without implied rules: {call[:80]}"
++
++
++def test_global_properties_are_read_with_a_show_command():
++    from app.checkpoint import CheckPointClient
++    seen = []
++
++    async def fake(self, command, payload=None):
++        seen.append(command)
++        return {"firewall": {}}
++
++    c = CheckPointClient()
++    original = CheckPointClient.call
++    CheckPointClient.call = fake
++    try:
++        asyncio.run(c.show_global_properties())
++    finally:
++        CheckPointClient.call = original
++    assert seen == ["show-global-properties"]
+diff --git a/tests/test_v442_service_scope.py b/tests/test_v442_service_scope.py
+new file mode 100644
+index 0000000..0f560a1
+--- /dev/null
++++ b/tests/test_v442_service_scope.py
+@@ -0,0 +1,130 @@
++"""
++v4.42 - a service or address object is only "definite" as far as it is modelled.
++
++The model holds a protocol with a destination port (or an ICMP type), and an
++address interval. Check Point objects can say more than that. Where they do,
++the rule is narrower than the model, and treating a port hit as a proven match
++would be a confident answer built on half of the condition.
++"""
++from app.analyzer import analyze_rulebase
++from app.matching import address_match_state, service_match_state
++from app.resolver import ObjectResolver
++
++
++def res(*objs):
++    base = [{"uid": "any", "name": "Any", "type": "CpmiAnyObject"}]
++    return ObjectResolver({o["uid"]: o for o in base + list(objs)})
++
++
++def q(proto, port):
++    return {"atoms": [(proto, port, port)], "protocol": proto, "port": port}
++
++
++HTTPS = {"uid": "s1", "name": "https", "type": "service-tcp", "port": "443"}
++HTTPS_SRC = {"uid": "s2", "name": "https-from-1024", "type": "service-tcp", "port": "443", "source-port": ">1023"}
++HTTP_SIG = {"uid": "s3", "name": "http-sig", "type": "service-tcp", "port": "80",
++            "protocol": "HTTP", "match-by-protocol-signature": True}
++HTTP_PLAIN = {"uid": "s4", "name": "http", "type": "service-tcp", "port": "80",
++              "protocol": "HTTP", "match-by-protocol-signature": False}
++ICMP_3_1 = {"uid": "i1", "name": "host-unreach", "type": "service-icmp", "icmp-type": 3, "icmp-code": 1}
++ICMP_8 = {"uid": "i2", "name": "echo-request", "type": "service-icmp", "icmp-type": 8}
++OTHER = {"uid": "o1", "name": "gre-expr", "type": "service-other", "ip-protocol": 47, "match": "dport = 1"}
++
++
++def test_an_unrestricted_service_is_still_a_proven_match():
++    assert service_match_state(["s1"], q("tcp", 443), res(HTTPS))[0] == "match"
++
++
++def test_a_source_port_restriction_makes_a_port_hit_unknown():
++    state, why = service_match_state(["s2"], q("tcp", 443), res(HTTPS_SRC))
++    assert state == "unknown" and "source port" in why
++
++
++def test_a_miss_on_a_restricted_service_is_still_a_proven_miss():
++    assert service_match_state(["s2"], q("tcp", 80), res(HTTPS_SRC))[0] == "no-match"
++
++
++def test_protocol_signature_counts_only_when_it_is_switched_on():
++    assert service_match_state(["s3"], q("tcp", 80), res(HTTP_SIG))[0] == "unknown"
++    assert service_match_state(["s4"], q("tcp", 80), res(HTTP_PLAIN))[0] == "match"
++
++
++def test_an_icmp_code_makes_a_type_hit_unknown():
++    assert service_match_state(["i1"], q("icmp", 3), res(ICMP_3_1))[0] == "unknown"
++    assert service_match_state(["i1"], q("icmp", 8), res(ICMP_3_1))[0] == "no-match"
++    assert service_match_state(["i2"], q("icmp", 8), res(ICMP_8))[0] == "match"
++
++
++def test_a_match_expression_on_service_other_is_unknown():
++    r = res(OTHER)
++    assert service_match_state(["o1"], {"atoms": [("ip-47", 0, 0)]}, r)[0] == "unknown"
++
++
++def test_a_group_is_proven_by_its_unrestricted_member():
++    group = {"uid": "g", "name": "web", "type": "service-group", "members": ["s1", "s2"]}
++    assert service_match_state(["g"], q("tcp", 443), res(HTTPS, HTTPS_SRC, group))[0] == "match"
++
++
++def test_a_group_of_only_restricted_members_is_unknown():
++    group = {"uid": "g", "name": "web", "type": "service-group", "members": ["s2"]}
++    assert service_match_state(["g"], q("tcp", 443), res(HTTPS_SRC, group))[0] == "unknown"
++
++
++# ---- shadowing ---------------------------------------------------------------
++
++def _payload(first_service, second_service, objs):
++    base = [{"uid": "any", "name": "Any", "type": "CpmiAnyObject"},
++            {"uid": "accept", "name": "Accept", "type": "RulebaseAction"},
++            {"uid": "drop", "name": "Drop", "type": "RulebaseAction"}]
++    mk = lambda n, svc, act: {"type": "access-rule", "rule-number": n, "name": f"r{n}", "enabled": True,
++                              "source": ["any"], "destination": ["any"], "service": [svc], "vpn": [],
++                              "action": act}
++    return {"rulebase": [mk(1, first_service, "accept"), mk(2, second_service, "drop")],
++            "objects-dictionary": base + objs}
++
++
++def test_a_restricted_earlier_service_does_not_shadow_a_later_rule():
++    out = analyze_rulebase(_payload("s2", "s1", [HTTPS, HTTPS_SRC]))
++    assert out["findings"]["shadowing"] == []
++
++
++def test_an_unrestricted_earlier_service_still_shadows():
++    out = analyze_rulebase(_payload("s1", "s2", [HTTPS, HTTPS_SRC]))
++    assert [s["rule"] for s in out["findings"]["shadowing"]] == [2]
++
++
++def test_the_same_restricted_object_twice_is_still_covered():
++    out = analyze_rulebase(_payload("s2", "s2", [HTTPS_SRC]))
++    assert [s["rule"] for s in out["findings"]["shadowing"]] == [2]
++
++
++def test_an_icmp_code_does_not_shadow_the_whole_type():
++    plain = {"uid": "i3", "name": "unreach", "type": "service-icmp", "icmp-type": 3}
++    assert analyze_rulebase(_payload("i1", "i3", [ICMP_3_1, plain]))["findings"]["shadowing"] == []
++
++
++# ---- IPv4 and IPv6 on one object ---------------------------------------------
++
++DUAL = {"uid": "h", "name": "dual", "type": "host", "ipv4-address": "10.0.0.5", "ipv6-address": "2001:db8::5"}
++NET6 = {"uid": "n6", "name": "v6net", "type": "network", "subnet6": "2001:db8::", "mask-length6": 64}
++
++
++def test_a_dual_stack_host_matches_in_both_families():
++    r = res(DUAL)
++    assert address_match_state(["h"], "10.0.0.5", r)[0] == "match"
++    assert address_match_state(["h"], "2001:db8::5", r)[0] == "match"
++    assert address_match_state(["h"], "2001:db8::6", r)[0] == "no-match"
++
++
++def test_an_ipv6_network_is_an_interval_of_its_own_family():
++    r = res(NET6)
++    assert address_match_state(["n6"], "2001:db8::1234", r)[0] == "match"
++    assert address_match_state(["n6"], "10.0.0.5", r)[0] == "no-match"
++
++
++def test_a_dual_stack_network_keeps_both_definitions():
++    both = {"uid": "n", "name": "both", "type": "network", "subnet4": "10.1.0.0", "mask-length4": 16,
++            "subnet6": "2001:db8:1::", "mask-length6": 48}
++    r = res(both)
++    assert address_match_state(["n"], "10.1.2.3", r)[0] == "match"
++    assert address_match_state(["n"], "2001:db8:1::9", r)[0] == "match"
+diff --git a/tools/acceptance.py b/tools/acceptance.py
+index 0c9ea1d..49f57e0 100644
+--- a/tools/acceptance.py
++++ b/tools/acceptance.py
+@@ -268,6 +268,34 @@ async def run(package: str, out_path: str) -> int:
+                     objects[obj["uid"]] = obj
+         resolver = ObjectResolver(objects)
+ 
++        # v4.42: the same implied-rule context the UI path builds. A failed
++        # read is kept as a failed read - every case is then demoted, which is
++        # what the application would show a person.
++        from app.implied import build_context
++        try:
++            properties = await c.show_global_properties()
++        except Exception as exc:                                  # noqa: BLE001
++            properties = None
++            evidence["implied_rules_error"] = str(exc)
++        try:
++            devices = await c.show_gateways_and_servers()
++        except Exception:                                         # noqa: BLE001
++            devices = None
++        implied_ctx = build_context(properties, devices)
++        evidence["implied_rules"] = {
++            "properties_read": implied_ctx["properties_read"],
++            "gateways_read": implied_ctx["gateways_read"],
++            "enabled": implied_ctx["enabled"],
++            "positions": implied_ctx["positions"],
++            "unrecognised": implied_ctx["unrecognised"],
++            "device_addresses": len(implied_ctx["addresses"]),
++        }
++        rep.check("traffic", "Global Properties read for implied rules",
++                  True if implied_ctx["properties_read"] else None,
++                  f"{len(implied_ctx['enabled'])} implied rule(s) switched on"
++                  if implied_ctx["properties_read"] else
++                  "show-global-properties unavailable: no trace is reported as definite")
++
+         traffic_ev = []
+         if per_pkg is None and cases.get("packages"):
+             rep.check("traffic", f"no traffic cases defined for '{package}'", None,
+@@ -278,7 +306,8 @@ async def run(package: str, out_path: str) -> int:
+                     str(case.get("service", "443")), case.get("protocol", "tcp"), resolver)
+                 got = trace_access_tree(
+                     tree, case["src"], case["dst"],
+-                    case.get("protocol", "tcp"), query, selected_root=layer)
++                    case.get("protocol", "tcp"), query, selected_root=layer,
++                    implied=implied_ctx)
+             except Exception as exc:                              # noqa: BLE001
+                 rep.check("traffic", case["name"], False, f"error: {exc}")
+                 continue
+@@ -300,6 +329,7 @@ async def run(package: str, out_path: str) -> int:
+             traffic_ev.append({"case": case["name"], "action": action,
+                                "confidence": conf, "decided_by": decided,
+                                "path": path,
++                               "implied_rules": (got.get("implied_rules") or {}).get("state"),
+                                "reason": got.get("reason") or ""})
+             want = case.get("expect")
+             if not want:

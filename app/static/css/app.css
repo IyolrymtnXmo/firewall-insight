@@ -619,6 +619,13 @@ th{line-height:1.4}
   transform:translateY(10px) scale(.97);
   transition:transform var(--t-slow) var(--ease-out);
 }
+.busy-minimize-icon{
+  position:absolute;top:12px;right:12px;width:32px;height:32px;border-radius:8px;
+  background:transparent;color:var(--muted);border:none;font-size:24px;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:color var(--t) var(--ease),background var(--t) var(--ease);
+}
+.busy-minimize-icon:hover{background:rgba(255,255,255,0.06);color:var(--text)}
 #busyOverlay.on .busy-card{transform:translateY(0) scale(1)}
 .busy-title{font-weight:750;font-size:16px;margin:14px 0 4px}
 .busy-sub{color:var(--muted);font-size:13px;line-height:1.55}

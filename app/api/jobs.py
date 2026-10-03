@@ -18,8 +18,9 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from typing import Any
+import uuid
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Response, BackgroundTasks
 from pydantic import BaseModel
 
 from ..jobs import schedule as schedules
@@ -89,12 +90,14 @@ async def get_run_report(run_id: str, detail: str = Query("summary")):
 
 @router.post("/api/runs")
 async def start_run(
+    background_tasks: BackgroundTasks,
     package: str = Query(...),
     profile: str | None = Query(None),
     include_health: bool = Query(True),
     notify: bool = Query(False),
     rid: str | None = Query(None),
 ):
+    rid = rid or f"auto-{uuid.uuid4().hex}"
     """Run a review now and return it. Same work the schedule does.
 
     `notify` sends it to the alert destinations whose triggers it meets, as a
@@ -107,24 +110,30 @@ async def start_run(
             detail="A review is already running. Wait for it to finish - two at "
                    "once would read the same policy twice.")
 
-    async def run(c):
-        async with _running:
-            def on_step(i, total, label):
-                progress_set(rid, i, label, total)
+    async def background_run():
+        try:
+            async def run(c):
+                async with _running:
+                    def on_step(i, total, label):
+                        progress_set(rid, i, label, total)
 
-            result = await run_review(c, package, profile=profile,
-                                      include_health=include_health,
-                                      on_step=on_step)
-            result["triggered_by"] = {"kind": "manual"}
-            result["id"] = store.save_run(result)
-            if notify:
-                from ..jobs.alerts import dispatch
-                result["alerts"] = await dispatch(result)
-                store.save_run(result)
-            progress_done(rid, "Review complete")
-            return result
+                    result = await run_review(c, package, profile=profile,
+                                              include_health=include_health,
+                                              on_step=on_step)
+                    result["triggered_by"] = {"kind": "manual"}
+                    result["id"] = store.save_run(result)
+                    if notify:
+                        from ..jobs.alerts import dispatch
+                        result["alerts"] = await dispatch(result)
+                        store.save_run(result)
+                    progress_done(rid, "Review complete", result=result)
+            await use_client(run)
+        except Exception as e:
+            error_msg = getattr(e, "detail", str(e))
+            progress_done(rid, "Error running review", error=error_msg)
 
-    return await use_client(run)
+    background_tasks.add_task(background_run)
+    return {"background": True, "rid": rid, "message": "Manual review run started in background"}
 
 
 # ---- schedules -------------------------------------------------------------

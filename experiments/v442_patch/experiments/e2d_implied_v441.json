@@ -1,0 +1,48 @@
+{
+ "label": "v441",
+ "implied_gate": false,
+ "e2d": [
+  {
+   "implied_share": 0.1,
+   "flows": 12000,
+   "W": 5.108333333333333,
+   "A": 0.0,
+   "counts": {
+    "correct": 11387,
+    "wrong": 613
+   },
+   "detail": {
+    "wrong_action": 575,
+    "wrong_rule_same_action": 38
+   }
+  },
+  {
+   "implied_share": 0.2,
+   "flows": 12000,
+   "W": 11.575,
+   "A": 0.0,
+   "counts": {
+    "correct": 10611,
+    "wrong": 1389
+   },
+   "detail": {
+    "wrong_action": 1354,
+    "wrong_rule_same_action": 35
+   }
+  },
+  {
+   "implied_share": 0.3,
+   "flows": 12000,
+   "W": 17.075,
+   "A": 0.0,
+   "counts": {
+    "correct": 9951,
+    "wrong": 2049
+   },
+   "detail": {
+    "wrong_action": 2037,
+    "wrong_rule_same_action": 12
+   }
+  }
+ ]
+}

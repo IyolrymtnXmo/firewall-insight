@@ -69,6 +69,9 @@ class Fake:
         pass
 
 
+from conftest import settled  # noqa: E402
+
+
 def client(tmp_path, monkeypatch):
     R.cp = Fake()
     R.cache_clear()
@@ -91,7 +94,7 @@ def test_a_live_run_decides_the_analysis_backed_checks(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
     r = c.get("/api/compliance", params={"profile": "house-hygiene", "package": "External-FW"})
     assert r.status_code == 200, r.text
-    d = r.json()
+    d = settled(c, r)          # v4.42: a live run answers in the background
 
     # The telnet rule is real and provable, so it fails - by name.
     assert status_of(d, "HOUSE-NO-TELNET") == "fail"
@@ -108,12 +111,12 @@ def test_a_live_run_decides_the_analysis_backed_checks(tmp_path, monkeypatch):
 
 def test_the_same_profile_on_a_stored_snapshot_admits_what_it_cannot_decide(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
-    live = c.get("/api/compliance",
-                 params={"profile": "house-hygiene", "package": "External-FW"}).json()
+    live = settled(c, c.get("/api/compliance",
+                            params={"profile": "house-hygiene", "package": "External-FW"}))
     sid = live["evaluated"]["snapshot_id"]
 
-    d = c.get("/api/compliance",
-              params={"profile": "house-hygiene", "snapshot": sid}).json()
+    d = settled(c, c.get("/api/compliance",
+                         params={"profile": "house-hygiene", "snapshot": sid}))
     assert d["evaluated"] == {"kind": "snapshot", "id": sid}
     # Rule-level checks still decide.
     assert status_of(d, "HOUSE-NO-TELNET") == "fail"
@@ -126,8 +129,8 @@ def test_the_same_profile_on_a_stored_snapshot_admits_what_it_cannot_decide(tmp_
 
 def test_the_nist_profile_passes_where_the_policy_earns_it(tmp_path, monkeypatch):
     c = client(tmp_path, monkeypatch)
-    d = c.get("/api/compliance",
-              params={"profile": "nist-800-41-baseline", "package": "External-FW"}).json()
+    d = settled(c, c.get("/api/compliance",
+                         params={"profile": "nist-800-41-baseline", "package": "External-FW"}))
     assert status_of(d, "NIST-DENY-DEFAULT-ANY-PERMIT") == "pass"
     assert status_of(d, "NIST-DENY-DEFAULT-CLEANUP") == "pass"
     assert status_of(d, "NIST-REVIEWABLE-RULES") == "pass"

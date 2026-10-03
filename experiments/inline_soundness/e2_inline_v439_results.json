@@ -1,0 +1,47 @@
+{
+ "0.1": {
+  "policies": 30,
+  "opaque_frac": 0.1,
+  "flows": 12000,
+  "counts": {
+   "wrong": 648,
+   "correct": 8201,
+   "abstain": 3151
+  },
+  "wrong_kinds": {
+   "No final matching rule|exact|gt=rule": 540,
+   "Drop|exact|gt=implicit": 48,
+   "Drop|exact|gt=rule": 60
+  }
+ },
+ "0.2": {
+  "policies": 30,
+  "opaque_frac": 0.2,
+  "flows": 12000,
+  "counts": {
+   "correct": 4423,
+   "abstain": 6780,
+   "wrong": 797
+  },
+  "wrong_kinds": {
+   "No final matching rule|exact|gt=rule": 681,
+   "Drop|exact|gt=rule": 74,
+   "Drop|exact|gt=implicit": 42
+  }
+ },
+ "0.3": {
+  "policies": 30,
+  "opaque_frac": 0.3,
+  "flows": 12000,
+  "counts": {
+   "abstain": 8258,
+   "correct": 2739,
+   "wrong": 1003
+  },
+  "wrong_kinds": {
+   "No final matching rule|exact|gt=rule": 832,
+   "Drop|exact|gt=implicit": 54,
+   "Drop|exact|gt=rule": 117
+  }
+ }
+}

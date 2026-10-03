@@ -74,12 +74,12 @@ class TestTheReadChipTracksActualReads:
         Setting it in three handlers meant every reader added later started out
         silently not counting.
         """
-        body = APPJS.split("async function api(u)", 1)[1].split("\n}", 1)[0]
+        body = APPJS.split("async function api(u", 1)[1].split("\n}", 1)[0]
         assert "lastReadLabel" in body, "api() does not record the read"
 
     def test_a_failed_read_is_not_recorded_as_a_read(self):
         """The stamp sits after the not-ok throw, so a 502 does not count."""
-        body = APPJS.split("async function api(u)", 1)[1].split("\n}", 1)[0]
+        body = APPJS.split("async function api(u", 1)[1].split("\n}", 1)[0]
         assert body.index("if(!r.ok)") < body.index("lastReadLabel"), (
             "a failed request would stamp the chip")
 

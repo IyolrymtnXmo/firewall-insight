@@ -58,6 +58,10 @@ class _Fake:
     async def show_nat_rulebase(self, package):
         return {"package": package, "rulebase": [], "objects-dictionary": [], "total": 0}
 
+    async def show_global_properties(self):
+        # v4.42: read for implied rules. None switched on in this fixture.
+        return {"firewall": {}}
+
     async def show_gateways_and_servers(self):
         if self.gateways_fail:
             from app.checkpoint import CheckPointAPIError
@@ -71,16 +75,21 @@ class _Fake:
 def _trace(fake):
     R.cp = fake
     R.cache_clear()
-    return TestClient(M.app).get("/api/traffic-path", params={
+    client = TestClient(M.app)
+    r = client.get("/api/traffic-path", params={
         "layer": "Network", "src": "192.168.10.50", "dst": "192.168.20.100",
         "protocol": "tcp", "service": "3389", "package": "External-FW",
     })
+    # v4.42: the route answers in the background; read the finished trace.
+    from conftest import settled
+    r.settled = settled(client, r)
+    return r
 
 
 def test_the_route_joins_the_trace_to_the_map():
     r = _trace(_Fake())
     assert r.status_code == 200, r.text
-    d = r.json()
+    d = r.settled
     assert d["access"]["matched"] is True
     mp = d["map_path"]
     assert mp is not None
@@ -98,7 +107,7 @@ def test_a_failing_gateway_call_costs_the_overlay_and_nothing_else():
     fake.gateways_fail = True
     r = _trace(fake)
     assert r.status_code == 200, r.text
-    d = r.json()
+    d = r.settled
     assert d["access"]["matched"] is True          # the answer survives
     assert d["access"]["winner"]["action"] == "Accept"
     assert d["map_path"] is None

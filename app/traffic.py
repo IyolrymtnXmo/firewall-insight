@@ -9,6 +9,8 @@ from .matching import (  # noqa: F401  (re-exported: importers use app.traffic)
     vpn_match_state,
 )
 from .resolver import ObjectResolver
+from .envelope import SCOPE_NOTES, envelope_state
+from . import implied as implied_rules
 
 
 def _rules(items):
@@ -100,7 +102,11 @@ def trace_layer_candidates(
         # make a provable miss uncertain.
         ns,no=vpn_match_state(r.get("vpn"),res)
 
-        states=(ss,ds,vs,ns)
+        # v4.41: Time / Content / Install On narrow a rule in ways this
+        # simulator does not model. They can only cap the state at unknown.
+        es,eo=envelope_state(r,res)
+
+        states=(ss,ds,vs,ns,es)
         overall="match" if all(x=="match" for x in states) else "unknown"
         candidates.append({
             "rule":rn,
@@ -116,6 +122,8 @@ def trace_layer_candidates(
             "destination_match":do,
             "service_match":vo,
             "vpn_match":no,
+            "envelope_state":es,
+            "envelope_match":eo,
             "track":res.name(_uid(r.get("track"))),
             "comments":r.get("comments","") or "",
         })
@@ -190,9 +198,16 @@ def trace_access_tree(
     proto: str,
     service: Any,
     selected_root: str | None = None,
+    implied: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Inline-aware Access trace with tri-state rule evaluation.
+
+    v4.42: `implied` is the context built by app.implied.build_context().
+    With it, a connection an implied rule could decide is never reported as
+    definite. Without it (None) the function answers for the explicit
+    rulebase only and says so in `implied_rules`; callers that report to a
+    person must pass a context - tests/test_v442_implied.py checks they do.
 
     Unknown parent conditions (for example Security Zone / dynamic-style
     objects) are not treated as No-Match. If their Inline Layer contains an
@@ -262,9 +277,30 @@ def trace_access_tree(
                 step["transition"]="inline-layer"
                 step["inline_layer"]=child.get("name")
                 child_result=recurse(child,path+[step],depth+1)
+                parent_unknown = cand.get("state")=="unknown"
+                blocked = first_uncertain_terminal is not None
+
+                # v4.40: an Inline Layer obeys the same rule as a terminal
+                # rule. An earlier uncertain rule may decide the connection
+                # at the gateway, so nothing reached after it - including a
+                # whole Inline Layer - can be declared final.
+                if blocked:
+                    return {
+                        "matched":False,
+                        "winner":None,
+                        "possible_winner":first_uncertain_terminal,
+                        "later_exact_rule":step,
+                        "path":path+[first_uncertain_terminal],
+                        "result":"UNVERIFIED",
+                        "confidence":"unknown",
+                        "reason":(
+                            f"Earlier Rule {first_uncertain_terminal.get('display_rule')} "
+                            "contains condition(s) this static simulator cannot evaluate, "
+                            f"so the path through Inline Layer {child.get('name')} cannot be declared final."
+                        )
+                    }
 
                 if child_result.get("matched"):
-                    parent_unknown = cand.get("state")=="unknown"
                     child_unknown = child_result.get("confidence")!="exact"
                     child_result["confidence"]="inferred" if (parent_unknown or child_unknown) else "exact"
                     if parent_unknown:
@@ -275,12 +311,27 @@ def trace_access_tree(
                         )
                     return child_result
 
-                # If an uncertain parent does not yield a child match, continue
-                # to later rules rather than declaring it a match.
-                if cand.get("state")=="unknown":
+                child_settled = child_result.get("confidence") in ("none","exact")
+                if parent_unknown or not child_settled:
+                    # v4.40: an uncertain parent may still match at the gateway,
+                    # and then its Inline Layer (or that layer's implicit
+                    # cleanup) decides - the connection never comes back to
+                    # this layer. Likewise an exact parent whose child layer
+                    # could not be settled. Either way this rule blocks every
+                    # later rule from being declared final.
+                    if not parent_unknown:
+                        child_result["path"]=child_result.get("path") or path+[step]
+                        return child_result
+                    if first_uncertain_terminal is None:
+                        first_uncertain_terminal=step
                     continue
 
-                # Exact parent matched an inline layer but child did not.
+                # A nested layer already named the layer whose cleanup decides.
+                if child_result.get("result")=="No final matching rule":
+                    return child_result
+
+                # Exact parent matched an inline layer and provably no child
+                # rule matched: the child layer's implicit cleanup decides.
                 # Policy path stops here; a later top-level rule is not evaluated.
                 return {
                     "matched":False,
@@ -290,7 +341,8 @@ def trace_access_tree(
                     "confidence":"exact",
                     "reason":(
                         f"Parent Rule {display_rule} matched exactly and entered "
-                        f"Inline Layer {child.get('name')}, but no child rule matched."
+                        f"Inline Layer {child.get('name')}, but no child rule matched; "
+                        "that layer's implicit cleanup action decides."
                     )
                 }
 
@@ -350,7 +402,33 @@ def trace_access_tree(
             "reason":f"No matching rule in layer {current.get('name')}."
         }
 
-    return recurse(root,[],0)
+    out=recurse(root,[],0)
+
+    # v4.41: with several Ordered Layers, an Accept only hands the connection
+    # to the next layer, and a layer's implicit cleanup may be Accept. The
+    # decision of one layer is therefore never reported as the gateway's.
+    ordered={str(n) for n in (tree.get("root_layers") or []) if n}
+    if len(ordered)>1:
+        note=(f"The package has {len(ordered)} Ordered Layers; this is the decision of "
+              f"layer {root.get('name')} only, not the gateway's final decision.")
+        if out.get("matched") and out.get("confidence")=="exact":
+            out["confidence"]="inferred"
+        elif not out.get("matched") and out.get("confidence") in ("exact","none"):
+            out["result"]="UNVERIFIED"; out["confidence"]="unknown"
+        out["reason"]=((out.get("reason") or "")+" "+note).strip()
+        out["gateway_final"]=False
+    else:
+        out["gateway_final"]=out.get("confidence") in ("exact","none")
+    # v4.42: implied rules are enforced outside the rulebase the API returns.
+    if implied is None:
+        out["implied_rules"]={"state":"not-assessed","rules":[],
+            "reasons":["Explicit rulebase only: implied rules were not assessed."]}
+        out["gateway_final"]=False
+        out["scope_notes"]=list(SCOPE_NOTES)
+    else:
+        implied_rules.apply(out,implied_rules.assess(implied,src,dst,service_query))
+        out["scope_notes"]=[]
+    return out
 
 
 

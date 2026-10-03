@@ -55,6 +55,7 @@
   <button id="navToggle" onclick="toggleNav()" aria-label="Toggle navigation">&#9776; Menu</button>
   <div id="busyOverlay" role="dialog" aria-modal="true" aria-live="assertive">
     <div class="busy-card">
+      <button class="busy-minimize-icon" onclick="minimizeBusy()" aria-label="Minimize" title="Minimize to background">&#8722;</button>
       <div class="spinner"></div>
       <div class="busy-title" id="busyTitle">Working…</div>
       <div class="busy-sub" id="busySub"></div>
@@ -316,7 +317,7 @@
         <div class="badge"><span id="verBadge">Read-only analysis workspace</span></div>
       </div>
 
-      <div class="statusbar" id="statusBar"><span class="status-icon" id="statusIcon">•</span>
+      <div class="statusbar" id="statusBar" onclick="restoreBusy()" style="cursor:pointer;" title="Click to view running background task"><span class="status-icon" id="statusIcon">•</span>
         <div id="status" class="status">Ready. No API calls are made automatically.</div><span class="status-time"
           id="statusTime"></span>
       </div>

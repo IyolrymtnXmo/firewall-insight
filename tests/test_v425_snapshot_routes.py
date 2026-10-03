@@ -61,6 +61,9 @@ class Fake:
         pass
 
 
+from conftest import settled  # noqa: E402
+
+
 def client(tmp_path, monkeypatch, fake=None):
     R.cp = fake or Fake()
     R.cache_clear()
@@ -76,7 +79,7 @@ def test_capture_list_and_compare(tmp_path, monkeypatch):
 
     first = c.get("/api/snapshot", params={"package": "External-FW"})
     assert first.status_code == 200, first.text
-    a = first.json()
+    a = settled(c, first)      # v4.42: the capture runs in the background
     assert a["summary"]["access_rules"] == 1
     assert a["saved_to"].endswith(".json")
     assert str(tmp_path) in a["saved_to"], "the only write in the app must say where"
@@ -84,7 +87,7 @@ def test_capture_list_and_compare(tmp_path, monkeypatch):
     # The group grows. The rule itself is not touched at all.
     fake.members = ["n10", "n20"]
     R.cache_clear()
-    b = c.get("/api/snapshot", params={"package": "External-FW"}).json()
+    b = settled(c, c.get("/api/snapshot", params={"package": "External-FW"}))
     assert b["id"] != a["id"]
 
     listed = c.get("/api/snapshots").json()

@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     checkpoint_min_request_interval: float = 0.55
     checkpoint_rate_limit_retries: int = 4
     checkpoint_rate_limit_base_delay: float = 2.0
-    checkpoint_cache_ttl: int = 300
+    checkpoint_cache_ttl: int = 28800
 
     # Gaia API (routing, interfaces, cluster state). Off unless configured:
     # the application must keep working exactly as before for anyone who never
