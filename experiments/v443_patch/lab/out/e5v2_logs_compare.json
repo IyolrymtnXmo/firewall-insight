@@ -1,0 +1,74 @@
+[
+ {
+  "src": "172.23.31.176",
+  "dst": "172.23.31.179",
+  "proto": "icmp",
+  "port": "8",
+  "gateway_action": "Accept",
+  "gateway_rule": "3",
+  "gateway_rule_name": null,
+  "gateway_layer": "External-FW Network",
+  "gateway_parent_rule": null,
+  "tool_result": "Accept",
+  "tool_confidence": "inferred",
+  "tool_rule": "3",
+  "tool_rule_name": "",
+  "tool_path": [
+   "3 ()"
+  ]
+ },
+ {
+  "src": "172.23.0.2",
+  "dst": "172.23.31.179",
+  "proto": "icmp",
+  "port": "8",
+  "gateway_action": "Accept",
+  "gateway_rule": "5",
+  "gateway_rule_name": "Admin-Access",
+  "gateway_layer": "External-FW Network",
+  "gateway_parent_rule": null,
+  "tool_result": "Accept",
+  "tool_confidence": "inferred",
+  "tool_rule": "5",
+  "tool_rule_name": "Admin-Access",
+  "tool_path": [
+   "5 (Admin-Access)"
+  ]
+ },
+ {
+  "src": "172.23.0.2",
+  "dst": "172.23.31.179",
+  "proto": "udp",
+  "port": "137",
+  "gateway_action": "Drop",
+  "gateway_rule": "16",
+  "gateway_rule_name": "Cleanup rule",
+  "gateway_layer": "External-FW Network",
+  "gateway_parent_rule": null,
+  "tool_result": "Drop",
+  "tool_confidence": "inferred",
+  "tool_rule": "16",
+  "tool_rule_name": "Cleanup rule",
+  "tool_path": [
+   "16 (Cleanup rule)"
+  ]
+ },
+ {
+  "src": "172.23.0.2",
+  "dst": "172.23.31.179",
+  "proto": "tcp",
+  "port": "443",
+  "gateway_action": "Accept",
+  "gateway_rule": "5",
+  "gateway_rule_name": "Admin-Access",
+  "gateway_layer": "External-FW Network",
+  "gateway_parent_rule": null,
+  "tool_result": "Accept",
+  "tool_confidence": "inferred",
+  "tool_rule": "5",
+  "tool_rule_name": "Admin-Access",
+  "tool_path": [
+   "5 (Admin-Access)"
+  ]
+ }
+]

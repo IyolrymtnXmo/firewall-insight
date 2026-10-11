@@ -31,16 +31,10 @@ echo "===== O9 VLAN20 to AD on a high port (DCE-RPC rule)"
 fw up_execute mode=access in_ifn=eth1 ipp=6 src=192.168.20.50 dst=192.168.10.10 dport=9999
 
 echo "===== N1 ICMP echo to VLAN31 infrastructure (explicit ICMP rule)"
-fw up_execute mode=access in_ifn=eth1 ipp=1 src=192.168.10.50 dst=172.23.31.254 icmp_type=8 icmp_code=0
+fw up_execute mode=access in_ifn=eth1 ipp=1 src=192.168.10.50 dst=172.23.31.254 type=8 code=0
 
-echo "===== N2 ICMP echo to the internet (no explicit rule; implied ICMP rule?)"
-fw up_execute mode=access in_ifn=eth1 ipp=1 src=192.168.10.50 dst=8.8.8.8 icmp_type=8 icmp_code=0
-
-echo "===== N3 ICMP port-unreachable, code-specific service rule"
-fw up_execute mode=access in_ifn=eth1 ipp=1 src=192.168.10.50 dst=1.1.1.1 icmp_type=3 icmp_code=3
-
-echo "===== N4 ICMP host-unreachable, same rule's other code"
-fw up_execute mode=access in_ifn=eth1 ipp=1 src=192.168.10.50 dst=1.1.1.1 icmp_type=3 icmp_code=1
+echo "===== N2 ICMP echo to the internet: no explicit rule, implied 'Accept ICMP requests' (Before Last)"
+fw up_execute mode=access in_ifn=eth1 ipp=1 src=192.168.10.50 dst=8.8.8.8 type=8 code=0
 
 echo "===== N5 HTTPS to the internet through the Inline Layer"
 fw up_execute mode=access in_ifn=eth1 ipp=6 src=192.168.10.50 dst=1.1.1.1 dport=443
@@ -67,13 +61,16 @@ echo "===== N12 Rule with Install On = External-Cluster"
 fw up_execute mode=access in_ifn=eth1 ipp=6 src=192.168.10.50 dst=1.1.1.1 dport=8083
 
 echo "===== N13 IPv6 source on a dual-stack host object"
-fw up_execute mode=access in_ifn=eth1 ipp=6 src=2001:db8:10::51 dst=2001:db8:20::100 dport=22
+fw6 up_execute in_ifn=eth1 ipp=6 src=2001:db8:10::51 dst=2001:db8:20::100 dport=22
 
 echo "===== N14 IPv6 source outside the rule"
-fw up_execute mode=access in_ifn=eth1 ipp=6 src=2001:db8:10::52 dst=2001:db8:20::100 dport=22
+fw6 up_execute in_ifn=eth1 ipp=6 src=2001:db8:10::52 dst=2001:db8:20::100 dport=22
 
 echo "===== N15 HTTPS to the cluster address (gateway endpoint)"
 fw up_execute mode=access in_ifn=eth1 ipp=6 src=192.168.10.50 dst=172.23.31.179 dport=443
 
 echo "===== N16 ICMP echo to the cluster address (gateway endpoint)"
-fw up_execute mode=access in_ifn=eth1 ipp=1 src=192.168.10.50 dst=172.23.31.179 icmp_type=8 icmp_code=0
+fw up_execute mode=access in_ifn=eth1 ipp=1 src=192.168.10.50 dst=172.23.31.179 type=8 code=0
+
+echo "===== N17 ICMP echo from outside to a lab address: only the cleanup rule and the implied ICMP rule (Before Last) match"
+fw up_execute mode=access in_ifn=eth2 ipp=1 src=8.8.8.8 dst=192.168.10.50 type=8 code=0

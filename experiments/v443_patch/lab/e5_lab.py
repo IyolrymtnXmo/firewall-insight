@@ -58,7 +58,6 @@ OBJECTS = [
     ("add-service-tcp", {"name": "E5-tcp8081-sport", "port": "8081", "source-port": "40000-40100"}),
     ("add-service-tcp", {"name": "E5-tcp8082", "port": "8082"}),
     ("add-service-tcp", {"name": "E5-tcp8083", "port": "8083"}),
-    ("add-service-icmp", {"name": "E5-icmp-port-unreach", "icmp-type": 3, "icmp-code": 3}),
     ("add-time", {"name": "E5-Expired", "start-now": False,
                   "start": {"date": "01-Jan-2025", "time": "00:00"},
                   "end-never": False, "end": {"date": "01-Jan-2026", "time": "00:00"}}),
@@ -70,7 +69,6 @@ RULES = [   # each inserted directly above the cleanup rule, so they keep this o
     {"name": "E5-InstallOn", "source": ["E5-N-VLAN10"], "destination": ["Any"], "service": ["E5-tcp8083"],
      "install-on": [CLUSTER]},
     {"name": "E5-IPv6", "source": ["E5-H-Dual"], "destination": ["E5-H6-Srv"], "service": ["ssh"]},
-    {"name": "E5-ICMP-Code", "source": ["E5-N-VLAN10"], "destination": ["Any"], "service": ["E5-icmp-port-unreach"]},
 ]
 
 
@@ -88,7 +86,10 @@ class Mgmt:
         headers = {"Content-Type": "application/json"}
         if self.sid:
             headers["X-chkp-sid"] = self.sid
-        r = self.http.post(f"{self.base}/web_api/{cmd}", json=body or {}, headers=headers)
+        body = dict(body or {})
+        if cmd.startswith(("add-", "set-")) and cmd != "set-global-properties":
+            body.setdefault("ignore-warnings", True)
+        r = self.http.post(f"{self.base}/web_api/{cmd}", json=body, headers=headers)
         try:
             data = r.json()
         except Exception:
@@ -204,23 +205,32 @@ def step_setup(admin: str) -> None:
             m.post("add-access-rule", body)
             log_change({"op": "add-access-rule", "name": rule["name"]})
             print(f"  rule {rule['name']}: created")
-        # B4: a dedicated read-only administrator
-        pw = "Fi!" + "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(17))
-        r = m.post("add-administrator", {"name": RO_NAME, "password": pw, "must-change-password": False,
-                                         "authentication-method": "check point password",
-                                         "permissions-profile": "Read Only All"},
-                   ok_errors=("already exists",))
-        if "_skipped" not in r:
-            RO_SECRET.write_text(pw)
-            log_change({"op": "add-administrator", "name": RO_NAME})
-            print(f"  administrator {RO_NAME} (Read Only All): created, password in {RO_SECRET.name}")
+        # B4: a dedicated read-only administrator. On this Security Management
+        # Server the API refuses add-administrator ("only on domains of type
+        # MDS"), so it is created in SmartConsole instead - see the message below.
+        try:
+            pw = "Fi!" + "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(17))
+            r = m.post("add-administrator", {"name": RO_NAME, "password": pw, "must-change-password": False,
+                                             "authentication-method": "check point password",
+                                             "permissions-profile": "Read Only All"},
+                       ok_errors=("already exists",))
+            if "_skipped" not in r:
+                RO_SECRET.write_text(pw)
+                log_change({"op": "add-administrator", "name": RO_NAME})
+                print(f"  administrator {RO_NAME} (Read Only All): created, password in {RO_SECRET.name}")
+        except RuntimeError as e:
+            print(f"  administrator {RO_NAME}: NOT created by API ({str(e)[:90]}...)")
+            print("    -> create it in SmartConsole: Manage & Settings > Permissions & Administrators > New,")
+            print(f"       name {RO_NAME}, Check Point Password, Permission Profile 'Read Only All', publish.")
         # log implied rules so a real connection an implied rule accepts leaves a record
-        gp = m.post("show-global-properties")
-        old = ((gp.get("firewall") or {}).get("log-implied-rules"))
-        if old is not True:
-            m.post("set-global-properties", {"firewall": {"log-implied-rules": True}})
-            log_change({"op": "set-global-properties", "key": "log-implied-rules", "old": old})
-            print("  Global Properties: log-implied-rules -> true")
+        gp = (m.post("show-global-properties").get("firewall") or {})
+        want = {"log-implied-rules": True, "accept-icmp-requests": True,
+                "accept-icmp-requests-position": "before last"}
+        changed = {k: v for k, v in want.items() if gp.get(k) != v}
+        if changed:
+            m.post("set-global-properties", {"firewall": changed})
+            log_change({"op": "set-global-properties", "old": {k: gp.get(k) for k in changed}})
+            print(f"  Global Properties: {changed}")
         m.publish_and_install()
         print("\nOK. Next: tool, then commands, then run the commands on the gateway and the client.")
     except Exception:
@@ -245,10 +255,15 @@ def step_teardown(admin: str) -> None:
         r = m.post("delete-administrator", {"name": RO_NAME}, ok_errors=("not found",))
         print(f"  administrator {RO_NAME}: {'absent' if '_skipped' in r else 'deleted'}")
         changes = json.loads(CHANGES.read_text()) if CHANGES.exists() else []
-        old = next((c.get("old") for c in changes if c.get("key") == "log-implied-rules"), True)
-        if old is not True:
-            m.post("set-global-properties", {"firewall": {"log-implied-rules": bool(old)}})
-            print(f"  Global Properties: log-implied-rules -> {bool(old)}")
+        restore = {}
+        for ch in changes:
+            if ch.get("op") == "set-global-properties":
+                for k, v in (ch.get("old") or {}).items():
+                    restore.setdefault(k, v)
+        restore = {k: v for k, v in restore.items() if v is not None}
+        if restore:
+            m.post("set-global-properties", {"firewall": restore})
+            print(f"  Global Properties restored: {restore}")
         m.publish_and_install()
         log_change({"op": "teardown"})
         RO_SECRET.unlink(missing_ok=True)
@@ -274,7 +289,10 @@ async def step_tool() -> None:
         objects = {o["uid"]: o for n in tree.get("layers", []) for o in n.get("payload", {}).get("objects-dictionary", []) or []
                    if isinstance(o, dict) and o.get("uid")}
         res = ObjectResolver(objects)
-        ctx = build_context(await c.show_global_properties(), await c.show_gateways_and_servers())
+        gws = await c.show_gateways_and_servers()
+        ctx = build_context(await c.show_global_properties(), gws)
+        from app.resolver import enrich_tree
+        enrich_tree(tree, gws)
         pk = await c.show_package(PKG)
         tg = pk.get("installation-targets")
         target = make_target(tg[0].get("uid", ""), tg[0].get("name", "")) if isinstance(tg, list) and len(tg) == 1 else None
@@ -308,15 +326,24 @@ def step_commands() -> None:
           "#   bash e5v2_gateway.sh 2>&1 | tee /var/log/e5v2_upexec.txt", ""]
     for c in CASES["cases"]:
         ipp = {"tcp": 6, "udp": 17, "icmp": 1}[c["proto"]]
-        args = f"mode=access in_ifn={c['in_ifn']} ipp={ipp} src={c['src']} dst={c['dst']}"
+        v6 = ":" in c["src"]
+        args = ("" if v6 else "mode=access ") + f"in_ifn={c['in_ifn']} ipp={ipp} src={c['src']} dst={c['dst']}"
         if c["proto"] == "icmp":
-            args += f" icmp_type={c['icmp_type']} icmp_code={c['icmp_code']}"
+            args += f" type={c['icmp_type']} code={c['icmp_code']}"
         else:
             args += f" dport={c['dport']}"
             if c.get("sport"):
                 args += f" sport={c['sport']}"
-        gw += [f'echo "===== {c["id"]} {c["name"]}"', f"fw up_execute {args}", ""]
+        tool = "fw6 up_execute" if v6 else "fw up_execute"
+        gw += [f'echo "===== {c["id"]} {c["name"]}"', f"{tool} {args}", ""]
     (OUT / "e5v2_gateway.sh").write_text("\n".join(gw), newline="\n")
+    extra = [ln for i, ln in enumerate(gw) if "N17" in ln or (i and "N17" in gw[i - 1])]
+    (OUT / "e5v2_gateway_extra.sh").write_text("\n".join(extra) + "\n", newline="\n")
+    lp = ["# Run on YOUR LAPTOP (VPN to the lab) in PowerShell. Then run:  python experiments/v443_patch/lab/e5_lab.py logs --minutes 20",
+          '"laptop addresses: $((Get-NetIPAddress -AddressFamily IPv4 | ? { $_.IPAddress -notlike \'127.*\' }).IPAddress -join \', \')"', ""]
+    for c in CASES.get("laptop_cases", []):
+        lp += [f'"===== {c["id"]} {c["name"]}  $(Get-Date -Format o)"', c["cmd"], ""]
+    (OUT / "e5v2_laptop.ps1").write_text("\n".join(lp), encoding="utf-8")
     ps = ["# Run on Client-01 (192.168.10.50) in PowerShell. Paste the whole output back.",
           "function SPORT($p, $ip, $port) {",
           "  $c = New-Object System.Net.Sockets.TcpClient([System.Net.IPEndPoint]::new([ipaddress]::Any, [int]$p))",
@@ -331,33 +358,79 @@ def step_commands() -> None:
             cmd = f"SPORT {p} {ip} {port}"
         ps += [f'"===== {c["id"]} {c["name"]}  $(Get-Date -Format o)"', cmd, ""]
     (OUT / "e5v2_client.ps1").write_text("\n".join(ps), encoding="utf-8")
-    print(f"written {OUT / 'e5v2_gateway.sh'} and {OUT / 'e5v2_client.ps1'}")
+    print(f"written {OUT / 'e5v2_gateway.sh'} and {OUT / 'e5v2_laptop.ps1'}")
 
 
 async def step_logs(minutes: int) -> None:
+    """Read the gateway's own log records for the laptop flows, then trace each
+    distinct connection with Firewall Insight and compare the deciding rule."""
+    from app.policy import package_access_tree
+    from app.resolver import ObjectResolver
+    from app.traffic import resolve_service_query, trace_access_tree
+    from app.implied import build_context
+    from app.envelope import make_target
+    want_dst = {c["dst"] for c in CASES.get("laptop_cases", [])}
     c = await _read_client()
-    keep_out = {"__nested_type__"}
     try:
         recs = []
-        for flt in ('src:"192.168.10.50"', 'dst:"192.168.10.50"'):
+        start = datetime.fromtimestamp(time.time() - minutes * 60).astimezone().isoformat(timespec="seconds")
+        endt = datetime.now().astimezone().isoformat(timespec="seconds")
+        for dst in sorted(want_dst):
             page = await c.call("show-logs", {"new-query": {
-                "time-frame": "custom",
-                "custom-start": datetime.fromtimestamp(time.time() - minutes * 60).astimezone().isoformat(timespec="seconds"),
-                "custom-end": datetime.now().astimezone().isoformat(timespec="seconds"),
-                "max-logs-per-request": 100, "filter": flt}})
+                "time-frame": "custom", "custom-start": start, "custom-end": endt,
+                "max-logs-per-request": 100, "filter": f'dst:"{dst}"'}})
             while True:
                 batch = page.get("logs") or []
-                for r in batch:
-                    recs.append({k: v for k, v in r.items() if k not in keep_out})
+                recs.extend(batch)
                 qid = page.get("query-id")
-                if not batch or not qid or len(batch) < 100:
+                if not batch or not qid or len(batch) < 100 or len(recs) > 3000:
                     break
                 page = await c.call("show-logs", {"query-id": qid})
         (OUT / "e5v2_logs.json").write_text(json.dumps(recs, indent=1, default=str))
+        print(f"{len(recs)} log record(s) -> {OUT / 'e5v2_logs.json'}")
+        # distinct connections seen by the gateway
+        tree = await package_access_tree(c, PKG, hydrate=True)
+        objects = {o["uid"]: o for n in tree.get("layers", []) for o in n.get("payload", {}).get("objects-dictionary", []) or []
+                   if isinstance(o, dict) and o.get("uid")}
+        res = ObjectResolver(objects)
+        gws = await c.show_gateways_and_servers()
+        ctx = build_context(await c.show_global_properties(), gws)
+        from app.resolver import enrich_tree
+        enrich_tree(tree, gws)
+        pk = await c.show_package(PKG)
+        tg = pk.get("installation-targets")
+        target = make_target(tg[0].get("uid", ""), tg[0].get("name", "")) if isinstance(tg, list) and len(tg) == 1 else None
+        seen, rows = set(), []
         for r in recs:
-            print(r.get("time"), r.get("src"), r.get("dst"), r.get("service"), r.get("s_port"),
-                  r.get("action"), "| rule", r.get("rule"), r.get("rule_name"), "| layer", r.get("layer_name"))
-        print(f"\n{len(recs)} record(s) written to {OUT / 'e5v2_logs.json'}")
+            proto = str(r.get("proto") or r.get("protocol") or "").lower()
+            proto = {"6": "tcp", "17": "udp", "1": "icmp"}.get(proto, proto)
+            port = r.get("service") if proto in ("tcp", "udp") else (r.get("icmp_type") or 8)
+            key = (r.get("src"), r.get("dst"), proto, str(port))
+            if r.get("policy_name") not in (None, PKG):
+                continue          # the same packet is also logged by the inner gateway's policy
+            if key in seen or proto not in ("tcp", "udp", "icmp") or r.get("dst") not in want_dst:
+                continue
+            mt = [m for m in (r.get("match_table") or []) if isinstance(m, dict)]
+            gw_rule = ".".join(str(m.get("rule")) for m in mt) if mt else (r.get("rule") or r.get("match_id"))
+            seen.add(key)
+            try:
+                q = resolve_service_query(str(port), proto, res)
+                o = trace_access_tree(tree, r.get("src"), r.get("dst"), proto, q, LAYER, implied=ctx, target=target)
+            except Exception as exc:                          # noqa: BLE001
+                o = {"result": f"error: {exc}"}
+            w = o.get("winner") or {}
+            rows.append({"src": key[0], "dst": key[1], "proto": proto, "port": key[3],
+                         "gateway_action": r.get("action"), "gateway_rule": gw_rule,
+                         "gateway_rule_name": r.get("rule_name"), "gateway_layer": r.get("layer_name"),
+                         "gateway_parent_rule": r.get("parent_rule"),
+                         "tool_result": o.get("result"), "tool_confidence": o.get("confidence"),
+                         "tool_rule": w.get("display_rule") or w.get("rule"), "tool_rule_name": w.get("name"),
+                         "tool_path": [f"{s.get('display_rule') or s.get('rule')} ({s.get('name') or ''})" for s in o.get("path") or []]})
+        (OUT / "e5v2_logs_compare.json").write_text(json.dumps(rows, indent=1, default=str))
+        for x in rows:
+            print(f"{x['src']:>15} -> {x['dst']:<15} {x['proto']}/{x['port']:<6} GW: {x['gateway_action']} rule {x['gateway_rule']} "
+                  f"({x['gateway_rule_name']}) | TOOL: {x['tool_result']} {x['tool_confidence']} {x['tool_path']}")
+        print(f"written {OUT / 'e5v2_logs_compare.json'}")
     finally:
         await c.close()
 
@@ -367,7 +440,7 @@ async def step_probe_ro() -> None:
     from app.config import settings
     from app.api.credentials import load_credentials_on_startup
     load_credentials_on_startup()
-    pw = RO_SECRET.read_text().strip()
+    pw = RO_SECRET.read_text().strip() if RO_SECRET.exists() else getpass.getpass(f"Password of {RO_NAME}: ")
     result = {"account": RO_NAME, "profile": "Read Only All", "read": {}, "write": []}
     # 1. the application's read path, under the read-only account
     settings.checkpoint_user, settings.checkpoint_password = RO_NAME, pw
@@ -386,7 +459,7 @@ async def step_probe_ro() -> None:
         await c.close()
     # 2. write attempts - each must be refused by the server
     m = Mgmt(settings.checkpoint_mgmt)
-    m.login(RO_NAME, pw)
+    m_login = m.login(RO_NAME, pw)
     attempts = [
         ("add-host", {"name": "E5-RO-PROBE", "ip-address": "192.0.2.1"}),
         ("set-access-rule", {"layer": LAYER, "name": CLEANUP, "comments": "read-only probe"}),
@@ -412,7 +485,11 @@ async def step_probe_ro() -> None:
                 result["write"].append({"command": cmd, "refused": False, "task": r.get("task-id")})
             except RuntimeError as e:
                 result["write"].append({"command": cmd, "refused": True, "server": str(e)[:300]})
-        m.post("discard")
+        try:
+            m.post("discard")
+        except RuntimeError as e:   # a read-only login has no work session to discard
+            result["discard"] = str(e)[:300]
+    result["login"] = {k: m_login.get(k) for k in ("read-only", "session-type", "api-server-version") if k in m_login}
     m.logout()
     result["all_writes_refused"] = all(w["refused"] for w in result["write"])
     result["run_at"] = datetime.now().isoformat(timespec="seconds")

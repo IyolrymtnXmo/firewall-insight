@@ -1,40 +1,380 @@
 {
-  "_comment": [
-    "E5v2 - cases compared three ways: Firewall Insight 4.43 (static, read-only),",
-    "fw up_execute on the active External cluster member (policy execution, no packet),",
-    "and - where 'real' is set - a real connection from a lab client, judged from the",
-    "gateway's own log record (show-logs) and the client's observation.",
-    "O* = the 9 cases of E5 (4 Oct). N* = added for the reviewers (11 Oct).",
-    "in_ifn: eth1 = from the inner gateway / lab side, eth2 = from outside."
-  ],
-  "package": "External-FW",
-  "layer": "External-FW Network",
-  "cases": [
-    {"id": "O1", "name": "VLAN10 reaches the RDP server", "src": "192.168.10.50", "dst": "192.168.20.100", "proto": "tcp", "dport": 3389, "in_ifn": "eth1", "covers": ["baseline"]},
-    {"id": "O2", "name": "VLAN20 cannot reach the RDP server", "src": "192.168.20.50", "dst": "192.168.20.100", "proto": "tcp", "dport": 3389, "in_ifn": "eth1", "covers": ["baseline"]},
-    {"id": "O3", "name": "VLAN20 reaches AD over LDAP", "src": "192.168.20.50", "dst": "192.168.10.10", "proto": "tcp", "dport": 389, "in_ifn": "eth1", "covers": ["baseline"]},
-    {"id": "O4", "name": "VLAN10 cannot reach AD over LDAP", "src": "192.168.10.50", "dst": "192.168.10.10", "proto": "tcp", "dport": 389, "in_ifn": "eth1", "covers": ["baseline"]},
-    {"id": "O5", "name": "Lab hosts reach the web server", "src": "192.168.10.50", "dst": "192.168.20.20", "proto": "tcp", "dport": 443, "in_ifn": "eth1", "covers": ["baseline"]},
-    {"id": "O6", "name": "Lab hosts browse the internet (Inline Layer)", "src": "192.168.10.50", "dst": "8.8.8.8", "proto": "tcp", "dport": 443, "in_ifn": "eth1", "covers": ["inline"]},
-    {"id": "O7", "name": "Lab hosts cannot SMB to the Management Server", "src": "192.168.10.50", "dst": "172.23.31.180", "proto": "tcp", "dport": 445, "in_ifn": "eth1", "covers": ["implied-endpoint"]},
-    {"id": "O8", "name": "The internet cannot reach a lab client", "src": "8.8.8.8", "dst": "192.168.10.50", "proto": "tcp", "dport": 3389, "in_ifn": "eth2", "covers": ["baseline"]},
-    {"id": "O9", "name": "VLAN20 to AD on a high port (DCE-RPC rule)", "src": "192.168.20.50", "dst": "192.168.10.10", "proto": "tcp", "dport": 9999, "in_ifn": "eth1", "covers": ["dce-rpc"]},
-
-    {"id": "N1", "name": "ICMP echo to VLAN31 infrastructure (explicit ICMP rule)", "src": "192.168.10.50", "dst": "172.23.31.254", "proto": "icmp", "icmp_type": 8, "icmp_code": 0, "in_ifn": "eth1", "covers": ["icmp"]},
-    {"id": "N2", "name": "ICMP echo to the internet (no explicit rule; implied ICMP rule?)", "src": "192.168.10.50", "dst": "8.8.8.8", "proto": "icmp", "icmp_type": 8, "icmp_code": 0, "in_ifn": "eth1", "real": "ping -n 3 8.8.8.8", "covers": ["icmp", "implied-service"]},
-    {"id": "N3", "name": "ICMP port-unreachable, code-specific service rule", "src": "192.168.10.50", "dst": "1.1.1.1", "proto": "icmp", "icmp_type": 3, "icmp_code": 3, "in_ifn": "eth1", "covers": ["icmp", "icmp-code"]},
-    {"id": "N4", "name": "ICMP host-unreachable, same rule's other code", "src": "192.168.10.50", "dst": "1.1.1.1", "proto": "icmp", "icmp_type": 3, "icmp_code": 1, "in_ifn": "eth1", "covers": ["icmp", "icmp-code"]},
-    {"id": "N5", "name": "HTTPS to the internet through the Inline Layer", "src": "192.168.10.50", "dst": "1.1.1.1", "proto": "tcp", "dport": 443, "in_ifn": "eth1", "real": "Test-NetConnection 1.1.1.1 -Port 443", "covers": ["inline"]},
-    {"id": "N6", "name": "DNS over UDP to the internet (Inline Layer or implied DNS rule)", "src": "192.168.10.50", "dst": "8.8.8.8", "proto": "udp", "dport": 53, "in_ifn": "eth1", "real": "Resolve-DnsName example.com -Server 8.8.8.8 -DnsOnly", "covers": ["inline", "implied-service"]},
-    {"id": "N7", "name": "NTP to the internet through the Inline Layer", "src": "192.168.10.50", "dst": "216.239.35.0", "proto": "udp", "dport": 123, "in_ifn": "eth1", "real": "w32tm /stripchart /computer:216.239.35.0 /samples:2 /dataonly", "covers": ["inline"]},
-    {"id": "N8", "name": "SMB to the outer segment falls to the cleanup rule", "src": "192.168.10.50", "dst": "172.23.34.254", "proto": "tcp", "dport": 445, "in_ifn": "eth1", "real": "Test-NetConnection 172.23.34.254 -Port 445", "covers": ["baseline"]},
-    {"id": "N9", "name": "Source-port service, source port inside its range", "src": "192.168.10.50", "dst": "1.1.1.1", "proto": "tcp", "dport": 8081, "sport": 40050, "in_ifn": "eth1", "real": "SPORT 40050 1.1.1.1 8081", "covers": ["source-port"]},
-    {"id": "N10", "name": "Source-port service, source port outside its range", "src": "192.168.10.50", "dst": "1.1.1.1", "proto": "tcp", "dport": 8081, "sport": 50050, "in_ifn": "eth1", "real": "SPORT 50050 1.1.1.1 8081", "covers": ["source-port"]},
-    {"id": "N11", "name": "Rule limited by an expired Time object", "src": "192.168.10.50", "dst": "1.1.1.1", "proto": "tcp", "dport": 8082, "in_ifn": "eth1", "real": "Test-NetConnection 1.1.1.1 -Port 8082", "covers": ["time"]},
-    {"id": "N12", "name": "Rule with Install On = External-Cluster", "src": "192.168.10.50", "dst": "1.1.1.1", "proto": "tcp", "dport": 8083, "in_ifn": "eth1", "real": "Test-NetConnection 1.1.1.1 -Port 8083", "covers": ["install-on"]},
-    {"id": "N13", "name": "IPv6 source on a dual-stack host object", "src": "2001:db8:10::51", "dst": "2001:db8:20::100", "proto": "tcp", "dport": 22, "in_ifn": "eth1", "covers": ["ipv6", "dual-stack"]},
-    {"id": "N14", "name": "IPv6 source outside the rule", "src": "2001:db8:10::52", "dst": "2001:db8:20::100", "proto": "tcp", "dport": 22, "in_ifn": "eth1", "covers": ["ipv6"]},
-    {"id": "N15", "name": "HTTPS to the cluster address (gateway endpoint)", "src": "192.168.10.50", "dst": "172.23.31.179", "proto": "tcp", "dport": 443, "in_ifn": "eth1", "real": "Test-NetConnection 172.23.31.179 -Port 443", "covers": ["implied-endpoint"]},
-    {"id": "N16", "name": "ICMP echo to the cluster address (gateway endpoint)", "src": "192.168.10.50", "dst": "172.23.31.179", "proto": "icmp", "icmp_type": 8, "icmp_code": 0, "in_ifn": "eth1", "real": "ping -n 3 172.23.31.179", "covers": ["icmp", "implied-endpoint"]}
-  ]
+ "_comment": [
+  "E5v2 - cases compared three ways: Firewall Insight 4.43 (static, read-only),",
+  "fw up_execute on the active External cluster member (policy execution, no packet),",
+  "and - where 'real' is set - a real connection from a lab client, judged from the",
+  "gateway's own log record (show-logs) and the client's observation.",
+  "O* = the 9 cases of E5 (4 Oct). N* = added for the reviewers (11 Oct).",
+  "in_ifn: eth1 = from the inner gateway / lab side, eth2 = from outside.",
+  "11 Oct: lab clients were reclaimed, so real traffic comes from the engineer laptop over VPN (laptop_cases); fw up_execute supports only ICMP echo request/reply, so the ICMP-code cases were dropped; IPv6 runs with fw6 up_execute."
+ ],
+ "package": "External-FW",
+ "layer": "External-FW Network",
+ "cases": [
+  {
+   "id": "O1",
+   "name": "VLAN10 reaches the RDP server",
+   "src": "192.168.10.50",
+   "dst": "192.168.20.100",
+   "proto": "tcp",
+   "dport": 3389,
+   "in_ifn": "eth1",
+   "covers": [
+    "baseline"
+   ]
+  },
+  {
+   "id": "O2",
+   "name": "VLAN20 cannot reach the RDP server",
+   "src": "192.168.20.50",
+   "dst": "192.168.20.100",
+   "proto": "tcp",
+   "dport": 3389,
+   "in_ifn": "eth1",
+   "covers": [
+    "baseline"
+   ]
+  },
+  {
+   "id": "O3",
+   "name": "VLAN20 reaches AD over LDAP",
+   "src": "192.168.20.50",
+   "dst": "192.168.10.10",
+   "proto": "tcp",
+   "dport": 389,
+   "in_ifn": "eth1",
+   "covers": [
+    "baseline"
+   ]
+  },
+  {
+   "id": "O4",
+   "name": "VLAN10 cannot reach AD over LDAP",
+   "src": "192.168.10.50",
+   "dst": "192.168.10.10",
+   "proto": "tcp",
+   "dport": 389,
+   "in_ifn": "eth1",
+   "covers": [
+    "baseline"
+   ]
+  },
+  {
+   "id": "O5",
+   "name": "Lab hosts reach the web server",
+   "src": "192.168.10.50",
+   "dst": "192.168.20.20",
+   "proto": "tcp",
+   "dport": 443,
+   "in_ifn": "eth1",
+   "covers": [
+    "baseline"
+   ]
+  },
+  {
+   "id": "O6",
+   "name": "Lab hosts browse the internet (Inline Layer)",
+   "src": "192.168.10.50",
+   "dst": "8.8.8.8",
+   "proto": "tcp",
+   "dport": 443,
+   "in_ifn": "eth1",
+   "covers": [
+    "inline"
+   ]
+  },
+  {
+   "id": "O7",
+   "name": "Lab hosts cannot SMB to the Management Server",
+   "src": "192.168.10.50",
+   "dst": "172.23.31.180",
+   "proto": "tcp",
+   "dport": 445,
+   "in_ifn": "eth1",
+   "covers": [
+    "implied-endpoint"
+   ]
+  },
+  {
+   "id": "O8",
+   "name": "The internet cannot reach a lab client",
+   "src": "8.8.8.8",
+   "dst": "192.168.10.50",
+   "proto": "tcp",
+   "dport": 3389,
+   "in_ifn": "eth2",
+   "covers": [
+    "baseline"
+   ]
+  },
+  {
+   "id": "O9",
+   "name": "VLAN20 to AD on a high port (DCE-RPC rule)",
+   "src": "192.168.20.50",
+   "dst": "192.168.10.10",
+   "proto": "tcp",
+   "dport": 9999,
+   "in_ifn": "eth1",
+   "covers": [
+    "dce-rpc"
+   ]
+  },
+  {
+   "id": "N1",
+   "name": "ICMP echo to VLAN31 infrastructure (explicit ICMP rule)",
+   "src": "192.168.10.50",
+   "dst": "172.23.31.254",
+   "proto": "icmp",
+   "icmp_type": 8,
+   "icmp_code": 0,
+   "in_ifn": "eth1",
+   "covers": [
+    "icmp"
+   ]
+  },
+  {
+   "id": "N2",
+   "name": "ICMP echo to the internet: no explicit rule, implied 'Accept ICMP requests' (Before Last)",
+   "src": "192.168.10.50",
+   "dst": "8.8.8.8",
+   "proto": "icmp",
+   "icmp_type": 8,
+   "icmp_code": 0,
+   "in_ifn": "eth1",
+   "covers": [
+    "icmp",
+    "implied-service"
+   ]
+  },
+  {
+   "id": "N5",
+   "name": "HTTPS to the internet through the Inline Layer",
+   "src": "192.168.10.50",
+   "dst": "1.1.1.1",
+   "proto": "tcp",
+   "dport": 443,
+   "in_ifn": "eth1",
+   "covers": [
+    "inline"
+   ]
+  },
+  {
+   "id": "N6",
+   "name": "DNS over UDP to the internet (Inline Layer or implied DNS rule)",
+   "src": "192.168.10.50",
+   "dst": "8.8.8.8",
+   "proto": "udp",
+   "dport": 53,
+   "in_ifn": "eth1",
+   "covers": [
+    "inline",
+    "implied-service"
+   ]
+  },
+  {
+   "id": "N7",
+   "name": "NTP to the internet through the Inline Layer",
+   "src": "192.168.10.50",
+   "dst": "216.239.35.0",
+   "proto": "udp",
+   "dport": 123,
+   "in_ifn": "eth1",
+   "covers": [
+    "inline"
+   ]
+  },
+  {
+   "id": "N8",
+   "name": "SMB to the outer segment falls to the cleanup rule",
+   "src": "192.168.10.50",
+   "dst": "172.23.34.254",
+   "proto": "tcp",
+   "dport": 445,
+   "in_ifn": "eth1",
+   "covers": [
+    "baseline"
+   ]
+  },
+  {
+   "id": "N9",
+   "name": "Source-port service, source port inside its range",
+   "src": "192.168.10.50",
+   "dst": "1.1.1.1",
+   "proto": "tcp",
+   "dport": 8081,
+   "sport": 40050,
+   "in_ifn": "eth1",
+   "covers": [
+    "source-port"
+   ]
+  },
+  {
+   "id": "N10",
+   "name": "Source-port service, source port outside its range",
+   "src": "192.168.10.50",
+   "dst": "1.1.1.1",
+   "proto": "tcp",
+   "dport": 8081,
+   "sport": 50050,
+   "in_ifn": "eth1",
+   "covers": [
+    "source-port"
+   ]
+  },
+  {
+   "id": "N11",
+   "name": "Rule limited by an expired Time object",
+   "src": "192.168.10.50",
+   "dst": "1.1.1.1",
+   "proto": "tcp",
+   "dport": 8082,
+   "in_ifn": "eth1",
+   "covers": [
+    "time"
+   ]
+  },
+  {
+   "id": "N12",
+   "name": "Rule with Install On = External-Cluster",
+   "src": "192.168.10.50",
+   "dst": "1.1.1.1",
+   "proto": "tcp",
+   "dport": 8083,
+   "in_ifn": "eth1",
+   "covers": [
+    "install-on"
+   ]
+  },
+  {
+   "id": "N13",
+   "name": "IPv6 source on a dual-stack host object",
+   "src": "2001:db8:10::51",
+   "dst": "2001:db8:20::100",
+   "proto": "tcp",
+   "dport": 22,
+   "in_ifn": "eth1",
+   "covers": [
+    "ipv6",
+    "dual-stack"
+   ]
+  },
+  {
+   "id": "N14",
+   "name": "IPv6 source outside the rule",
+   "src": "2001:db8:10::52",
+   "dst": "2001:db8:20::100",
+   "proto": "tcp",
+   "dport": 22,
+   "in_ifn": "eth1",
+   "covers": [
+    "ipv6"
+   ]
+  },
+  {
+   "id": "N15",
+   "name": "HTTPS to the cluster address (gateway endpoint)",
+   "src": "192.168.10.50",
+   "dst": "172.23.31.179",
+   "proto": "tcp",
+   "dport": 443,
+   "in_ifn": "eth1",
+   "covers": [
+    "implied-endpoint"
+   ]
+  },
+  {
+   "id": "N16",
+   "name": "ICMP echo to the cluster address (gateway endpoint)",
+   "src": "192.168.10.50",
+   "dst": "172.23.31.179",
+   "proto": "icmp",
+   "icmp_type": 8,
+   "icmp_code": 0,
+   "in_ifn": "eth1",
+   "covers": [
+    "icmp",
+    "implied-endpoint"
+   ]
+  },
+  {
+   "id": "N17",
+   "name": "ICMP echo from outside to a lab address: only the cleanup rule and the implied ICMP rule (Before Last) match",
+   "src": "8.8.8.8",
+   "dst": "192.168.10.50",
+   "proto": "icmp",
+   "icmp_type": 8,
+   "icmp_code": 0,
+   "in_ifn": "eth2",
+   "covers": [
+    "icmp",
+    "implied-service"
+   ]
+  }
+ ],
+ "laptop_cases": [
+  {
+   "id": "L1",
+   "name": "Laptop ping to a VLAN10 address (explicit ICMP rule 10)",
+   "dst": "192.168.10.50",
+   "proto": "icmp",
+   "icmp_type": 8,
+   "cmd": "ping -n 2 192.168.10.50"
+  },
+  {
+   "id": "L2",
+   "name": "Laptop RDP to the RDP server address (rule 8)",
+   "dst": "192.168.20.100",
+   "proto": "tcp",
+   "dport": 3389,
+   "cmd": "Test-NetConnection 192.168.20.100 -Port 3389 -WarningAction SilentlyContinue | Select ComputerName,RemotePort,TcpTestSucceeded"
+  },
+  {
+   "id": "L3",
+   "name": "Laptop HTTPS to the web server address (rule 9)",
+   "dst": "192.168.20.20",
+   "proto": "tcp",
+   "dport": 443,
+   "cmd": "Test-NetConnection 192.168.20.20 -Port 443 -WarningAction SilentlyContinue | Select ComputerName,RemotePort,TcpTestSucceeded"
+  },
+  {
+   "id": "L4",
+   "name": "Laptop LDAP to the AD address",
+   "dst": "192.168.10.10",
+   "proto": "tcp",
+   "dport": 389,
+   "cmd": "Test-NetConnection 192.168.10.10 -Port 389 -WarningAction SilentlyContinue | Select ComputerName,RemotePort,TcpTestSucceeded"
+  },
+  {
+   "id": "L5",
+   "name": "Laptop SMB to a VLAN10 address (cleanup expected)",
+   "dst": "192.168.10.50",
+   "proto": "tcp",
+   "dport": 445,
+   "cmd": "Test-NetConnection 192.168.10.50 -Port 445 -WarningAction SilentlyContinue | Select ComputerName,RemotePort,TcpTestSucceeded"
+  },
+  {
+   "id": "L6",
+   "name": "Laptop HTTPS to the cluster VIP (gateway endpoint, implied web-admin rule First)",
+   "dst": "172.23.31.179",
+   "proto": "tcp",
+   "dport": 443,
+   "cmd": "Test-NetConnection 172.23.31.179 -Port 443 -WarningAction SilentlyContinue | Select ComputerName,RemotePort,TcpTestSucceeded"
+  },
+  {
+   "id": "L7",
+   "name": "Laptop ping to the cluster VIP (gateway endpoint)",
+   "dst": "172.23.31.179",
+   "proto": "icmp",
+   "icmp_type": 8,
+   "cmd": "ping -n 2 172.23.31.179"
+  },
+  {
+   "id": "L8",
+   "name": "Laptop TCP 8081 to a VLAN20 address (cleanup expected)",
+   "dst": "192.168.20.100",
+   "proto": "tcp",
+   "dport": 8081,
+   "cmd": "Test-NetConnection 192.168.20.100 -Port 8081 -WarningAction SilentlyContinue | Select ComputerName,RemotePort,TcpTestSucceeded"
+  }
+ ]
 }

@@ -39,6 +39,18 @@ def needs_detail(obj: Any) -> bool:
     if obj.get("name") == "Any":
         return False
 
+    if obj.get("_detail") == "full":
+        return False
+
+    # v4.43.1: a service entry at details-level=standard carries its port but
+    # NOT its source port, protocol signature or ICMP code. E5 found the cost:
+    # service E5-tcp8081-sport (port 8081, source port 40000-40100) looked like
+    # plain TCP/8081, and the tracer confirmed an Accept the gateway dropped.
+    # A leaf service is therefore always fetched in full.
+    typ0 = str(obj.get("type") or "").lower()
+    if typ0.startswith("service-") and "group" not in typ0:
+        return True
+
     typ = str(obj.get("type") or "").lower()
     if typ in _NON_RESOLVABLE_TYPES or typ.endswith("action"):
         return False
@@ -48,6 +60,63 @@ def needs_detail(obj: Any) -> bool:
             return False
 
     return True
+
+
+# v4.43.1: Check Point device objects (lower-cased API types).
+DEVICE_TYPES = {
+    "simple-gateway", "simple-cluster", "cluster-member", "checkpoint-host",
+    "cpmigatewaycluster", "cpmiclustermember", "cpmigatewayplain", "cpmihostckp",
+    "cpmivsclusternetobj", "cpmivsnetobj", "cpmivsxclusternetobj",
+}
+
+
+def _atom(value: Any) -> list:
+    try:
+        a = ip_address(str(value))
+    except ValueError:
+        return []
+    return [AddrAtom(int(a), int(a), a.version)]
+
+
+def enrich_devices(objects: dict[str, dict[str, Any]], gateways: Any) -> int:
+    """
+    v4.43.1 - copy each Check Point device's interface list (and, for a cluster,
+    the addresses of its members) from show-gateways-and-servers into the
+    rulebase objects-dictionary, which does not carry them. Returns how many
+    objects were enriched. Objects the list does not describe stay incomplete.
+    """
+    if not isinstance(gateways, list):
+        return 0
+    by_uid = {g.get("uid"): g for g in gateways if isinstance(g, dict) and g.get("uid")}
+    by_name = {g.get("name"): g for g in gateways if isinstance(g, dict) and g.get("name")}
+    n = 0
+    for uid, obj in objects.items():
+        g = by_uid.get(uid)
+        if g is None or not isinstance(g.get("interfaces"), list):
+            continue
+        obj["interfaces"] = g.get("interfaces")
+        members = []
+        for m in g.get("cluster-member-names") or g.get("cluster-members") or []:
+            mg = by_name.get(m) if isinstance(m, str) else (by_uid.get(m.get("uid")) or m if isinstance(m, dict) else None)
+            if isinstance(mg, dict):
+                addrs = [mg.get(k) for k in ("ipv4-address", "ipv6-address", "ip-address") if mg.get(k)]
+                for itf in mg.get("interfaces") or []:
+                    if isinstance(itf, dict):
+                        addrs += [itf.get(k) for k in ("ipv4-address", "ipv6-address") if itf.get(k)]
+                members.extend(addrs)
+        obj["_member_addresses"] = sorted(set(map(str, members)))
+        n += 1
+    return n
+
+
+def enrich_tree(tree: dict[str, Any], gateways: Any) -> int:
+    """enrich_devices() over every layer dictionary of a package tree."""
+    n = 0
+    for node in (tree or {}).get("layers", []) or []:
+        objs = {o["uid"]: o for o in (node.get("payload") or {}).get("objects-dictionary", []) or []
+                if isinstance(o, dict) and o.get("uid")}
+        n += enrich_devices(objs, gateways)
+    return n
 
 
 @dataclass(frozen=True)
@@ -144,6 +213,27 @@ class ObjectResolver:
         if self.is_any_uid(uid):
             return [AddrAtom(0, 2**32 - 1, 4), AddrAtom(0, 2**128 - 1, 6)], True
 
+        # v4.43.1: a gateway, cluster, cluster member or management object
+        # stands for every address the device owns, not only its main IP. E5
+        # found the miss: rule "Admin-Access" (destination External-Cluster)
+        # matched 172.23.31.179, a cluster VIP, while 4.43.0 called it a proven
+        # no-match because the object's main address is 172.23.34.179.
+        # The object is complete only when its interface list is known - the
+        # rulebase dictionary does not carry it; enrich_devices() copies it from
+        # show-gateways-and-servers. Without it a miss is unknown, not no-match.
+        if t in DEVICE_TYPES:
+            found = []
+            for key in ("ip-address", "ipv4-address", "ipv6-address"):
+                if o.get(key):
+                    found.extend(_atom(o.get(key)))
+            interfaces = o.get("interfaces")
+            for itf in interfaces or []:
+                if isinstance(itf, dict):
+                    for key in ("ipv4-address", "ipv6-address", "ip-address"):
+                        if itf.get(key):
+                            found.extend(_atom(itf.get(key)))
+            return list(dict.fromkeys(found)), isinstance(interfaces, list) and bool(interfaces)
+
         # v4.42: an object may carry an IPv4 and an IPv6 definition at once.
         # Taking the first one found made the other family a proven no-match.
         found = []
@@ -201,8 +291,16 @@ class ObjectResolver:
 
         return [], False
 
+    def device_member_addresses(self, uid: str) -> set[str]:
+        """Addresses of a cluster's members: whether the cluster object stands
+        for them is not modelled, so a query to one of them is unknown."""
+        return set(self.obj(uid).get("_member_addresses") or [])
+
     def address_atoms(self, uid: str, seen: set[str] | None=None) -> list[AddrAtom] | None:
-        """Strict resolution: None unless the object is fully modelled."""
+        """Strict resolution: None unless the object is fully modelled.
+        v4.43.1: a Check Point device object never proves containment."""
+        if str(self.obj(uid).get("type", "")).lower() in DEVICE_TYPES:
+            return None
         atoms, complete = self.address_atoms_partial(uid, seen)
         if not complete:
             return None

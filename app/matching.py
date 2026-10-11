@@ -356,6 +356,8 @@ def address_match_state(values: Any, address_text: str, res: ObjectResolver) -> 
             if any(a.version == ip.version and a.start <= n <= a.end for a in atoms):
                 return "match", res.describe_uid(uid)
 
+        if complete and any(str(ip) in res.device_member_addresses(uid) for ip in ips):
+            complete = False          # v4.43.1: a cluster member's own address
         if not complete:
             saw_unknown = True
             blockers = res.unmodelled_names(uid, "address")

@@ -4,6 +4,46 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.43.1 — a gateway object is every address the gateway owns (found by E5)
+
+`fw up_execute` on the lab cluster matched rule 5 *Admin-Access* (destination
+`External-Cluster`) for HTTPS to 172.23.31.179, a cluster VIP. 4.43.0 called
+that rule a proven no-match, because the object's main address is
+172.23.34.179 and the resolver treated a gateway like a host. The final answer
+was still demoted (the destination is a Check Point device), so no wrong
+definite result reached a person - but the rule-level verdict was wrong, and
+the path shown went through rule 11.
+
+`app/resolver.py`: a gateway, cluster, cluster-member or management object
+is complete only when its interface list is known. The rulebase dictionary
+does not carry it, so `enrich_tree()` copies the interfaces (and a cluster's
+member addresses) from `show-gateways-and-servers` (already read for implied
+rules) into every layer's dictionary - in the UI trace, the acceptance tool
+and the lab harness. Enriched: an interface address is a match, any other
+address a proven miss, a cluster member's own address unknown. Not enriched:
+a miss is unknown. A device object never proves containment in the
+shadowing checks. A first cut that made every device object incomplete was
+sound but left rule 1 of the lab policy (it names the gateways) unknown for
+every connection - the lab run of 11 Oct showed it, hence the enrichment.
+`tests/test_v4431_device_objects.py` (9).
+
+### A service is always fetched in full (`app/resolver.py`, `app/checkpoint.py`)
+
+E5 case N10: rule E5-SrcPort uses a TCP/8081 service limited to source ports
+40000-40100. `fw up_execute` with source port 50050 fell to the cleanup rule;
+4.43.0 confirmed *Accept by E5-SrcPort*. The objects-dictionary entry from
+`show-access-rulebase` (details-level=standard) carries the port but not the
+source port, so `needs_detail()` judged it complete and the 4.42 source-port
+guard never saw the restriction - a wrong definite answer against the real
+gateway. `needs_detail()` now asks for every leaf service in full, and objects
+fetched with `show-object` are marked `_detail: full`.
+
+Lab harness: `ignore-warnings` on writes, ICMP as `type=/code=`, IPv6 through
+`fw6 up_execute`, real traffic from the engineer laptop (lab clients were
+reclaimed) and `logs` now compares every logged connection with the tool.
+
+---
+
 ## v4.43.0 — the reviewers' round: multi-rule shadowing, implied rules and Install On decided, not only demoted
 
 NCCY2026 reviewers (#47 A/B/C) asked for three things this release answers in

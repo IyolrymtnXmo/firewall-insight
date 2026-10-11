@@ -290,6 +290,9 @@ async def run(package: str, out_path: str) -> int:
         except Exception:                                         # noqa: BLE001
             devices = None
         implied_ctx = build_context(properties, devices)
+        # v4.43.1: as app/api/traffic.py - device objects get their interfaces.
+        from app.resolver import enrich_tree
+        evidence["devices_enriched"] = enrich_tree(tree, devices)
         evidence["implied_rules"] = {
             "properties_read": implied_ctx["properties_read"],
             "gateways_read": implied_ctx["gateways_read"],

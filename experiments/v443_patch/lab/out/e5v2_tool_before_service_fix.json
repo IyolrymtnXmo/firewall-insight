@@ -1,0 +1,374 @@
+{
+ "app_version": "4.43.1",
+ "target": [
+  "External-Cluster"
+ ],
+ "implied_enabled": {
+  "accept-control-connections": "first",
+  "accept-remote-access-control-connections": "first",
+  "accept-smart-update-connections": "first",
+  "accept-ips1-management-connections": "first",
+  "accept-outgoing-packets-originating-from-gw": "before last",
+  "accept-outgoing-packets-originating-from-connectra-gw": "",
+  "accept-outgoing-packets-to-cp-online-services": "before last",
+  "accept-icmp-requests": "before last",
+  "accept-web-and-ssh-connections-for-gw-administration": "first",
+  "accept-incoming-traffic-to-dhcp-and-dns-services-of-gws": "first",
+  "accept-dynamic-addr-modules-outgoing-internet-connections": "first",
+  "accept-vrrp-packets-originating-from-cluster-members": "first",
+  "accept-identity-awareness-control-connections": "first"
+ },
+ "run_at": "2026-10-11T23:20:25",
+ "rows": [
+  {
+   "id": "O1",
+   "name": "VLAN10 reaches the RDP server",
+   "result": "Accept",
+   "confidence": "exact",
+   "gateway_final": true,
+   "decided_by": "explicit",
+   "winner_rule": "8",
+   "winner_name": "Access-to-RDP",
+   "path": [
+    "External-FW Network 8 (Access-to-RDP)"
+   ],
+   "implied": "clear",
+   "reason": "Terminal Access rule matched exactly."
+  },
+  {
+   "id": "O2",
+   "name": "VLAN20 cannot reach the RDP server",
+   "result": "Drop",
+   "confidence": "exact",
+   "gateway_final": true,
+   "decided_by": "explicit",
+   "winner_rule": "16",
+   "winner_name": "Cleanup rule",
+   "path": [
+    "External-FW Network 16 (Cleanup rule)"
+   ],
+   "implied": "clear",
+   "reason": "Terminal Access rule matched exactly."
+  },
+  {
+   "id": "O3",
+   "name": "VLAN20 reaches AD over LDAP",
+   "result": "Accept",
+   "confidence": "exact",
+   "gateway_final": true,
+   "decided_by": "explicit",
+   "winner_rule": "7",
+   "winner_name": "VLAN20-to-AD",
+   "path": [
+    "External-FW Network 7 (VLAN20-to-AD)"
+   ],
+   "implied": "clear",
+   "reason": "Terminal Access rule matched exactly."
+  },
+  {
+   "id": "O4",
+   "name": "VLAN10 cannot reach AD over LDAP",
+   "result": "Drop",
+   "confidence": "exact",
+   "gateway_final": true,
+   "decided_by": "explicit",
+   "winner_rule": "16",
+   "winner_name": "Cleanup rule",
+   "path": [
+    "External-FW Network 16 (Cleanup rule)"
+   ],
+   "implied": "clear",
+   "reason": "Terminal Access rule matched exactly."
+  },
+  {
+   "id": "O5",
+   "name": "Lab hosts reach the web server",
+   "result": "Accept",
+   "confidence": "exact",
+   "gateway_final": true,
+   "decided_by": "explicit",
+   "winner_rule": "9",
+   "winner_name": "Access-to-Web",
+   "path": [
+    "External-FW Network 9 (Access-to-Web)"
+   ],
+   "implied": "clear",
+   "reason": "Terminal Access rule matched exactly."
+  },
+  {
+   "id": "O6",
+   "name": "Lab hosts browse the internet (Inline Layer)",
+   "result": "Accept",
+   "confidence": "exact",
+   "gateway_final": true,
+   "decided_by": "explicit",
+   "winner_rule": "11.1",
+   "winner_name": "Allow-Web",
+   "path": [
+    "External-FW Network 11 (Lab-Outbound)",
+    "VPN InternetLayer 11.1 (Allow-Web)"
+   ],
+   "implied": "clear",
+   "reason": "Terminal Access rule matched exactly."
+  },
+  {
+   "id": "O7",
+   "name": "Lab hosts cannot SMB to the Management Server",
+   "result": "Drop",
+   "confidence": "inferred",
+   "gateway_final": false,
+   "decided_by": null,
+   "winner_rule": "16",
+   "winner_name": "Cleanup rule",
+   "path": [
+    "External-FW Network 16 (Cleanup rule)"
+   ],
+   "implied": "possible",
+   "reason": "Terminal Access rule matched exactly. The destination 172.23.31.180 is an address of a Check Point gateway or server. Implied rules for control, administration and gateway-originated traffic are enforced outside the rulebase the API returns."
+  },
+  {
+   "id": "O8",
+   "name": "The internet cannot reach a lab client",
+   "result": "Drop",
+   "confidence": "exact",
+   "gateway_final": true,
+   "decided_by": "explicit",
+   "winner_rule": "16",
+   "winner_name": "Cleanup rule",
+   "path": [
+    "External-FW Network 16 (Cleanup rule)"
+   ],
+   "implied": "clear",
+   "reason": "Terminal Access rule matched exactly."
+  },
+  {
+   "id": "O9",
+   "name": "VLAN20 to AD on a high port (DCE-RPC rule)",
+   "result": "UNVERIFIED",
+   "confidence": "unknown",
+   "gateway_final": false,
+   "decided_by": null,
+   "winner_rule": null,
+   "winner_name": null,
+   "path": [
+    "External-FW Network 7 (VLAN20-to-AD)"
+   ],
+   "implied": "clear",
+   "reason": "Earlier Rule 7 contains condition(s) this static simulator cannot evaluate. Later Rule 16 matches, but cannot be declared final."
+  },
+  {
+   "id": "N1",
+   "name": "ICMP echo to VLAN31 infrastructure (explicit ICMP rule)",
+   "result": "Accept",
+   "confidence": "exact",
+   "gateway_final": true,
+   "decided_by": "explicit",
+   "winner_rule": "10",
+   "winner_name": "Lab-Troubleshoot-ICMP",
+   "path": [
+    "External-FW Network 10 (Lab-Troubleshoot-ICMP)"
+   ],
+   "implied": "resolved",
+   "reason": "Terminal Access rule matched exactly."
+  },
+  {
+   "id": "N2",
+   "name": "ICMP echo to the internet: no explicit rule, implied 'Accept ICMP requests' (Before Last)",
+   "result": "Accept",
+   "confidence": "exact",
+   "gateway_final": true,
+   "decided_by": "explicit",
+   "winner_rule": "11.2",
+   "winner_name": "Allow-DNS",
+   "path": [
+    "External-FW Network 11 (Lab-Outbound)",
+    "VPN InternetLayer 11.2 (Allow-DNS)"
+   ],
+   "implied": "resolved",
+   "reason": "Terminal Access rule matched exactly."
+  },
+  {
+   "id": "N5",
+   "name": "HTTPS to the internet through the Inline Layer",
+   "result": "Accept",
+   "confidence": "exact",
+   "gateway_final": true,
+   "decided_by": "explicit",
+   "winner_rule": "11.1",
+   "winner_name": "Allow-Web",
+   "path": [
+    "External-FW Network 11 (Lab-Outbound)",
+    "VPN InternetLayer 11.1 (Allow-Web)"
+   ],
+   "implied": "clear",
+   "reason": "Terminal Access rule matched exactly."
+  },
+  {
+   "id": "N6",
+   "name": "DNS over UDP to the internet (Inline Layer or implied DNS rule)",
+   "result": "Accept",
+   "confidence": "exact",
+   "gateway_final": true,
+   "decided_by": "explicit",
+   "winner_rule": "11.2",
+   "winner_name": "Allow-DNS",
+   "path": [
+    "External-FW Network 11 (Lab-Outbound)",
+    "VPN InternetLayer 11.2 (Allow-DNS)"
+   ],
+   "implied": "clear",
+   "reason": "Terminal Access rule matched exactly."
+  },
+  {
+   "id": "N7",
+   "name": "NTP to the internet through the Inline Layer",
+   "result": "Accept",
+   "confidence": "exact",
+   "gateway_final": true,
+   "decided_by": "explicit",
+   "winner_rule": "11.3",
+   "winner_name": "Allow-NTP",
+   "path": [
+    "External-FW Network 11 (Lab-Outbound)",
+    "VPN InternetLayer 11.3 (Allow-NTP)"
+   ],
+   "implied": "clear",
+   "reason": "Terminal Access rule matched exactly."
+  },
+  {
+   "id": "N8",
+   "name": "SMB to the outer segment falls to the cleanup rule",
+   "result": "Drop",
+   "confidence": "exact",
+   "gateway_final": true,
+   "decided_by": "explicit",
+   "winner_rule": "16",
+   "winner_name": "Cleanup rule",
+   "path": [
+    "External-FW Network 16 (Cleanup rule)"
+   ],
+   "implied": "clear",
+   "reason": "Terminal Access rule matched exactly."
+  },
+  {
+   "id": "N9",
+   "name": "Source-port service, source port inside its range",
+   "result": "Accept",
+   "confidence": "exact",
+   "gateway_final": true,
+   "decided_by": "explicit",
+   "winner_rule": "12",
+   "winner_name": "E5-SrcPort",
+   "path": [
+    "External-FW Network 12 (E5-SrcPort)"
+   ],
+   "implied": "clear",
+   "reason": "Terminal Access rule matched exactly."
+  },
+  {
+   "id": "N10",
+   "name": "Source-port service, source port outside its range",
+   "result": "Accept",
+   "confidence": "exact",
+   "gateway_final": true,
+   "decided_by": "explicit",
+   "winner_rule": "12",
+   "winner_name": "E5-SrcPort",
+   "path": [
+    "External-FW Network 12 (E5-SrcPort)"
+   ],
+   "implied": "clear",
+   "reason": "Terminal Access rule matched exactly."
+  },
+  {
+   "id": "N11",
+   "name": "Rule limited by an expired Time object",
+   "result": "UNVERIFIED",
+   "confidence": "unknown",
+   "gateway_final": false,
+   "decided_by": null,
+   "winner_rule": null,
+   "winner_name": null,
+   "path": [
+    "External-FW Network 13 (E5-Time)"
+   ],
+   "implied": "clear",
+   "reason": "Earlier Rule 13 contains condition(s) this static simulator cannot evaluate. Later Rule 16 matches, but cannot be declared final."
+  },
+  {
+   "id": "N12",
+   "name": "Rule with Install On = External-Cluster",
+   "result": "Accept",
+   "confidence": "exact",
+   "gateway_final": true,
+   "decided_by": "explicit",
+   "winner_rule": "14",
+   "winner_name": "E5-InstallOn",
+   "path": [
+    "External-FW Network 14 (E5-InstallOn)"
+   ],
+   "implied": "clear",
+   "reason": "Terminal Access rule matched exactly."
+  },
+  {
+   "id": "N13",
+   "name": "IPv6 source on a dual-stack host object",
+   "result": "Accept",
+   "confidence": "exact",
+   "gateway_final": true,
+   "decided_by": "explicit",
+   "winner_rule": "15",
+   "winner_name": "E5-IPv6",
+   "path": [
+    "External-FW Network 15 (E5-IPv6)"
+   ],
+   "implied": "clear",
+   "reason": "Terminal Access rule matched exactly."
+  },
+  {
+   "id": "N14",
+   "name": "IPv6 source outside the rule",
+   "result": "Drop",
+   "confidence": "exact",
+   "gateway_final": true,
+   "decided_by": "explicit",
+   "winner_rule": "16",
+   "winner_name": "Cleanup rule",
+   "path": [
+    "External-FW Network 16 (Cleanup rule)"
+   ],
+   "implied": "clear",
+   "reason": "Terminal Access rule matched exactly."
+  },
+  {
+   "id": "N15",
+   "name": "HTTPS to the cluster address (gateway endpoint)",
+   "result": "Accept",
+   "confidence": "inferred",
+   "gateway_final": false,
+   "decided_by": null,
+   "winner_rule": "5",
+   "winner_name": "Admin-Access",
+   "path": [
+    "External-FW Network 5 (Admin-Access)"
+   ],
+   "implied": "possible",
+   "reason": "Terminal Access rule matched exactly. The destination 172.23.31.179 is an address of a Check Point gateway or server. Implied rules for control, administration and gateway-originated traffic are enforced outside the rulebase the API returns."
+  },
+  {
+   "id": "N16",
+   "name": "ICMP echo to the cluster address (gateway endpoint)",
+   "result": "Accept",
+   "confidence": "inferred",
+   "gateway_final": false,
+   "decided_by": null,
+   "winner_rule": "5",
+   "winner_name": "Admin-Access",
+   "path": [
+    "External-FW Network 5 (Admin-Access)"
+   ],
+   "implied": "possible",
+   "reason": "Terminal Access rule matched exactly. The destination 172.23.31.179 is an address of a Check Point gateway or server. Implied rules for control, administration and gateway-originated traffic are enforced outside the rulebase the API returns. Implied rule accept-icmp-requests is switched on (before last) and matches this service."
+  }
+ ]
+}

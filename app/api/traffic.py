@@ -163,6 +163,18 @@ async def run_trace(c, *, layer: str, src: str, dst: str, protocol: str,
     else:
         tree = await access_tree(c, layer, hydrate=True)
 
+    # v4.43.1: gateway / cluster objects need their interface list to be
+    # complete; the rulebase dictionary does not carry it.
+    try:
+        from ..resolver import enrich_tree
+        gws = cache_get("gateways-full")
+        if gws is None:
+            gws = await c.show_gateways_and_servers()
+            cache_set("gateways-full", gws)
+        enrich_tree(tree, gws)
+    except Exception:                                          # noqa: BLE001
+        pass                                                   # objects stay incomplete -> unknown
+
     progress_set(rid, 1, "Resolving objects and service", STEPS)
 
     # Build a global resolver from all layer dictionaries so custom

@@ -1,0 +1,175 @@
+[
+ {
+  "op": "add-network",
+  "name": "E5-N-VLAN10",
+  "at": "2026-10-11T22:28:47"
+ },
+ {
+  "op": "add-host",
+  "name": "E5-H-Dual",
+  "at": "2026-10-11T22:28:53"
+ },
+ {
+  "op": "add-host",
+  "name": "E5-H6-Srv",
+  "at": "2026-10-11T22:28:54"
+ },
+ {
+  "op": "add-service-tcp",
+  "name": "E5-tcp8081-sport",
+  "at": "2026-10-11T22:28:58"
+ },
+ {
+  "op": "add-service-tcp",
+  "name": "E5-tcp8082",
+  "at": "2026-10-11T22:28:58"
+ },
+ {
+  "op": "add-service-tcp",
+  "name": "E5-tcp8083",
+  "at": "2026-10-11T22:28:59"
+ },
+ {
+  "op": "add-time",
+  "name": "E5-Expired",
+  "at": "2026-10-11T22:29:00"
+ },
+ {
+  "op": "add-access-rule",
+  "name": "E5-SrcPort",
+  "at": "2026-10-11T22:29:10"
+ },
+ {
+  "op": "add-access-rule",
+  "name": "E5-Time",
+  "at": "2026-10-11T22:29:11"
+ },
+ {
+  "op": "add-access-rule",
+  "name": "E5-InstallOn",
+  "at": "2026-10-11T22:29:13"
+ },
+ {
+  "op": "add-access-rule",
+  "name": "E5-IPv6",
+  "at": "2026-10-11T22:29:16"
+ },
+ {
+  "op": "add-network",
+  "name": "E5-N-VLAN10",
+  "at": "2026-10-11T22:30:06"
+ },
+ {
+  "op": "add-host",
+  "name": "E5-H-Dual",
+  "at": "2026-10-11T22:30:07"
+ },
+ {
+  "op": "add-host",
+  "name": "E5-H6-Srv",
+  "at": "2026-10-11T22:30:07"
+ },
+ {
+  "op": "add-service-tcp",
+  "name": "E5-tcp8081-sport",
+  "at": "2026-10-11T22:30:07"
+ },
+ {
+  "op": "add-service-tcp",
+  "name": "E5-tcp8082",
+  "at": "2026-10-11T22:30:07"
+ },
+ {
+  "op": "add-service-tcp",
+  "name": "E5-tcp8083",
+  "at": "2026-10-11T22:30:07"
+ },
+ {
+  "op": "add-time",
+  "name": "E5-Expired",
+  "at": "2026-10-11T22:30:08"
+ },
+ {
+  "op": "add-access-rule",
+  "name": "E5-SrcPort",
+  "at": "2026-10-11T22:30:09"
+ },
+ {
+  "op": "add-access-rule",
+  "name": "E5-Time",
+  "at": "2026-10-11T22:30:09"
+ },
+ {
+  "op": "add-access-rule",
+  "name": "E5-InstallOn",
+  "at": "2026-10-11T22:30:12"
+ },
+ {
+  "op": "add-access-rule",
+  "name": "E5-IPv6",
+  "at": "2026-10-11T22:30:13"
+ },
+ {
+  "op": "add-network",
+  "name": "E5-N-VLAN10",
+  "at": "2026-10-11T22:33:36"
+ },
+ {
+  "op": "add-host",
+  "name": "E5-H-Dual",
+  "at": "2026-10-11T22:33:41"
+ },
+ {
+  "op": "add-host",
+  "name": "E5-H6-Srv",
+  "at": "2026-10-11T22:33:42"
+ },
+ {
+  "op": "add-service-tcp",
+  "name": "E5-tcp8081-sport",
+  "at": "2026-10-11T22:33:42"
+ },
+ {
+  "op": "add-service-tcp",
+  "name": "E5-tcp8082",
+  "at": "2026-10-11T22:33:43"
+ },
+ {
+  "op": "add-service-tcp",
+  "name": "E5-tcp8083",
+  "at": "2026-10-11T22:33:44"
+ },
+ {
+  "op": "add-time",
+  "name": "E5-Expired",
+  "at": "2026-10-11T22:33:44"
+ },
+ {
+  "op": "add-access-rule",
+  "name": "E5-SrcPort",
+  "at": "2026-10-11T22:33:45"
+ },
+ {
+  "op": "add-access-rule",
+  "name": "E5-Time",
+  "at": "2026-10-11T22:33:55"
+ },
+ {
+  "op": "add-access-rule",
+  "name": "E5-InstallOn",
+  "at": "2026-10-11T22:33:56"
+ },
+ {
+  "op": "add-access-rule",
+  "name": "E5-IPv6",
+  "at": "2026-10-11T22:33:57"
+ },
+ {
+  "op": "set-global-properties",
+  "old": {
+   "log-implied-rules": false,
+   "accept-icmp-requests": false
+  },
+  "at": "2026-10-11T22:34:08"
+ }
+]

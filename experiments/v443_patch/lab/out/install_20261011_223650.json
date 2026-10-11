@@ -1,0 +1,222 @@
+{
+ "uid": "523b24d2-4253-4d5d-bf46-91e6fa825d21",
+ "type": "task",
+ "domain": {
+  "uid": "41e821a0-3720-11e3-aa6e-0800200c9fde",
+  "name": "SMC User",
+  "domain-type": "domain"
+ },
+ "task-id": "8cd00427-4fc2-4d34-b871-d30d0b1e22d4",
+ "task-name": "Policy installation - External-FW",
+ "status": "succeeded",
+ "progress-percentage": 100,
+ "start-time": {
+  "posix": 1791732845203,
+  "iso-8601": "2026-10-11T22:34+0700"
+ },
+ "last-update-time": {
+  "posix": 1791732989266,
+  "iso-8601": "2026-10-11T22:36+0700"
+ },
+ "suppressed": false,
+ "task-details": [
+  {
+   "uid": "a5d1f870-8a45-4cf7-8f77-ac60e47b260c",
+   "domain": {
+    "uid": "41e821a0-3720-11e3-aa6e-0800200c9fde",
+    "name": "SMC User",
+    "domain-type": "domain"
+   },
+   "color": "black",
+   "statusCode": "succeeded with warnings",
+   "statusDescription": "Succeeded with Warnings",
+   "taskNotification": "523b24d2-4253-4d5d-bf46-91e6fa825d21",
+   "gatewayId": "6d4f4bc1-1001-435f-9015-ea4624a1901d",
+   "clusterGroupId": "aaba9868-53b6-4a0d-a219-2f67a5853f7a",
+   "policyId": "58d85ccf-288c-4949-924e-4d1ab7d44490",
+   "fastInstallStatus": {
+    "worksessionId": "f447e181-ffe7-4fbc-b3fc-6bbe9d78cfb3",
+    "gatewayId": "aaba9868-53b6-4a0d-a219-2f67a5853f7a",
+    "policyId": "58d85ccf-288c-4949-924e-4d1ab7d44490",
+    "status": "candidate_worksessions_not_eligible",
+    "detailedReason": [
+     "This change doesn't support Fast Install Policy. className: CpmiTcpService, action: UPDATE, instructionFieldPath: displayName"
+    ]
+   },
+   "runningStages": [],
+   "waitingStages": [],
+   "stagesInfo": [
+    {
+     "type": "warn",
+     "stage": "legacy policy load",
+     "messages": [
+      {
+       "type": "warn",
+       "message": "Some Access rules include expired time objects. These rules will not be enforced. For more, see sk155253"
+      }
+     ]
+    }
+   ],
+   "cluster": false,
+   "meta-info": {
+    "validation-state": "ok",
+    "last-modify-time": {
+     "posix": 1791732975567,
+     "iso-8601": "2026-10-11T22:36+0700"
+    },
+    "last-modifier": "System",
+    "creation-time": {
+     "posix": 1791732848596,
+     "iso-8601": "2026-10-11T22:34+0700"
+    },
+    "creator": "System"
+   },
+   "tags": [],
+   "icon": "General/globalsNa",
+   "comments": "",
+   "display-name": "",
+   "gatewayName": "External-GW01",
+   "revision": "f447e181-ffe7-4fbc-b3fc-6bbe9d78cfb3"
+  },
+  {
+   "uid": "02d0eca0-1faa-495b-9b65-e1f7b4d96312",
+   "domain": {
+    "uid": "41e821a0-3720-11e3-aa6e-0800200c9fde",
+    "name": "SMC User",
+    "domain-type": "domain"
+   },
+   "color": "black",
+   "statusCode": "succeeded with warnings",
+   "statusDescription": "Succeeded with Warnings",
+   "taskNotification": "523b24d2-4253-4d5d-bf46-91e6fa825d21",
+   "gatewayId": "3ae8dcc6-897a-4ccc-8a0f-298be08bd49d",
+   "clusterGroupId": "aaba9868-53b6-4a0d-a219-2f67a5853f7a",
+   "policyId": "58d85ccf-288c-4949-924e-4d1ab7d44490",
+   "fastInstallStatus": {
+    "worksessionId": "f447e181-ffe7-4fbc-b3fc-6bbe9d78cfb3",
+    "gatewayId": "aaba9868-53b6-4a0d-a219-2f67a5853f7a",
+    "policyId": "58d85ccf-288c-4949-924e-4d1ab7d44490",
+    "status": "candidate_worksessions_not_eligible",
+    "detailedReason": [
+     "This change doesn't support Fast Install Policy. className: CpmiTcpService, action: UPDATE, instructionFieldPath: displayName"
+    ]
+   },
+   "runningStages": [],
+   "waitingStages": [],
+   "stagesInfo": [
+    {
+     "type": "warn",
+     "stage": "legacy policy load",
+     "messages": [
+      {
+       "type": "warn",
+       "message": "Some Access rules include expired time objects. These rules will not be enforced. For more, see sk155253"
+      }
+     ]
+    }
+   ],
+   "cluster": false,
+   "meta-info": {
+    "validation-state": "ok",
+    "last-modify-time": {
+     "posix": 1791732975404,
+     "iso-8601": "2026-10-11T22:36+0700"
+    },
+    "last-modifier": "System",
+    "creation-time": {
+     "posix": 1791732862773,
+     "iso-8601": "2026-10-11T22:34+0700"
+    },
+    "creator": "System"
+   },
+   "tags": [],
+   "icon": "General/globalsNa",
+   "comments": "",
+   "display-name": "",
+   "gatewayName": "External-GW02",
+   "revision": "f447e181-ffe7-4fbc-b3fc-6bbe9d78cfb3"
+  },
+  {
+   "uid": "2efce7fa-bbeb-4220-949b-02b660442f99",
+   "domain": {
+    "uid": "41e821a0-3720-11e3-aa6e-0800200c9fde",
+    "name": "SMC User",
+    "domain-type": "domain"
+   },
+   "color": "black",
+   "statusCode": "succeeded with warnings",
+   "statusDescription": "Succeeded with Warnings",
+   "taskNotification": "523b24d2-4253-4d5d-bf46-91e6fa825d21",
+   "gatewayId": "aaba9868-53b6-4a0d-a219-2f67a5853f7a",
+   "clusterGroupId": "aaba9868-53b6-4a0d-a219-2f67a5853f7a",
+   "policyId": "58d85ccf-288c-4949-924e-4d1ab7d44490",
+   "fastInstallStatus": {
+    "worksessionId": "f447e181-ffe7-4fbc-b3fc-6bbe9d78cfb3",
+    "gatewayId": "aaba9868-53b6-4a0d-a219-2f67a5853f7a",
+    "policyId": "58d85ccf-288c-4949-924e-4d1ab7d44490",
+    "status": "candidate_worksessions_not_eligible",
+    "detailedReason": [
+     "This change doesn't support Fast Install Policy. className: CpmiTcpService, action: UPDATE, instructionFieldPath: displayName"
+    ]
+   },
+   "runningStages": [],
+   "waitingStages": [],
+   "stagesInfo": [
+    {
+     "type": "warn",
+     "stage": "legacy policy load",
+     "messages": [
+      {
+       "type": "warn",
+       "message": "Anti-Spoofing is not configured for some interfaces and gateways. This will allow address spoofing through these gateways.,,Anti-Spoofing should be configured on the following objects:,.Gateway: External-GW02, Interface: eth2,.Gateway: External-GW02, Interface: eth1,.Gateway: External-GW02, Interface: Sync,.Gateway: External-GW01, Interface: eth2,.Gateway: External-GW01, Interface: eth1,.Gateway: External-GW01, Interface: Sync,."
+      }
+     ]
+    }
+   ],
+   "cluster": true,
+   "meta-info": {
+    "validation-state": "ok",
+    "last-modify-time": {
+     "posix": 1791732975373,
+     "iso-8601": "2026-10-11T22:36+0700"
+    },
+    "last-modifier": "System",
+    "creation-time": {
+     "posix": 1791732862278,
+     "iso-8601": "2026-10-11T22:34+0700"
+    },
+    "creator": "System"
+   },
+   "tags": [],
+   "icon": "General/globalsNa",
+   "comments": "",
+   "display-name": "",
+   "gatewayName": "External-Cluster",
+   "revision": "f447e181-ffe7-4fbc-b3fc-6bbe9d78cfb3"
+  }
+ ],
+ "comments": "Installation succeeded on External-Cluster",
+ "color": "black",
+ "icon": "General/globalsNa",
+ "tags": [],
+ "meta-info": {
+  "lock": "unlocked",
+  "validation-state": "ok",
+  "last-modify-time": {
+   "posix": 1791732989364,
+   "iso-8601": "2026-10-11T22:36+0700"
+  },
+  "last-modifier": "System",
+  "creation-time": {
+   "posix": 1791732845295,
+   "iso-8601": "2026-10-11T22:34+0700"
+  },
+  "creator": "System"
+ },
+ "read-only": false,
+ "available-actions": {
+  "edit": "true",
+  "delete": "true",
+  "clone": "false"
+ }
+}

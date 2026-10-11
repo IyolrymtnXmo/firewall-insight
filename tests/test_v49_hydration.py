@@ -61,9 +61,14 @@ class TestNeedsDetail:
             {"uid": "h1", "name": "AD", "type": "host", "ipv4-address": "10.0.0.1"}
         ) is False
 
-    def test_service_with_port_is_complete(self):
+    def test_service_with_port_is_complete_only_at_full_detail(self):
+        # v4.43.1: a standard-level entry has the port but not the source
+        # port / signature / ICMP code, so it is fetched in full (E5, N10).
         assert needs_detail(
             {"uid": "s1", "name": "https", "type": "service-tcp", "port": "443"}
+        ) is True
+        assert needs_detail(
+            {"uid": "s1", "name": "https", "type": "service-tcp", "port": "443", "_detail": "full"}
         ) is False
 
     def test_any_is_never_refetched(self):

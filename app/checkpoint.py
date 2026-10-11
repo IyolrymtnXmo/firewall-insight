@@ -436,6 +436,7 @@ class CheckPointClient:
                 data = await self.call("show-object", {"uid": uid, "details-level": "full"})
                 obj = data.get("object") if isinstance(data, dict) else None
                 if isinstance(obj, dict):
+                    obj["_detail"] = "full"     # v4.43.1: see resolver.needs_detail
                     existing[uid] = obj
             except CheckPointRateLimitError:
                 # Stop hammering, but do not pretend the data is complete.

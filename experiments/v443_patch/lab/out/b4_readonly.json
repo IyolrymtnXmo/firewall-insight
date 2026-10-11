@@ -1,0 +1,49 @@
+{
+ "account": "fi-readonly",
+ "profile": "Read Only All",
+ "read": {
+  "package_tree_layers": 2,
+  "top_level_items": 20,
+  "global_properties": true,
+  "gateways": 6
+ },
+ "write": [
+  {
+   "command": "add-host",
+   "refused": true,
+   "server": "add-host: HTTP 400: Operation is not allowed in read only mode!"
+  },
+  {
+   "command": "set-access-rule",
+   "refused": true,
+   "server": "set-access-rule: HTTP 400: Operation is not allowed in read only mode!"
+  },
+  {
+   "command": "delete-host",
+   "refused": true,
+   "server": "delete-host: HTTP 400: Operation is not allowed in read only mode!"
+  },
+  {
+   "command": "add-access-rule",
+   "refused": true,
+   "server": "add-access-rule: HTTP 400: Operation is not allowed in read only mode!"
+  },
+  {
+   "command": "publish",
+   "refused": true,
+   "server": "publish: HTTP 400: Work session was not found. Please verify that you are not in the read-only session mode"
+  },
+  {
+   "command": "install-policy",
+   "refused": true,
+   "server": "install-policy: HTTP 400: Operation is not allowed in read only mode!"
+  }
+ ],
+ "discard": "discard: HTTP 400: Work session was not found. Please verify that you are not in the read-only session mode",
+ "login": {
+  "read-only": true,
+  "api-server-version": "2.0.1"
+ },
+ "all_writes_refused": true,
+ "run_at": "2026-10-11T23:53:41"
+}
