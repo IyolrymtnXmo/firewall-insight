@@ -95,11 +95,70 @@ def unmodelled_columns(rule: dict[str, Any], res) -> list[str]:
     return out
 
 
-def envelope_state(rule: dict[str, Any], res) -> tuple[str, str]:
-    """`match` when the rule is inside the modelled envelope, else `unknown`."""
+# v4.43: object types Install On may name that are one enforcement point.
+GATEWAY_TYPES = {
+    "simple-gateway", "simple-cluster", "cluster-member", "checkpoint-host",
+    "CpmiGatewayCluster", "CpmiClusterMember", "CpmiGatewayPlain", "CpmiHostCkp",
+    "gateway", "cluster",
+}
+
+
+def make_target(uid: str = "", name: str = "", aliases: Any = ()) -> dict[str, Any]:
+    """The gateway a trace is for: its UID, its name and other names it answers to
+    (for a cluster member, the cluster). Install On is matched against these."""
+    names = {str(n) for n in ([name] + list(aliases or [])) if n}
+    return {"uids": {str(uid)} if uid else set(), "names": names}
+
+
+def install_on_state(rule: dict[str, Any], res, target: dict[str, Any] | None) -> tuple[str, str]:
+    """
+    v4.43 - Install On, decided for a known target gateway.
+
+    A rule exists only on the gateways its Install On names. When the trace is
+    for one known gateway and every Install On entry is Policy Targets or a
+    single gateway / cluster object, the column is decided: `match` if the
+    target is named, `no-match` if it is not. A group, an unreadable object or
+    an unknown target leaves it `unknown`, as before.
+    """
+    uids = _uids(rule.get("install-on"))
+    if not uids or all(_is_policy_targets(u, res) for u in uids):
+        return "match", "Install On is Policy Targets"
+    if not target or not (target.get("uids") or target.get("names")):
+        return "unknown", "Install On names specific targets and the traced gateway is not known"
+    resolved = True
+    for u in uids:
+        if _is_policy_targets(u, res):
+            return "match", "Install On includes Policy Targets"
+        try:
+            obj = res.obj(u) or {}
+        except Exception:                                       # noqa: BLE001
+            obj = {}
+        name = str(obj.get("name") or "")
+        if u in target["uids"] or (name and name in target["names"]):
+            return "match", f"Installed on {name or u}, the traced gateway"
+        if str(obj.get("type") or "") not in GATEWAY_TYPES:
+            resolved = False
+    if not resolved:
+        return "unknown", "Install On contains an object that is not a single gateway"
+    return "no-match", "Not installed on the traced gateway"
+
+
+def envelope_state(rule: dict[str, Any], res, target: dict[str, Any] | None = None) -> tuple[str, str]:
+    """`match` when the rule is inside the modelled envelope, `no-match` when
+    v4.43 can show it is not installed on the traced gateway, else `unknown`."""
     cols = unmodelled_columns(rule, res)
     if not cols:
         return "match", "Time, Content and Install On are defaults"
+    notes = []
+    if "Install On" in cols:
+        st, why = install_on_state(rule, res, target)
+        if st == "no-match":
+            return "no-match", why            # absent from this gateway, whatever Time / Content say
+        if st == "match":
+            cols = [c for c in cols if c != "Install On"]
+            notes.append(why)
+            if not cols:
+                return "match", "; ".join(notes)
     return "unknown", (", ".join(cols) + " not modelled: the rule may not apply to this "
                        "connection, so it cannot be a proven match")
 

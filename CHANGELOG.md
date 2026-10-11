@@ -4,6 +4,54 @@ All notable changes to Firewall Insight.
 
 ---
 
+## v4.43.0 — the reviewers' round: multi-rule shadowing, implied rules and Install On decided, not only demoted
+
+NCCY2026 reviewers (#47 A/B/C) asked for three things this release answers in
+code; the lab evidence for them is in `experiments/v443_patch/`.
+
+### Multi-rule shadowing (`app/union_cover.py`, new; `app/analyzer.py`)
+
+The pairwise check reports a rule only when ONE earlier rule covers it. A rule
+covered by several earlier rules together (Hu et al. 2012, the union case) was
+never reported - 169 of 730 provably unreachable rules in E1. The analyzer now
+subtracts the boxes of every eligible earlier rule from the later rule's boxes
+(exact on intervals) and reports the rule under `findings.multi_rule_shadowing`
+with the list of covering rules. Eligibility is the pairwise check's, on both
+sides: fully resolved objects, no negation, no Inline Layer parent, no Time /
+Content / Install On, no service with extra conditions, same VPN column.
+Leaving a rule out only makes the remainder larger, so every exclusion errs
+towards not reporting. Past 20,000 remainder boxes the rule is not reported and
+`summary.multi_rule_gave_up` counts it. `analyze_rulebase(payload, multi_rule=False)`
+restores the 4.42 behaviour.
+
+E1u (seed 2569): compound rules found 169/169, no report outside the true dead
+set; recall against all provably unreachable rules 0.77 -> 1.00.
+
+### Implied rules decided by position (`app/implied.py`, `app/traffic.py`)
+
+4.42 only demoted a trace an implied rule could touch. 4.43 decides the case
+the documented order makes decidable: exactly one service implied rule
+(echo-request, DNS over UDP/TCP 53, RIP) matches the whole query, no endpoint is
+a Check Point device, the position is known and the package has one Ordered
+Layer. First -> the implied rule decides; Before Last -> it decides unless an
+explicit rule other than the last top-level rule decided first; Last -> it
+decides only when no explicit rule matched. The winner is named
+`implied:<rule>`. Everything else is demoted exactly as before.
+
+### Install On decided for a known target (`app/envelope.py`, `app/api/traffic.py`)
+
+When the package has exactly one installation target, a rule whose Install On
+names only gateway / cluster objects is a match if the target is named and a
+proven miss if it is not. Groups, unreadable objects and an unknown target
+leave it unknown. Time and Content are still unknown.
+
+### Tests
+
+1,051 -> 1,068: `test_v443_implied_decide.py` (10), `test_v443_install_on.py` (7);
+`test_v442_implied.py` updated for echo-request placed First.
+
+---
+
 ## v4.42.0 — a definite answer has to survive implied rules and the parts of an object the model leaves out
 
 Review round three of the co-op paper found two places where the tool still

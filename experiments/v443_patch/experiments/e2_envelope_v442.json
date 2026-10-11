@@ -1,0 +1,42 @@
+{
+ "label": "v442",
+ "e2c": [
+  {
+   "frac": 0.1,
+   "flows": 12000,
+   "W": 0.0,
+   "A": 7.233333333333333,
+   "counts": {
+    "correct": 11132,
+    "abstain": 868
+   }
+  },
+  {
+   "frac": 0.2,
+   "flows": 12000,
+   "W": 0.0,
+   "A": 15.6,
+   "counts": {
+    "correct": 10128,
+    "abstain": 1872
+   }
+  },
+  {
+   "frac": 0.3,
+   "flows": 12000,
+   "W": 0.0,
+   "A": 25.025,
+   "counts": {
+    "correct": 8997,
+    "abstain": 3003
+   }
+  }
+ ],
+ "e1c": {
+  "TP": 211,
+  "FP": 0,
+  "FN": 0,
+  "precision": 1.0,
+  "recall": 1.0
+ }
+}

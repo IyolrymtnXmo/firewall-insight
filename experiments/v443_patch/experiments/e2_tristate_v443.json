@@ -1,0 +1,59 @@
+{
+ "0.1": {
+  "policies": 30,
+  "rules_per_policy": 41,
+  "opaque_frac": 0.1,
+  "flows": 12000,
+  "tristate": {
+   "correct": 7082,
+   "wrong": 0,
+   "abstain": 4918
+  },
+  "twostate": {
+   "correct": 11177,
+   "wrong": 823
+  },
+  "abstain_detail": {
+   "abstain_gt_is_possible_winner": 553,
+   "abstain_gt_is_other": 4365
+  }
+ },
+ "0.2": {
+  "policies": 30,
+  "rules_per_policy": 41,
+  "opaque_frac": 0.2,
+  "flows": 12000,
+  "tristate": {
+   "correct": 5940,
+   "wrong": 0,
+   "abstain": 6060
+  },
+  "twostate": {
+   "correct": 10545,
+   "wrong": 1455
+  },
+  "abstain_detail": {
+   "abstain_gt_is_other": 5183,
+   "abstain_gt_is_possible_winner": 877
+  }
+ },
+ "0.3": {
+  "policies": 30,
+  "rules_per_policy": 41,
+  "opaque_frac": 0.3,
+  "flows": 12000,
+  "tristate": {
+   "correct": 2692,
+   "wrong": 0,
+   "abstain": 9308
+  },
+  "twostate": {
+   "correct": 9280,
+   "wrong": 2720
+  },
+  "abstain_detail": {
+   "abstain_gt_is_other": 8309,
+   "abstain_gt_is_possible_winner": 999
+  }
+ }
+}

@@ -50,3 +50,6 @@ reports/
 # Temporary diagram skills
 diagram-design/
 .agents/skills/diagram-design/
+
+# E5v2 lab harness: generated read-only admin password
+experiments/v443_patch/lab/.ro_secret

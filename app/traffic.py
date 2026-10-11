@@ -49,6 +49,7 @@ def trace_layer_candidates(
     dst: str,
     proto: str,
     service: Any,
+    target: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     objs={
         o["uid"]:o for o in payload.get("objects-dictionary",[])
@@ -104,7 +105,11 @@ def trace_layer_candidates(
 
         # v4.41: Time / Content / Install On narrow a rule in ways this
         # simulator does not model. They can only cap the state at unknown.
-        es,eo=envelope_state(r,res)
+        # v4.43: Install On is decided when the traced gateway is known; a rule
+        # not installed there is a proven miss.
+        es,eo=envelope_state(r,res,target)
+        if es=="no-match":
+            continue
 
         states=(ss,ds,vs,ns,es)
         overall="match" if all(x=="match" for x in states) else "unknown"
@@ -199,6 +204,7 @@ def trace_access_tree(
     service: Any,
     selected_root: str | None = None,
     implied: dict[str, Any] | None = None,
+    target: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Inline-aware Access trace with tri-state rule evaluation.
@@ -252,7 +258,7 @@ def trace_access_tree(
                 "reason":"Inline Layer nesting exceeded supported trace depth."
             }
 
-        evaluated=trace_layer_candidates(current.get("payload") or {},src,dst,proto,service_query)
+        evaluated=trace_layer_candidates(current.get("payload") or {},src,dst,proto,service_query,target)
         first_uncertain_terminal=None
 
         for cand in evaluated.get("candidates",[]):
@@ -426,7 +432,14 @@ def trace_access_tree(
         out["gateway_final"]=False
         out["scope_notes"]=list(SCOPE_NOTES)
     else:
-        implied_rules.apply(out,implied_rules.assess(implied,src,dst,service_query))
+        last_rule=None
+        if len(ordered)<=1:
+            enabled_root=[r for r in _rules((root.get("payload") or {}).get("rulebase",[])) if r.get("enabled",True)]
+            last_rule=enabled_root[-1].get("rule-number") if enabled_root else None
+        if len(ordered)>1:
+            implied_rules.apply(out,implied_rules.assess(implied,src,dst,service_query))
+        else:
+            implied_rules.apply(out,implied_rules.assess(implied,src,dst,service_query),last_rule)
         out["scope_notes"]=[]
     return out
 

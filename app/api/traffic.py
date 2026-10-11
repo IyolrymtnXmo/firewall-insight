@@ -180,6 +180,19 @@ async def run_trace(c, *, layer: str, src: str, dst: str, protocol: str,
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+    # v4.43: when the package is installed on exactly one gateway or cluster,
+    # Install On can be decided for it. Otherwise the target stays unknown.
+    target = None
+    if package:
+        try:
+            pk = await c.show_package(package)
+            tg = pk.get("installation-targets") if isinstance(pk, dict) else None
+            if isinstance(tg, list) and len(tg) == 1 and isinstance(tg[0], dict):
+                from ..envelope import make_target
+                target = make_target(tg[0].get("uid", ""), tg[0].get("name", ""))
+        except Exception:                                      # noqa: BLE001
+            target = None
+
     progress_set(rid, 2, "Walking the ordered rulebase", STEPS)
     await _prewarm_dns(src, dst)
     access = trace_access_tree(
@@ -190,6 +203,7 @@ async def run_trace(c, *, layer: str, src: str, dst: str, protocol: str,
         service_query,
         selected_root=layer,
         implied=await implied_context(c),
+        target=target,
     )
 
     progress_set(rid, 3, "Correlating NAT", STEPS)

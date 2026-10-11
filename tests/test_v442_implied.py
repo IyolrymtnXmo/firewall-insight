@@ -108,7 +108,12 @@ def test_icmp_is_demoted_only_when_the_icmp_implied_rule_is_on():
     on = implied.build_context(props(**{"accept-icmp-requests": True,
                                         "accept-icmp-requests-position": "first"}), GATEWAYS)
     off = implied.build_context(props(**{"accept-icmp-requests": False}), GATEWAYS)
-    assert trace("192.168.10.5", "10.0.0.80", "icmp", 8, on)["confidence"] == "inferred"
+    # v4.43: echo-request with the rule placed First is now decided by the
+    # implied rule (tests/test_v443_implied_decide.py); a request type outside
+    # the modelled set is still only demoted.
+    assert trace("192.168.10.5", "10.0.0.80", "icmp", 13, on)["confidence"] == "inferred"
+    decided = trace("192.168.10.5", "10.0.0.80", "icmp", 8, on)
+    assert decided["decided_by"] == "implied" and decided["result"] == "Accept"
     assert trace("192.168.10.5", "10.0.0.80", "icmp", 8, off)["confidence"] == "exact"
 
 

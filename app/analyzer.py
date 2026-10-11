@@ -3,6 +3,7 @@ from typing import Any
 from collections import defaultdict
 from .resolver import ObjectResolver, AddrAtom, PortAtom
 from .envelope import can_cover
+from . import union_cover
 
 RULE_FIELDS = ("source","destination","service","vpn","action")
 
@@ -80,7 +81,7 @@ def _dimension_cover(earlier_values,later_values,res: ObjectResolver,kind:str):
     if _intervals_cover(ea,la): return True,"Subnet/range coverage" if kind=="address" else "Protocol/port coverage"
     return False,"Not contained"
 
-def analyze_rulebase(payload: dict[str,Any]) -> dict[str,Any]:
+def analyze_rulebase(payload: dict[str,Any], multi_rule: bool = True) -> dict[str,Any]:
     rules=_rules(payload.get("rulebase",[]))
     objs={o["uid"]:o for o in payload.get("objects-dictionary",[]) if isinstance(o,dict) and o.get("uid")}
     res=ObjectResolver(objs)
@@ -132,8 +133,41 @@ def analyze_rulebase(payload: dict[str,Any]) -> dict[str,Any]:
             same=ea==la
             shadows.append({"rule":later.get("rule-number"),"rule_name":later.get("name","") or "","covered_by":earlier.get("rule-number"),"covered_by_name":earlier.get("name","") or "","classification":"Redundant" if same else "Shadowed / action conflict","risk":"Medium" if same else "High","earlier_action":ea,"later_action":la,"source_reason":sreason,"destination_reason":dreason,"service_reason":vreason,"earlier":{"source":res.describe_list(earlier.get("source")),"destination":res.describe_list(earlier.get("destination")),"service":res.describe_list(earlier.get("service"))},"later":{"source":res.describe_list(later.get("source")),"destination":res.describe_list(later.get("destination")),"service":res.describe_list(later.get("service"))}})
             break
+    # v4.43: rules no single earlier rule covers, but several together do.
+    multi=[]; gave_up=0
+    paired={x["rule"] for x in shadows}
+    def _plain(r):
+        return not any(r.get(k,False) for k in ("source-negate","destination-negate","service-negate")) and not r.get("inline-layer")
+    def _dims(r):
+        d=(union_cover.dimension(r.get("source"),res,"address"),union_cover.dimension(r.get("destination"),res,"address"),union_cover.dimension(r.get("service"),res,"service"))
+        return None if any(x is None for x in d) else d
+    cache={}
+    def _eligible_earlier(r):
+        key=id(r)
+        if key not in cache:
+            ok=_plain(r) and can_cover(r,res) and not any(res.service_is_qualified(u) for u in res.uids(r.get("service")))
+            d=_dims(r) if ok else None
+            cache[key]=union_cover.boxes(d) if d else None
+        return cache[key]
+    for idx,later in enumerate(enabled if multi_rule else []):
+        if later.get("rule-number") in paired or not _plain(later): continue
+        ld=_dims(later)
+        if ld is None: continue
+        lv=set(res.uids(later.get("vpn")))
+        earlier=[]
+        for e in enabled[:idx]:
+            if set(res.uids(e.get("vpn")))!=lv: continue
+            eb=_eligible_earlier(e)
+            if eb: earlier.append((e,eb))
+        if len(earlier)<2: continue
+        ok,used,gu=union_cover.covered(union_cover.boxes(ld),earlier)
+        gave_up+=gu
+        if not ok or len(used)<2: continue
+        la=_action_name(later,res); acts={_action_name(e,res) for e in used}
+        same=acts=={la}
+        multi.append({"rule":later.get("rule-number"),"rule_name":later.get("name","") or "","covered_by":[e.get("rule-number") for e in used],"classification":"Redundant (multi-rule)" if same else "Shadowed / action conflict (multi-rule)","risk":"Medium" if same else "High","later_action":la,"earlier_actions":sorted(acts),"reason":"Every connection this rule matches is matched first by one of the listed earlier rules (exact interval subtraction)."})
     score=max(0,100-min(len(broad)*8,24)-min(len(duplicates)*3,15)-min(len(shadows)*2,25)-min(len(disabled),10))
-    return {"summary":{"total_rules":len(rules),"disabled_rules":len(disabled),"zero_hit_rules":len(zero_hit),"rules_with_any_source":len(any_src),"rules_with_any_destination":len(any_dst),"rules_with_any_service":len(any_svc),"any_any_any_rules":len(broad),"cleanup_rules":len(cleanup),"duplicate_groups":len(duplicates),"potential_shadowed_or_redundant":len(shadows),"optimization_score":score},"findings":{"disabled_rule_numbers":disabled,"zero_hit_rule_numbers":zero_hit,"any_any_any_rule_numbers":broad,"cleanup_rule_numbers":cleanup,"duplicates":duplicates,"shadowing":shadows},"rules":rows,"notes":["Read-only: no add/set/delete/publish/install-policy operations are implemented.","Shadow analysis skips negated rules and inline-layer rules to reduce false positives.","A trailing Any/Any/Any Drop/Reject rule is recognised as the layer cleanup rule and is reported separately, not as an Any/Any/Any finding.","Unknown/dynamic/identity-aware object types are treated conservatively and are not assumed to be contained."]}
+    return {"summary":{"total_rules":len(rules),"disabled_rules":len(disabled),"zero_hit_rules":len(zero_hit),"rules_with_any_source":len(any_src),"rules_with_any_destination":len(any_dst),"rules_with_any_service":len(any_svc),"any_any_any_rules":len(broad),"cleanup_rules":len(cleanup),"duplicate_groups":len(duplicates),"potential_shadowed_or_redundant":len(shadows),"multi_rule_shadowed":len(multi),"multi_rule_gave_up":gave_up,"optimization_score":score},"findings":{"disabled_rule_numbers":disabled,"zero_hit_rule_numbers":zero_hit,"any_any_any_rule_numbers":broad,"cleanup_rule_numbers":cleanup,"duplicates":duplicates,"shadowing":shadows,"multi_rule_shadowing":multi},"rules":rows,"notes":["Read-only: no add/set/delete/publish/install-policy operations are implemented.","Shadow analysis skips negated rules and inline-layer rules to reduce false positives.","A trailing Any/Any/Any Drop/Reject rule is recognised as the layer cleanup rule and is reported separately, not as an Any/Any/Any finding.","Unknown/dynamic/identity-aware object types are treated conservatively and are not assumed to be contained.","Multi-rule shadowing (v4.43) uses only fully resolved, unrestricted earlier rules; a rule is reported only when they cover it exactly."]}
 
 def collect_referenced_uids(payload: dict[str,Any]) -> set[str]:
     out=set()

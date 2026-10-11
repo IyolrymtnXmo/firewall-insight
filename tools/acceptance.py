@@ -304,6 +304,19 @@ async def run(package: str, out_path: str) -> int:
                   if implied_ctx["properties_read"] else
                   "show-global-properties unavailable: no trace is reported as definite")
 
+        # v4.43: the traced gateway, as app/api/traffic.py derives it - the
+        # package's single installation target, if it has exactly one.
+        target = None
+        try:
+            from app.envelope import make_target
+            pk = await c.show_package(package)
+            tg = pk.get("installation-targets") if isinstance(pk, dict) else None
+            if isinstance(tg, list) and len(tg) == 1 and isinstance(tg[0], dict):
+                target = make_target(tg[0].get("uid", ""), tg[0].get("name", ""))
+                evidence["target"] = tg[0].get("name")
+        except Exception as exc:                                  # noqa: BLE001
+            evidence["target_error"] = str(exc)
+
         traffic_ev = []
         if per_pkg is None and cases.get("packages"):
             rep.check("traffic", f"no traffic cases defined for '{package}'", None,
@@ -315,7 +328,7 @@ async def run(package: str, out_path: str) -> int:
                 got = trace_access_tree(
                     tree, case["src"], case["dst"],
                     case.get("protocol", "tcp"), query, selected_root=layer,
-                    implied=implied_ctx)
+                    implied=implied_ctx, target=target)
             except Exception as exc:                              # noqa: BLE001
                 rep.check("traffic", case["name"], False, f"error: {exc}")
                 continue

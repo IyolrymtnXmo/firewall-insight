@@ -59,6 +59,19 @@ ENDPOINT_KEYS = {
     "accept-web-and-ssh-connections-for-gw-administration",
 }
 
+# v4.43: the part of each service implied rule whose decision is modelled.
+# A connection whose service lies wholly inside one of these sets, and that
+# no other implied rule can touch, is decided by position (First / Before
+# Last / Last) instead of being demoted. ICMP is limited to echo-request:
+# the other members of icmp-requests are not claimed.
+DECIDE_KEYS: dict[str, tuple[str, int, int]] = {
+    "accept-icmp-requests": ("icmp", 8, 8),
+    "accept-domain-name-over-udp": ("udp", 53, 53),
+    "accept-domain-name-over-tcp": ("tcp", 53, 53),
+    "accept-rip": ("udp", 520, 520),
+}
+POSITIONS = ("first", "before last", "last")
+
 # Implied rules that match by service, whatever the endpoints are.
 # key -> (protocols, first port/type, last port/type)
 SERVICE_KEYS: dict[str, tuple[tuple[str, ...], int, int]] = {
@@ -184,8 +197,11 @@ def assess(ctx: dict[str, Any] | None, src: str, dst: str, service_query: dict[s
 
     reasons: list[str] = []
     rules: list[str] = []
+    other = False            # a reason this module cannot turn into a decision
+    service_hits: list[dict[str, Any]] = []
 
     if ctx.get("dynamic_devices"):
+        other = True
         reasons.append(
             "Check Point device(s) with no fixed address ("
             + ", ".join(ctx["dynamic_devices"][:4])
@@ -194,10 +210,12 @@ def assess(ctx: dict[str, Any] | None, src: str, dst: str, service_query: dict[s
     for label, text in (("source", src), ("destination", dst)):
         found = _endpoint_addresses(text)
         if found is None:
+            other = True
             reasons.append(f"The {label} {text} has no single address, so it cannot be "
                            "shown that it is not a Check Point device.")
             continue
         if any(item in ctx["addresses"] for item in found):
+            other = True
             reasons.append(
                 f"The {label} {text} is an address of a Check Point gateway or server. "
                 "Implied rules for control, administration and gateway-originated "
@@ -215,15 +233,58 @@ def assess(ctx: dict[str, Any] | None, src: str, dst: str, service_query: dict[s
                     position = ctx["positions"].get(key) or "position not reported"
                     reasons.append(f"Implied rule {key} is switched on ({position}) and matches this service.")
                     rules.append(key)
+                    service_hits.append({"rule": key, "position": ctx["positions"].get(key) or "",
+                                         "whole": _inside_decide_set(key, atoms)})
                     break
 
     if reasons:
-        return {"state": "possible", "reasons": reasons, "rules": sorted(set(rules))}
+        out = {"state": "possible", "reasons": reasons, "rules": sorted(set(rules))}
+        if not other and len(service_hits) == 1 and service_hits[0]["whole"] \
+                and service_hits[0]["position"] in POSITIONS:
+            out["decidable"] = {"rule": service_hits[0]["rule"], "position": service_hits[0]["position"]}
+        return out
     return {"state": "clear", "rules": [],
             "reasons": ["No implied rule that is switched on can match this connection."]}
 
 
-def apply(out: dict[str, Any], assessment: dict[str, Any]) -> dict[str, Any]:
+def _inside_decide_set(key: str, atoms: list) -> bool:
+    """Does every atom of the query lie inside the modelled part of `key`?"""
+    if key not in DECIDE_KEYS or not atoms:
+        return False
+    proto, lo, hi = DECIDE_KEYS[key]
+    return all(p == proto and lo <= a and b <= hi for p, a, b in atoms)
+
+
+def decide(out: dict[str, Any], decidable: dict[str, str], last_rule: Any) -> str | None:
+    """
+    v4.43 - who decides when one service implied rule matches the connection?
+
+    The gateway order is: implied First, explicit rules except the last,
+    implied Before Last, the last explicit rule, implied Last, implicit
+    cleanup. `out` is the explicit result of a single Ordered Layer.
+    Returns "implied", "explicit", or None when the explicit result is not
+    definite (then the caller demotes as before).
+    """
+    conf = out.get("confidence")
+    if conf not in ("exact", "none"):
+        return None
+    position = decidable["position"]
+    if position == "first":
+        return "implied"
+    if conf == "none":                    # no explicit rule matched
+        return "implied"
+    if position == "last":
+        return "explicit"
+    # before last: the explicit rule reached through the root layer decides
+    # unless it is the last explicit rule of that layer.
+    path = out.get("path") or []
+    top = path[0].get("rule") if path else None
+    if top is None or last_rule is None:
+        return None
+    return "implied" if str(top) == str(last_rule) else "explicit"
+
+
+def apply(out: dict[str, Any], assessment: dict[str, Any], last_rule: Any = None) -> dict[str, Any]:
     """
     Fold the assessment into a trace result.
 
@@ -233,6 +294,28 @@ def apply(out: dict[str, Any], assessment: dict[str, Any]) -> dict[str, Any]:
     """
     out["implied_rules"] = assessment
     if assessment.get("state") == "clear":
+        return out
+
+    dec = assessment.get("decidable")
+    who = decide(out, dec, last_rule) if dec else None
+    if who == "explicit":
+        assessment["state"] = "resolved"
+        assessment["reasons"] = list(assessment.get("reasons") or []) + [
+            f"Implied rule {dec['rule']} is placed {dec['position']}; the explicit result above is "
+            "enforced before it."]
+        return out
+    if who == "implied":
+        assessment["state"] = "decides"
+        winner = {"rule": f"implied:{dec['rule']}", "implied_rule": dec["rule"],
+                  "display_rule": f"Implied rule {dec['rule']} ({dec['position']})",
+                  "name": dec["rule"], "action": "Accept", "layer": "Implied rules",
+                  "transition": "final", "implied_position": dec["position"]}
+        out.update({"matched": True, "winner": winner, "path": (out.get("path") or []) + [winner],
+                    "result": "Accept", "confidence": "exact", "decided_by": "implied",
+                    "reason": (f"Implied rule {dec['rule']} is switched on ({dec['position']}) and this "
+                               "connection lies wholly inside its service, so it decides: Accept. "
+                               "No other implied rule can match the connection.")})
+        out["gateway_final"] = True
         return out
 
     note = " ".join(assessment.get("reasons") or [])

@@ -1,0 +1,105 @@
+{
+ "package_targets": [
+  "External-Cluster"
+ ],
+ "access_layers": [
+  "External-FW Network"
+ ],
+ "rules": [
+  [
+   1,
+   null
+  ],
+  [
+   2,
+   "Allow-VLAN30"
+  ],
+  [
+   3,
+   null
+  ],
+  [
+   4,
+   "Music-VPN"
+  ],
+  [
+   5,
+   "Admin-Access"
+  ],
+  [
+   6,
+   "Lab-Device-Mgmt"
+  ],
+  [
+   7,
+   "VLAN20-to-AD"
+  ],
+  [
+   8,
+   "Access-to-RDP"
+  ],
+  [
+   9,
+   "Access-to-Web"
+  ],
+  [
+   10,
+   "Lab-Troubleshoot-ICMP"
+  ],
+  [
+   11,
+   "Lab-Outbound"
+  ],
+  [
+   12,
+   "Cleanup rule"
+  ]
+ ],
+ "implied_on": {
+  "accept-control-connections": "first",
+  "accept-remote-access-control-connections": "first",
+  "accept-smart-update-connections": "first",
+  "accept-ips1-management-connections": "first",
+  "accept-outgoing-packets-originating-from-gw": "before last",
+  "accept-outgoing-packets-originating-from-connectra-gw": "",
+  "accept-outgoing-packets-to-cp-online-services": "before last",
+  "accept-web-and-ssh-connections-for-gw-administration": "first",
+  "accept-incoming-traffic-to-dhcp-and-dns-services-of-gws": "first",
+  "accept-dynamic-addr-modules-outgoing-internet-connections": "first",
+  "accept-vrrp-packets-originating-from-cluster-members": "first",
+  "accept-identity-awareness-control-connections": "first"
+ },
+ "log_implied_rules": false,
+ "devices": [
+  [
+   "CP-MGMT-01",
+   "checkpoint-host",
+   "172.23.31.180"
+  ],
+  [
+   "CP-MGMT-02",
+   "checkpoint-host",
+   "172.23.31.181"
+  ],
+  [
+   "External-Cluster",
+   "CpmiGatewayCluster",
+   "172.23.34.179"
+  ],
+  [
+   "External-GW01",
+   "cluster-member",
+   "172.23.31.177"
+  ],
+  [
+   "External-GW02",
+   "cluster-member",
+   "172.23.31.178"
+  ],
+  [
+   "Internal-GW01",
+   "simple-gateway",
+   "172.23.31.176"
+  ]
+ ]
+}

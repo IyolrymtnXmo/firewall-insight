@@ -1,0 +1,51 @@
+{
+ "label": "v443",
+ "implied_gate": true,
+ "e2d": [
+  {
+   "implied_share": 0.1,
+   "flows": 12000,
+   "W": 0.0,
+   "A": 5.0,
+   "counts": {
+    "correct": 11400,
+    "abstain": 600,
+    "implied_decided": 217
+   },
+   "detail": {
+    "abstain_and_implied_decided": 396,
+    "abstain_but_explicit_decided": 204
+   }
+  },
+  {
+   "implied_share": 0.2,
+   "flows": 12000,
+   "W": 0.0,
+   "A": 9.6,
+   "counts": {
+    "correct": 10848,
+    "abstain": 1152,
+    "implied_decided": 515
+   },
+   "detail": {
+    "abstain_and_implied_decided": 874,
+    "abstain_but_explicit_decided": 278
+   }
+  },
+  {
+   "implied_share": 0.3,
+   "flows": 12000,
+   "W": 0.0,
+   "A": 14.5,
+   "counts": {
+    "correct": 10260,
+    "abstain": 1740,
+    "implied_decided": 680
+   },
+   "detail": {
+    "abstain_and_implied_decided": 1369,
+    "abstain_but_explicit_decided": 371
+   }
+  }
+ ]
+}
