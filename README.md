@@ -581,6 +581,7 @@ server does: the encrypted store if one exists, otherwise `.env`.
 | `python -m tools.acceptance --package <name>` | Acceptance run against the live Management Server (below) |
 | `python -m tools.suggest_cases --package <name>` | Propose acceptance cases from the live rulebase |
 | `python -m tools.diag_resolver <package>` | Objects the resolver cannot turn into IP or port ranges, and why |
+| `python -m tools.diag_trace <package> <src> <dst> <tcp\|udp\|icmp> <port>` | One trace, rule by rule: the state of every column, and which column made a rule `unknown` |
 | `python -m tools.diag_topology` | What the Management Server says about clusters and HA |
 | `python -m tools.probe_gaia --host <address>` | Record what a real Gaia gateway answers |
 

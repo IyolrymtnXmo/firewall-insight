@@ -125,6 +125,28 @@ def _report_layer(layer_name: str, payload: dict) -> None:
             "missing_members": missing_members,
         })
 
+    # v4.42.1: show what the API actually returned for every leaf that blocks
+    # a group, so the missing case in the resolver can be named, not guessed.
+    import json as _json
+    blocked = []
+    for item in partial:
+        blocked.extend(item["blockers"])
+    if blocked:
+        skip = {"uid", "domain", "meta-info", "tags", "icon", "color", "comments",
+                "read-only", "available-actions"}
+        print("  Raw definition of each blocking object:\n")
+        seen = set()
+        for label in blocked:
+            leaf = label.split(" [")[0]
+            if leaf in seen:
+                continue
+            seen.add(leaf)
+            for o in objects.values():
+                if str(o.get("name")) == leaf:
+                    shown = {k: v for k, v in o.items() if k not in skip}
+                    print("    " + _json.dumps(shown, ensure_ascii=False)[:600])
+        print()
+
     if partial:
         print(f"  {len(partial)} object(s) PARTIALLY modelled - traffic matching"
               " works through the parts we understand,")
@@ -175,6 +197,11 @@ def _report_layer(layer_name: str, payload: dict) -> None:
 
 
 async def main(package: str) -> None:
+    # Use the Management Server saved on the Settings page, as the application does.
+    from app.api.credentials import load_credentials_on_startup
+    from app.config import settings
+    load_credentials_on_startup()
+    print(f"Management Server: {settings.checkpoint_mgmt}")
     client = CheckPointClient()
     try:
         info = await client.login()
@@ -190,7 +217,7 @@ async def main(package: str) -> None:
 
         # Reuse the application's own tree + hydration path so the diagnosis
         # reflects what the app actually sees.
-        from app.main import hydrate_rulebase
+        from app.policy import hydrate_rulebase   # moved out of main.py in v4.13
 
         for root in roots:
             tree = await client.show_rulebase_tree(root["name"])

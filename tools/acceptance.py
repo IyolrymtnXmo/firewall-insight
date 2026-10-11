@@ -171,7 +171,15 @@ async def run(package: str, out_path: str) -> int:
 
         # ---- 2. connectivity ---------------------------------------------
         print(f"\n{DIM}2. Connection{OFF}")
-        info = await c.login()
+        try:
+            info = await c.login()
+        except Exception as exc:                                  # noqa: BLE001
+            # A person running this needs the reason, not sixty lines of httpx.
+            rep.check("connect", "login to the Management Server", False, str(exc))
+            print("\nCannot reach or sign in to the Management Server, so nothing else "
+                  "can be checked. Is this machine on the lab network (or VPN), and is "
+                  "the address above the right one?", file=sys.stderr)
+            return 2
         ver = info.get("api-server-version") or info.get("version") or "?"
         evidence["api_version"] = ver
         rep.check("connect", "login to the Management Server",
@@ -452,6 +460,19 @@ def main() -> None:
     args = ap.parse_args()
     print(f"Firewall Insight {APP_VERSION} — acceptance run against package "
           f"'{args.package}'")
+    # v4.42.1: use the same Management Server the application uses. The address
+    # saved on the Settings page lives in credentials.enc and overrides .env;
+    # without this the runner only read .env and, with nothing set there, tried
+    # https://127.0.0.1.
+    from app.api.credentials import load_credentials_on_startup
+    from app.config import settings
+    load_credentials_on_startup()
+    if not settings.checkpoint_user:
+        print("No Management API credentials. Save them on the Settings page of the "
+              "application, or set CHECKPOINT_MGMT, CHECKPOINT_USER and "
+              "CHECKPOINT_PASSWORD in .env.", file=sys.stderr)
+        sys.exit(2)
+    print(f"{DIM}Management Server: {settings.checkpoint_mgmt}  (user {settings.checkpoint_user}){OFF}")
     sys.exit(asyncio.run(run(args.package, args.json)))
 
 

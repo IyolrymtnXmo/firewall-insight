@@ -1,0 +1,30 @@
+# Run on the gateway that enforces External-FW, in expert mode.
+# One command per case; copy the action and the rule number it prints
+# into e5_compare_External-FW.csv.
+
+# 1. VLAN10 reaches the RDP server
+fw up_execute mode=access in_ifn=eth1 ipp=6 src=192.168.10.50 dst=192.168.20.100 dport=3389
+
+# 2. VLAN20 CANNOT reach the RDP server
+fw up_execute mode=access in_ifn=eth1 ipp=6 src=192.168.20.50 dst=192.168.20.100 dport=3389
+
+# 3. VLAN20 reaches AD over LDAP
+fw up_execute mode=access in_ifn=eth1 ipp=6 src=192.168.20.50 dst=192.168.10.10 dport=389
+
+# 4. VLAN10 CANNOT reach AD over LDAP
+fw up_execute mode=access in_ifn=eth1 ipp=6 src=192.168.10.50 dst=192.168.10.10 dport=389
+
+# 5. Lab hosts reach the web server
+fw up_execute mode=access in_ifn=eth1 ipp=6 src=192.168.10.50 dst=192.168.20.20 dport=443
+
+# 6. Lab hosts browse the internet
+fw up_execute mode=access in_ifn=eth1 ipp=6 src=192.168.10.50 dst=8.8.8.8 dport=443
+
+# 7. Lab hosts CANNOT SMB into the corporate VLAN
+fw up_execute mode=access in_ifn=eth1 ipp=6 src=192.168.10.50 dst=172.23.31.180 dport=445
+
+# 8. The internet CANNOT reach a lab client
+fw up_execute mode=access in_ifn=eth2 ipp=6 src=8.8.8.8 dst=192.168.10.50 dport=3389
+
+# 9. VLAN20 to AD on an unmodelled high port
+fw up_execute mode=access in_ifn=eth1 ipp=6 src=192.168.20.50 dst=192.168.10.10 dport=9999
