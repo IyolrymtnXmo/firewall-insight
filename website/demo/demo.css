@@ -1,0 +1,307 @@
+/* Firewall Insight — interactive demo additions. Uses the app's own tokens. */
+
+.demo-tag{
+  margin-left:10px;padding:2px 8px;border-radius:999px;
+  font:600 10.5px/1.6 var(--font-mono);letter-spacing:.08em;
+  color:var(--warn);background:var(--warn-soft);border:1px solid var(--warn-line);
+}
+.demo-note{
+  margin:0 0 16px;padding:12px 14px;border-radius:var(--radius-md);
+  border:1px solid var(--warn-line);background:var(--warn-soft);color:var(--text);
+  font-size:13.5px;line-height:1.55;
+}
+
+/* ---- guide dock ---- */
+.demo-dock{position:fixed;right:96px;bottom:28px;z-index:7600;font-family:var(--font-ui)}
+.demo-dock .dd-pill{
+  display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-radius:999px;
+  border:1px solid var(--line-str);background:var(--frame);color:var(--text);
+  -webkit-backdrop-filter:blur(14px) saturate(140%);backdrop-filter:blur(14px) saturate(140%);
+  box-shadow:var(--shadow);font:600 13px/1 var(--font-ui);cursor:pointer;
+}
+.demo-dock.open .dd-pill{display:none}
+.demo-dock .dd-dot{width:8px;height:8px;border-radius:50%;background:var(--warn);box-shadow:0 0 0 4px var(--warn-soft);flex:none}
+.demo-dock .dd-panel{
+  display:none;width:330px;max-height:calc(100vh - 110px);overflow:auto;padding:16px;border-radius:18px;
+  border:1px solid var(--line-str);background:var(--frame);color:var(--text);
+  -webkit-backdrop-filter:blur(18px) saturate(150%);backdrop-filter:blur(18px) saturate(150%);
+  box-shadow:var(--shadow);
+}
+.demo-dock.open .dd-panel{display:block;animation:dd-in .22s ease-out}
+@keyframes dd-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.demo-dock.open .dd-panel{animation:none}}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  .demo-dock .dd-panel,.demo-dock .dd-pill{background:var(--bg)}
+}
+.dd-head{display:flex;align-items:flex-start;gap:10px}
+.dd-head .dd-dot{margin-top:6px}
+.dd-head div{flex:1;min-width:0}
+.dd-head b{display:block;font:600 15px/1.3 var(--font-display)}
+.dd-head span{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.dd-close{
+  width:30px;height:30px;border-radius:10px;border:1px solid var(--line);background:transparent;
+  color:var(--muted);font-size:18px;line-height:1;cursor:pointer;flex:none;
+}
+.dd-close:hover{color:var(--text);border-color:var(--line-str)}
+.dd-lead{margin:12px 0 4px;color:var(--muted);font-size:12.8px;line-height:1.55}
+.dd-k{margin:14px 0 6px;color:var(--faint);font:600 10.5px/1 var(--font-mono);letter-spacing:.1em;text-transform:uppercase}
+.dd-try{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
+  min-height:42px;margin:0 0 6px;padding:8px 12px;border-radius:12px;text-align:left;
+  border:1px solid var(--line);background:var(--panel);color:var(--text);font:500 13px/1.35 var(--font-ui);cursor:pointer;
+}
+.dd-try:hover{border-color:var(--line-str);background:var(--glass-hi)}
+.dd-try em{
+  font:600 10px/1 var(--font-mono);font-style:normal;letter-spacing:.06em;padding:5px 7px;border-radius:999px;
+  color:var(--info);background:var(--info-soft);flex:none;
+}
+.dd-try em.ok{color:var(--good);background:var(--good-soft)}
+.dd-try em.warn{color:var(--warn);background:var(--warn-soft)}
+.dd-go{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.dd-go button{
+  min-height:36px;padding:6px 10px;border-radius:10px;border:1px solid var(--line);background:transparent;
+  color:var(--text);font:500 12.5px/1.2 var(--font-ui);cursor:pointer;text-align:left;
+}
+.dd-go button:hover{border-color:var(--line-str);background:var(--panel)}
+.dd-back{display:block;margin-top:14px;color:var(--accent-2);font-size:13px;text-decoration:none}
+.dd-back:hover{text-decoration:underline}
+.demo-dock button:focus-visible,.demo-dock a:focus-visible{outline:2px solid var(--accent-2);outline-offset:2px}
+
+.demo-dock{pointer-events:none}
+.demo-dock .dd-pill,.demo-dock .dd-panel{pointer-events:auto}
+
+/* ---- the context selectors on narrower screens ----
+   The app hides Package / Layer below 1180px, which leaves a phone with no
+   way to choose them. The demo is mostly opened on phones, so they stay. */
+@media (max-width:1180px) and (min-width:901px){
+  .ctx-chips{display:flex;flex-wrap:nowrap}
+  .ctx-chip.mono,#conn{display:none}
+  .ctx-chip select{max-width:128px}
+}
+/* ==========================================================================
+   Phone layout
+   Most people open this demo from a QR code, so below 900px the shell is
+   rebuilt for a phone: the page itself scrolls, a two-row header keeps the
+   Package and Layer selectors in reach, a bottom tab bar holds the main
+   pages, tables turn into cards and long notes fold away. The application's
+   own code is unchanged; demo.js adds the few classes these rules use.
+   ========================================================================== */
+.m-tabbar,.m-more{display:none}
+@media (max-width:900px){
+  /* the document scrolls, so the address bar collapses and momentum works */
+  html,body{height:auto!important;overflow:visible!important}
+  html{overflow-x:hidden!important;overflow-x:clip!important}
+  #topProgress{overflow:hidden}
+  body{padding-bottom:calc(76px + env(safe-area-inset-bottom))}
+
+  /* header: [menu] brand DEMO ........ [exit] / package · layer */
+  .topbar{
+    height:auto;min-height:58px;flex-wrap:wrap;row-gap:8px;
+    padding:10px 12px 10px 108px;padding-top:max(10px, env(safe-area-inset-top));
+  }
+  .topbar .brand{height:38px}
+  .ctx-chips{
+    display:flex;order:3;flex:0 0 calc(100% + 96px);margin-left:-96px;
+    flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;
+  }
+  .ctx-chips::-webkit-scrollbar{display:none}
+  .ctx-chip{height:40px;flex:none;border-radius:12px}
+  .ctx-chip select{max-width:180px;font-size:16px}
+  .ctx-chip.mono{display:none}
+  #navToggle{top:max(10px, env(safe-area-inset-top));height:38px;padding:0 13px}
+  /* the app pulls this bar 40px past a desktop gutter; on narrow screens that overflows */
+  .header{margin:0 0 10px!important;padding:0 0 10px!important;height:auto!important}
+
+  /* the action dial duplicates the tab bar and the menu */
+  .dial,.dial-scrim{display:none!important}
+
+  /* tab bar */
+  .m-tabbar{
+    position:fixed;left:0;right:0;bottom:0;z-index:7700;
+    display:grid;grid-template-columns:repeat(5,1fr);
+    padding:6px 6px calc(6px + env(safe-area-inset-bottom));
+    background:var(--frame);border-top:1px solid var(--line-str);
+    -webkit-backdrop-filter:blur(18px) saturate(150%);backdrop-filter:blur(18px) saturate(150%);
+  }
+  .m-tabbar button{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+    height:54px;padding:0;border:0;border-radius:12px;background:transparent;
+    color:var(--muted);font:600 10.5px/1 var(--font-ui);letter-spacing:.01em;cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .m-tabbar svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .m-tabbar button.on{color:var(--accent-2);background:rgba(var(--accent-rgb),.12)}
+  .m-tabbar button:focus-visible{outline:2px solid var(--accent-2);outline-offset:-2px}
+  .m-tabbar .m-dot{position:relative}
+  .m-tabbar .m-dot::after{content:"";position:absolute;top:-1px;right:-3px;width:7px;height:7px;border-radius:50%;background:var(--warn)}
+}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  .m-tabbar{background:var(--bg)!important}
+}
+
+@media (max-width:560px){
+  .topbar-right .icon-only,#conn,.topbar .brand > svg,.exit-wide{display:none}
+  .topbar .brand{font-size:15px;gap:5px}
+  .topbar-right button{margin-left:0!important;height:38px;padding:0 12px!important;border-radius:11px!important}
+  .demo-tag{margin-left:6px}
+}
+
+/* guide: a bottom sheet above the tab bar */
+@media (max-width:900px){
+  .demo-dock{left:10px;right:10px;bottom:calc(74px + env(safe-area-inset-bottom))}
+  .demo-dock .dd-pill{display:none!important}
+  .demo-dock .dd-panel{width:auto;max-height:min(70vh,560px);border-radius:20px}
+  .dd-try,.dd-go button{min-height:46px}
+  .m-scrim{position:fixed;inset:0;z-index:7550;background:rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:opacity .2s}
+  .m-scrim.on{opacity:1;pointer-events:auto}
+}
+
+/* ---------- content ---------- */
+@media (max-width:700px){
+  .main{padding:12px 12px 24px!important}
+  .header{gap:4px;border-bottom:0!important;padding-bottom:0!important}
+  .header h1{font:600 11px/1.4 var(--font-mono)!important;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+  .header .badge{display:none}
+
+  .statusbar{padding:9px 12px!important;gap:8px;margin-bottom:12px;border-radius:12px}
+  .statusbar .status{font-size:12.5px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .statusbar .status-time{display:none}
+
+  .page-head{margin:10px 0 6px;gap:8px}
+  .page-head h2,.panel > .section-title h2,.page h2{font-size:22px!important;line-height:1.25}
+  .page-head p{font-size:14px;line-height:1.55}
+  .panel{padding:14px!important;border-radius:16px}
+  .card{padding:14px;border-radius:14px}
+  .card .card{padding:12px}
+  .section-title h3{font-size:16px!important;line-height:1.35}
+  .section-title{gap:6px}
+  .hint,.hint-sub{font-size:12px;line-height:1.5}
+  p{overflow-wrap:break-word}
+
+  /* buttons and fields: thumb-sized, never wider than the screen */
+  .controls{gap:8px}
+  .controls button,.controls select,.controls input,.page button.primary{min-height:44px}
+  input,select,textarea{font-size:16px!important}
+  .field{min-width:0!important}
+
+  /* metric tiles: two up, compact */
+  .main .cards,.inline-findings-grid,.access-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important;margin-top:12px}
+  .main .cards > .card,.inline-findings-grid > *,.access-summary-grid > *{padding:11px 12px;min-height:0}
+  .main .metric-label{font-size:10px!important;letter-spacing:.08em}
+  .main .metric{font-size:22px!important;line-height:1.2;margin-top:4px}
+  .main .metric:not(.num){font-size:15px!important;overflow-wrap:anywhere}
+
+  /* flows (Source → Rule → Action → Destination): a 2×2 grid */
+  .flow{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px!important}
+  .flow .arrow{display:none!important}
+  .flow .step{min-width:0!important;padding:10px 12px;font-size:13.5px;line-height:1.45;overflow-wrap:anywhere}
+
+  /* tab strips scroll sideways instead of wrapping over each other */
+  .tabs,#natTabs{display:flex!important;flex-wrap:nowrap!important;overflow-x:auto;scrollbar-width:none;
+    gap:6px!important;padding-bottom:4px!important;-webkit-overflow-scrolling:touch}
+  .tabs::-webkit-scrollbar,#natTabs::-webkit-scrollbar{display:none}
+  .tabs button,#natTabs button{flex:none;white-space:nowrap;height:36px}
+
+  /* tables become cards (demo.js marks them) */
+  .table-wrap.m-wrap{overflow:visible!important;border:0!important;background:none!important;box-shadow:none!important;
+    max-height:none!important;padding:0!important;margin-left:0!important;margin-right:0!important}
+  table.m-cards{min-width:0!important;width:100%!important;border:0!important;background:none!important;border-collapse:separate}
+  table.m-cards thead,table.m-cards tr.m-head{display:none!important}
+  table.m-cards tbody{display:block}
+  table.m-cards tr{
+    display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px 14px;
+    margin:0 0 10px;padding:11px 12px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);
+  }
+  table.m-cards td{
+    display:block;min-width:0;padding:0!important;border:0!important;text-align:left!important;
+    white-space:normal!important;overflow-wrap:anywhere;font-size:13.5px;line-height:1.45;background:none!important;
+  }
+  table.m-cards td::before{
+    content:attr(data-label);display:block;margin-bottom:2px;
+    color:var(--faint);font:600 9.5px/1.4 var(--font-mono);letter-spacing:.07em;text-transform:uppercase;
+  }
+  table.m-cards td:first-child,table.m-cards td.m-wide,table.m-cards td.m-full{grid-column:1/-1}
+  table.m-cards td:first-child{font-weight:600;font-size:14px;padding:0 0 8px!important;border-bottom:1px solid var(--line)!important}
+  table.m-cards td:first-child::before,table.m-cards td.m-nolabel::before,table.m-cards td.m-full::before{display:none}
+  table.m-cards td:empty{display:none}
+  table.m-cards tr.drill-row{cursor:pointer}
+
+  /* the configured rulebase: one compact card per rule */
+  table.ledger.m-cards tr.rb-row{
+    display:grid;grid-template-columns:auto auto auto 1fr;align-items:center;gap:6px 8px;
+    margin:0 0 8px;padding:10px 12px;
+  }
+  table.ledger.m-cards tr.rb-row td{display:block;padding:0!important;border:0!important;margin:0}
+  table.ledger.m-cards tr.rb-row td::before{display:none}
+  table.ledger.m-cards tr.rb-row td:nth-child(1){grid-column:1;grid-row:1}
+  table.ledger.m-cards tr.rb-row td:nth-child(2){grid-column:2/5;grid-row:1;font-weight:600}
+  table.ledger.m-cards tr.rb-row td:nth-child(3){grid-column:2;grid-row:2}
+  table.ledger.m-cards tr.rb-row td:nth-child(4){grid-column:3;grid-row:2;font-size:12.5px;color:var(--muted)}
+  table.ledger.m-cards tr.rb-row td:nth-child(4) .mono::after{content:" hits"}
+  table.ledger.m-cards tr.rb-row td:nth-child(5){grid-column:4;grid-row:2;justify-self:end}
+  table.ledger.m-cards tr.rb-row .rb-sum{display:block;font-weight:400;margin-top:3px}
+  table.ledger.m-cards tr.rb-detail{display:none;margin:-4px 0 10px;padding:0;border:0;background:none}
+  table.ledger.m-cards tr.rb-detail.open{display:block}
+  table.ledger.m-cards tr.rb-detail td{display:block;padding:0!important}
+  table.ledger.m-cards tr.rb-detail td::before{display:none}
+  .rb-grid{grid-template-columns:1fr!important}
+
+  /* long notes fold to three lines */
+  .m-clamp{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .m-more{display:inline-block!important;margin:4px 0 0;padding:4px 0;border:0;background:none;color:var(--accent-2);
+    font:600 12px/1.4 var(--font-ui);cursor:pointer}
+
+  /* network map: a real canvas, pinch and drag */
+  #mapping .topology{flex:none!important;height:62vh;min-height:340px!important;max-height:560px}
+  #topoSvg,#topology svg{touch-action:none}
+  .topo-pad{display:none!important}
+  .topo-bar{flex-wrap:nowrap!important;overflow-x:auto;scrollbar-width:none;gap:6px;padding-bottom:4px}
+  .topo-bar::-webkit-scrollbar{display:none}
+  .topo-bar > *{flex:none}
+  .topo-bar .topo-find{min-width:220px}
+  .topo-legend{font-size:11.5px}
+
+  /* script and code blocks scroll inside themselves */
+  pre,.script{max-width:100%;overflow-x:auto;font-size:11.5px}
+
+  /* toasts: a snackbar above the tab bar, newest two only */
+  #toasts{top:auto!important;bottom:calc(80px + env(safe-area-inset-bottom))!important;left:10px!important;right:10px!important;width:auto!important}
+  #toasts > :nth-last-child(n+3){display:none!important}
+  .toast{font-size:12.5px}
+
+  #busyOverlay{z-index:9800}
+}
+
+/* the slide-in menu: a solid sheet over a dimmed page (the app's own scrim
+   is switched off by a later rule, so the menu used to float over content) */
+@media (max-width:900px){
+  .sidebar{
+    z-index:8200!important;width:min(300px,84vw)!important;background:var(--bg)!important;
+    border-right:1px solid var(--line-str)!important;box-shadow:0 0 60px rgba(0,0,0,.6)!important;
+    padding:calc(64px + env(safe-area-inset-top)) 0 calc(16px + env(safe-area-inset-bottom))!important;
+  }
+  .sidebar .menu{padding:6px 10px!important;gap:2px}
+  .sidebar .menu button{min-height:46px;font-size:15px}
+  body.nav-open #navToggle{z-index:8300}
+  .m-navscrim{position:fixed;inset:0;z-index:8100;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .2s}
+  body.nav-open .m-navscrim{opacity:1;pointer-events:auto}
+  body.nav-open .m-tabbar{visibility:hidden}
+}
+
+/* two-column forms (alerts, schedules) never wider than their card */
+@media (max-width:900px){
+  .form-stack-2col{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .form-stack-2col > div{min-width:0}
+  .form-stack-2col input,.form-stack-2col select{min-width:0;width:100%}
+}
+@media (max-width:640px){
+  .form-stack-2col{grid-template-columns:minmax(0,1fr)!important}
+}
+@media (max-width:900px){
+  .main select,.main input,.main textarea{max-width:100%;min-width:0}
+  .cred-form,.cred-form > *{min-width:0}
+}
+@media (max-width:900px){
+  /* results scrolled into view land below the sticky header and above the tab bar */
+  .main *{scroll-margin-top:118px;scroll-margin-bottom:92px}
+}

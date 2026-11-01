@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="Firewall Insight turns Check Point policy into a clearer view of rules, traffic paths, topology, and review evidence without modifying firewall policy.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Firewall Insight — See the policy behind every decision">
+  <meta property="og:description" content="Read-only Check Point policy intelligence, visualized for better decisions.">
+  <meta property="og:image" content="assets/dashboard.jpg">
+  <title>Firewall Insight — See the policy behind every decision</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="content.js" defer></script>
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main" data-i18n="skip">Skip to content</a>
+
+
+  <header class="site-header" id="top">
+    <nav class="nav-pill glass" aria-label="Main navigation">
+      <a class="brand" href="#top" aria-label="Firewall Insight home">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 44 44" fill="none"><path d="M22 3 38 12v19L22 40 6 31V12L22 3Z" stroke="currentColor" stroke-width="2.4"/><path d="M12 23h8l3-7 4 12 2-5h5" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="brand-name">Firewall <b>Insight</b></span>
+      </a>
+      <div class="nav-links">
+        <a href="#overview" data-i18n="navOverview">Overview</a>
+        <a href="#capabilities" data-i18n="navCapabilities">Capabilities</a>
+        <a href="#explore" data-i18n="navExplore">Product</a>
+        <a href="#research" data-i18n="navResearch">Research</a>
+        <a href="#workflow" data-i18n="navWorkflow">How it works</a>
+        <a href="demo/" data-i18n="navDemo">Live demo</a>
+      </div>
+      <div class="nav-actions">
+        <button class="language-toggle" type="button" aria-label="เปลี่ยนเป็นภาษาไทย"><span class="lang-th">TH</span><span class="lang-divider" aria-hidden="true">/</span><span class="lang-en active">EN</span></button>
+        <a class="btn btn-ink btn-sm nav-cta" href="https://github.com/IyolrymtnXmo/firewall-insight" target="_blank" rel="noopener noreferrer"><span data-i18n="navSource">Source Code</span><svg class="ic" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
+        <button class="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-nav"><span></span><span></span></button>
+      </div>
+    </nav>
+    <nav class="mobile-nav glass" id="mobile-nav" aria-label="Mobile navigation" hidden>
+      <a href="#overview" data-i18n="navOverview">Overview</a>
+      <a href="#capabilities" data-i18n="navCapabilities">Capabilities</a>
+      <a href="#explore" data-i18n="navExplore">Product</a>
+      <a href="#research" data-i18n="navResearch">Research</a>
+      <a href="#workflow" data-i18n="navWorkflow">How it works</a>
+      <a href="demo/" data-i18n="navDemo">Live demo</a>
+      <a href="#source" data-i18n="navSource">Source Code</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <!-- Hero -->
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-grid-bg" aria-hidden="true"></div>
+      <div class="hero-glow" aria-hidden="true"></div>
+      <div class="wrap hero-inner">
+        <p class="hero-eyebrow reveal"><span class="live-dot" aria-hidden="true"></span><span data-i18n="heroEyebrow">CHECK POINT POLICY INTELLIGENCE</span></p>
+        <h1 id="hero-title" class="reveal"><span data-i18n="heroTitleOne">See every rule.</span><br><span class="accent-text" data-i18n="heroTitleTwo">Understand the risk.</span></h1>
+        <p class="hero-lead reveal" data-i18n="heroDescription">Turn complex firewall data into a clearer view. Explore policy, traffic paths, topology, and review evidence in one connected workspace.</p>
+        <div class="hero-actions reveal">
+          <a class="btn btn-ink btn-demo" href="demo/"><span class="btn-live" aria-hidden="true"></span><span data-i18n="heroDemo">Try the live demo</span><svg class="ic" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+          <a class="btn btn-ghost" href="#explore"><span data-i18n="heroExplore">Explore the product</span></a>
+          <a class="btn btn-ghost" href="https://github.com/IyolrymtnXmo/firewall-insight" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 .8a11.2 11.2 0 0 0-3.54 21.83c.56.1.76-.24.76-.54v-2.1c-3.1.67-3.76-1.31-3.76-1.31-.5-1.28-1.23-1.62-1.23-1.62-1.01-.69.08-.68.08-.68 1.12.08 1.7 1.15 1.7 1.15 1 .1.77 2.08 3.27 1.47.1-.72.39-1.21.7-1.49-2.48-.28-5.09-1.24-5.09-5.53 0-1.22.44-2.21 1.15-2.99-.12-.28-.5-1.41.11-2.94 0 0 .94-.3 3.08 1.14A10.7 10.7 0 0 1 12 6.83c.95 0 1.9.13 2.79.38 2.14-1.45 3.08-1.14 3.08-1.14.61 1.53.23 2.66.11 2.94.72.78 1.15 1.77 1.15 2.99 0 4.3-2.61 5.24-5.1 5.52.4.35.74 1.02.74 2.06v2.51c0 .3.2.65.77.54A11.2 11.2 0 0 0 12 .8Z"/></svg><span data-i18n="heroGithub">View on GitHub</span></a>
+          <button class="copy-chip glass" type="button" data-copy="git clone https://github.com/IyolrymtnXmo/firewall-insight.git">
+            <span class="mono copy-cmd"><span class="copy-prompt" aria-hidden="true">$</span> git clone …/firewall-insight</span>
+            <span class="copy-pill"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg><span class="copy-label">Copy</span></span>
+          </button>
+          <span class="sr-only" aria-live="polite" id="copy-status"></span>
+        </div>
+        <p class="hero-proof reveal"><span class="proof-dot" aria-hidden="true"></span><span data-i18n="heroProof">Read-only by design · Never changes Check Point policy</span></p>
+
+        <!-- Tabbed component stage -->
+        <div class="stage-wrap reveal">
+          <div class="tab-rail glass" role="tablist" aria-label="Firewall Insight highlights" data-tabs="stage">
+            <button class="tab" type="button" role="tab" id="stage-tab-1" aria-controls="stage-panel-1" aria-selected="true" data-i18n="stageTab1">Policy health</button>
+            <button class="tab" type="button" role="tab" id="stage-tab-2" aria-controls="stage-panel-2" aria-selected="false" tabindex="-1" data-i18n="stageTab2">Traffic path</button>
+            <button class="tab" type="button" role="tab" id="stage-tab-3" aria-controls="stage-panel-3" aria-selected="false" tabindex="-1" data-i18n="stageTab3">Unknown ≠ false</button>
+            <button class="tab" type="button" role="tab" id="stage-tab-4" aria-controls="stage-panel-4" aria-selected="false" tabindex="-1" data-i18n="stageTab4">Network map</button>
+          </div>
+
+          <div class="stage">
+            <div class="stage-dots" aria-hidden="true"></div>
+            <div class="stage-glow" aria-hidden="true"></div>
+
+            <!-- Panel 1: Policy health -->
+            <div class="stage-panel" role="tabpanel" id="stage-panel-1" aria-labelledby="stage-tab-1" tabindex="0">
+              <div class="float-chip chip-tl glass float-a"><span class="chip-ico ok" aria-hidden="true"><svg class="ic" width="14" height="14" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><span>Loaded 5 Access Layers and 3 packages</span></div>
+              <div class="float-chip chip-br glass float-b"><span class="chip-ico info" aria-hidden="true">i</span><span data-i18n="chipHeuristic">Computed here — not a Check Point score</span></div>
+              <div class="app-card app-health">
+                <div class="app-head"><span class="app-title">Policy Health Score</span><span class="app-badge live">● LIVE</span></div>
+                <p class="app-sub">A heuristic computed here, not a Check Point score.</p>
+                <div class="gauge" aria-hidden="true">
+                  <svg viewBox="0 0 200 120"><defs><linearGradient id="gaugeGrad" x1="0" x2="1"><stop offset="0" stop-color="#F06A6A"/><stop offset=".5" stop-color="#F2B84B"/><stop offset="1" stop-color="#2DD4BF"/></linearGradient></defs><path d="M20 105a80 80 0 0 1 160 0" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="14" stroke-linecap="round"/><path class="gauge-arc" d="M20 105a80 80 0 0 1 160 0" fill="none" stroke="url(#gaugeGrad)" stroke-width="14" stroke-linecap="round" pathLength="100" stroke-dasharray="95 100"/></svg>
+                  <div class="gauge-value"><b>95</b><span>/100</span><small>Excellent</small></div>
+                </div>
+                <ul class="app-rows">
+                  <li><span>Rules analysed</span><b>20</b></li>
+                  <li><span>Shadowed / redundant</span><b>0</b></li>
+                  <li><span>Objects fully resolved</span><b class="mono">complete</b></li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Panel 2: Traffic path -->
+            <div class="stage-panel" role="tabpanel" id="stage-panel-2" aria-labelledby="stage-tab-2" tabindex="0" hidden>
+              <div class="float-chip chip-tl glass float-a"><span class="chip-ico info" aria-hidden="true">i</span><span data-i18n="chipNoPacket">Simulated from configuration — no packet sent</span></div>
+              <div class="float-chip chip-br glass float-b chip-ask"><span class="chip-label" data-i18n="chipAsk">Ask in Thai or English</span><span class="mono">ทำไม 192.0.2.10 เข้า 198.51.100.5 ด้วย rdp ไม่ได้</span></div>
+              <div class="app-card app-trace">
+                <div class="app-head"><span class="app-title">Trace Result</span><span class="app-badge exact">EXACT</span></div>
+                <ol class="trace">
+                  <li><span class="trace-k">Source</span><span class="trace-v mono">192.168.10.5</span><span class="trace-s mono">HTTPS / TCP 443</span></li>
+                  <li class="trace-hit"><span class="trace-k">Matched rule</span><span class="trace-v">Rule 11.1</span><span class="trace-s mono">Allow-Web · VPN InternetLayer</span></li>
+                  <li><span class="trace-k">Action</span><span class="trace-v ok">Accept</span><span class="trace-s mono">confidence: exact</span></li>
+                  <li><span class="trace-k">Destination</span><span class="trace-v mono">192.168.20.10</span><span class="trace-s mono">Parent → Inline Layer → child</span></li>
+                </ol>
+                <div class="packet-track" aria-hidden="true"><span class="packet"></span></div>
+              </div>
+            </div>
+
+            <!-- Panel 3: Unknown is not false -->
+            <div class="stage-panel" role="tabpanel" id="stage-panel-3" aria-labelledby="stage-tab-3" tabindex="0" hidden>
+              <div class="float-chip chip-tr glass float-a chip-warn"><span class="chip-ico warn" aria-hidden="true">!</span><span>UNVERIFIED — deliberately not guessing</span></div>
+              <div class="float-chip chip-bl glass float-b"><span data-i18n="chipUnknownNote">Saying “unknown” beats being confidently wrong</span></div>
+              <div class="app-card app-unknown">
+                <div class="app-head"><span class="app-title">Traffic Path Summary</span><span class="app-badge warn">UNVERIFIED</span></div>
+                <p class="app-sub mono">192.168.10.50 → unverified-destination.invalid · TCP/443</p>
+                <ul class="steps">
+                  <li><span class="step-ico ok" aria-hidden="true">✓</span><span>Source resolved</span><span class="pill pill-ok">match</span></li>
+                  <li><span class="step-ico warn" aria-hidden="true">!</span><span>Rule 2 Admin-Access</span><span class="pill pill-warn">unknown</span></li>
+                  <li><span class="step-ico warn" aria-hidden="true">!</span><span>Final action</span><span class="pill pill-warn">unknown</span></li>
+                  <li><span class="step-ico warn" aria-hidden="true">!</span><span>NAT correlation · Rule 3</span><span class="pill pill-warn">unknown</span></li>
+                  <li><span class="step-ico ok" aria-hidden="true">✓</span><span>Destination</span><span class="pill pill-ok">match</span></li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Panel 4: Network map -->
+            <div class="stage-panel" role="tabpanel" id="stage-panel-4" aria-labelledby="stage-tab-4" tabindex="0" hidden>
+              <div class="float-chip chip-tl glass float-a"><span class="mono">12 nodes · 15 links</span></div>
+              <div class="float-chip chip-br glass float-b"><span data-i18n="chipMembership">Cluster membership is never inferred from addressing</span></div>
+              <div class="app-card app-map">
+                <div class="app-head"><span class="app-title">Network Mapping</span><span class="app-badge">GRAPH</span></div>
+                <svg class="topo" viewBox="0 0 460 230" role="img" aria-label="Lab topology: client VLANs to Internal-GW01, to the External ClusterXL pair, to the Internet; Management HA pair attached">
+                  <g class="topo-links">
+                    <path d="M70 115 H170"/><path d="M230 115 H300"/><path class="dash" d="M330 70 V160"/><path d="M360 115 H410"/><path class="dash" d="M150 40 H230"/><path class="dim" d="M190 40 V95"/>
+                  </g>
+                  <circle class="topo-pulse" r="4"><animateMotion dur="3.2s" repeatCount="indefinite" path="M70 115 H170 M230 115 H300 M360 115 H410"/></circle>
+                  <g class="topo-node subnet"><rect x="14" y="96" width="56" height="38" rx="8"/><text x="42" y="113">VLAN</text><text x="42" y="126" class="t2">10 · 20</text></g>
+                  <g class="topo-node gw"><rect x="170" y="94" width="60" height="42" rx="9"/><text x="200" y="112">Internal</text><text x="200" y="125" class="t2">GW01</text></g>
+                  <g class="topo-node cluster"><rect x="300" y="48" width="60" height="38" rx="9"/><text x="330" y="66">External</text><text x="330" y="78" class="t2">GW01</text></g>
+                  <g class="topo-node cluster"><rect x="300" y="144" width="60" height="38" rx="9"/><text x="330" y="162">External</text><text x="330" y="174" class="t2">GW02</text></g>
+                  <g class="topo-node cl-label"><rect x="300" y="100" width="60" height="30" rx="15"/><text x="330" y="119">ClusterXL</text></g>
+                  <g class="topo-node net"><circle cx="428" cy="115" r="20"/><text x="428" y="119">WAN</text></g>
+                  <g class="topo-node mgmt"><rect x="98" y="24" width="52" height="32" rx="8"/><text x="124" y="44">MGMT-01</text></g>
+                  <g class="topo-node mgmt"><rect x="230" y="24" width="52" height="32" rx="8"/><text x="256" y="44">MGMT-02</text></g>
+                </svg>
+              </div>
+            </div>
+          </div>
+          <p class="stage-caption" data-i18n="stageCaption">Card data transcribed from real project screens and the poster (External-FW lab · 15 Oct 2026). The network map is simplified.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Built-on strip -->
+    <section class="stack" aria-labelledby="stack-title">
+      <p class="stack-caption" id="stack-title" data-i18n="stackCaption">Built on real APIs and tooling</p>
+      <div class="marquee" aria-hidden="true">
+        <div class="marquee-track mono">
+          <span>CHECK POINT R82</span><i>✳</i><span>MANAGEMENT API</span><i>✳</i><span>GAIA API</span><i>✳</i><span>PYTHON 3.12</span><i>✳</i><span>FASTAPI</span><i>✳</i><span>VANILLA JS</span><i>✳</i><span>PYTEST</span><i>✳</i><span>DOCKER</span><i>✳</i><span>GITHUB ACTIONS</span><i>✳</i>
+          <span>CHECK POINT R82</span><i>✳</i><span>MANAGEMENT API</span><i>✳</i><span>GAIA API</span><i>✳</i><span>PYTHON 3.12</span><i>✳</i><span>FASTAPI</span><i>✳</i><span>VANILLA JS</span><i>✳</i><span>PYTEST</span><i>✳</i><span>DOCKER</span><i>✳</i><span>GITHUB ACTIONS</span><i>✳</i>
+        </div>
+      </div>
+      <ul class="sr-only"><li>Check Point R82</li><li>Management API</li><li>Gaia API</li><li>Python 3.12</li><li>FastAPI</li><li>Vanilla JS</li><li>pytest</li><li>Docker</li><li>GitHub Actions</li></ul>
+    </section>
+
+    <!-- Overview -->
+    <section class="section overview" id="overview" aria-labelledby="overview-title">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <p class="eyebrow" data-i18n="overviewKicker">WHY IT MATTERS</p>
+          <h2 id="overview-title" data-i18n="overviewTitle">When policy is visible,<br><em>decisions get clearer.</em></h2>
+          <p class="section-lead" data-i18n="overviewIntro">When the rulebase, topology, and review results live in separate places, even simple questions take time. Firewall Insight connects the context you need to investigate.</p>
+        </div>
+
+        <div class="origin reveal">
+          <span class="origin-label mono" data-i18n="originLabel">Where it started</span>
+          <p data-i18n="overviewOrigin">It began with real Infrastructure Security work: moving about 600 and 300 legacy rules to a Check Point cluster without knowing which were redundant or shadowed — and any tool used must not modify the customer’s systems.</p>
+        </div>
+
+        <div class="overview-cards" data-carousel>
+          <article class="l-card reveal">
+            <div class="l-card-art" aria-hidden="true">
+              <div class="mini-table">
+                <div class="mt-row"><span>1</span><span>Allow-Web</span><em class="ok">Accept</em></div>
+                <div class="mt-row"><span>2</span><span>Admin-Access</span><em class="ok">Accept</em></div>
+                <div class="mt-row mt-inline"><span>2.1</span><span>↳ Inline · SSH</span><em class="warn">Review</em></div>
+                <div class="mt-row"><span>3</span><span>Cleanup</span><em class="bad">Drop</em></div>
+              </div>
+            </div>
+            <h3 data-i18n="overviewCard1Title">Read the rulebase clearly</h3>
+            <p data-i18n="overviewCard1Body">See Access and NAT policy as returned, with Inline Layer context and findings worth reviewing.</p>
+            <span class="tag mono">ACCESS / NAT</span>
+          </article>
+          <article class="l-card reveal">
+            <div class="l-card-art" aria-hidden="true">
+              <div class="mini-path">
+                <span class="mp-node mono">10.5</span><span class="mp-line"><i></i></span><span class="mp-node mp-rule mono">R 11.1</span><span class="mp-line"><i></i></span><span class="mp-node mono">20.10</span>
+              </div>
+              <div class="mini-conf"><span class="pill pill-ok">exact</span><span class="pill pill-info">inferred</span><span class="pill pill-warn">unknown</span></div>
+            </div>
+            <h3 data-i18n="overviewCard2Title">Connect rules to traffic</h3>
+            <p data-i18n="overviewCard2Body">Simulate a path using source, destination, and service to inspect a possible matching rule and its confidence level.</p>
+            <span class="tag mono">TRAFFIC PATH</span>
+          </article>
+          <article class="l-card reveal">
+            <div class="l-card-art" aria-hidden="true">
+              <div class="mini-diff">
+                <div class="md-col"><b class="mono">SNAPSHOT A</b><span></span><span></span><span class="md-gone"></span><span></span></div>
+                <div class="md-col"><b class="mono">SNAPSHOT B</b><span></span><span class="md-new"></span><span></span><span class="md-scope"></span></div>
+              </div>
+            </div>
+            <h3 data-i18n="overviewCard3Title">Keep change evidence</h3>
+            <p data-i18n="overviewCard3Body">Compare snapshots, run compliance checks, and revisit reviews to support decisions with traceable evidence.</p>
+            <span class="tag mono">DIFF / REVIEW</span>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Capabilities: dark band with live bento -->
+    <section class="band-dark capabilities" id="capabilities" aria-labelledby="capabilities-title">
+      <div class="band-glow" aria-hidden="true"></div>
+      <div class="wrap">
+        <div class="section-head center reveal">
+          <p class="eyebrow" data-i18n="capabilitiesKicker">ONE CONNECTED VIEW</p>
+          <h2 id="capabilities-title" data-i18n="capabilitiesTitle">From a single rule<br>to <em>the wider picture.</em></h2>
+          <p class="section-lead" data-i18n="capabilitiesIntro">Move between policy, risk, and network context. Dive into the part your team needs to understand next.</p>
+        </div>
+
+        <div class="bento" data-carousel>
+          <!-- A: live review feed -->
+          <article class="d-card span-2 reveal" data-spotlight>
+            <div class="d-dots" aria-hidden="true"></div>
+            <div class="feed glass-dark">
+              <div class="feed-head"><span class="feed-title"><span class="live-dot" aria-hidden="true"></span>Review feed</span><span class="demo-badge mono" data-i18n="demoBadge">Sample data</span></div>
+              <ul class="feed-list" role="log" aria-live="off" data-feed="findings"></ul>
+            </div>
+            <div class="d-card-copy">
+              <h3 data-i18n="capability1">Find duplicate, shadowed, or overly broad rules</h3>
+              <p data-i18n="bentoFeedBody">Analysis stays within each layer, so rules in different Inline Layers are never compared as siblings — and Unused is a review candidate, not a delete instruction.</p>
+            </div>
+          </article>
+
+          <!-- B: read-only guard -->
+          <article class="d-card reveal" data-spotlight>
+            <div class="guard">
+              <div class="guard-screen mono" aria-live="polite">
+                <span class="guard-prompt" aria-hidden="true">mgmt ›</span>
+                <span class="guard-cmd" id="guard-cmd">show-access-rulebase</span>
+              </div>
+              <div class="guard-verdict" id="guard-verdict"><span class="pill pill-ok" id="guard-badge">ALLOWED</span><span class="guard-reason" id="guard-reason">In READ_COMMANDS</span></div>
+              <button class="btn btn-dark-ghost btn-block" type="button" id="guard-next"><span data-i18n="guardNext">Try next command</span><svg class="ic" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+            </div>
+            <div class="d-card-copy">
+              <h3 data-i18n="bentoGuardTitle">Not a single write command</h3>
+              <p data-i18n="bentoGuardBody">Only read commands reach the Management API. A test fails the build if add, set, delete, publish or install-policy appears in the source.</p>
+            </div>
+          </article>
+
+          <!-- C: three-state -->
+          <article class="d-card reveal" data-spotlight>
+            <div class="states">
+              <div class="state-buttons" role="group" aria-label="Confidence levels">
+                <button type="button" class="state-btn" data-state="exact" aria-pressed="true">EXACT</button>
+                <button type="button" class="state-btn" data-state="inferred" aria-pressed="false">INFERRED</button>
+                <button type="button" class="state-btn" data-state="unknown" aria-pressed="false">UNKNOWN</button>
+              </div>
+              <div class="state-panel" id="state-panel" aria-live="polite">
+                <span class="state-meter" aria-hidden="true"><i></i></span>
+                <p id="state-text">Every condition evaluated — confirmed</p>
+              </div>
+            </div>
+            <div class="d-card-copy">
+              <h3 data-i18n="bentoStateTitle">Three answers: match, no match, unknown</h3>
+              <p data-i18n="bentoStateBody">Kleene three-valued logic across Inline Layers and implied rules. When a condition can’t be evaluated from configuration, the tool says unknown instead of guessing.</p>
+            </div>
+          </article>
+
+          <!-- D: ask in Thai -->
+          <article class="d-card reveal" data-spotlight>
+            <div class="ask">
+              <div class="ask-box"><span class="ask-text" id="ask-text"></span><span class="ask-caret" aria-hidden="true"></span></div>
+              <div class="ask-chips" id="ask-chips" aria-live="polite"></div>
+              <button class="btn btn-dark-ghost btn-block" type="button" id="ask-replay"><span data-i18n="askReplay">Replay</span><svg class="ic" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"/></svg></button>
+            </div>
+            <div class="d-card-copy">
+              <h3 data-i18n="bentoAskTitle">Ask in Thai or English</h3>
+              <p data-i18n="bentoAskBody">A deterministic parser — no language model, and the question never leaves the app. Missing a piece? It asks back instead of guessing.</p>
+            </div>
+          </article>
+
+          <!-- E: reviews -->
+          <article class="d-card reveal" data-spotlight>
+            <ul class="review-list">
+              <li><span>Analysis</span><span class="pill pill-ok">read</span></li>
+              <li><span>Policy diff</span><span class="pill pill-ok">read</span></li>
+              <li><span>Compliance</span><span class="pill pill-bad mono">4 / 6 failed</span></li>
+              <li class="review-gw"><span>Gateway health</span><span class="pill pill-warn" id="gw-pill">2 findings · 1 high</span></li>
+            </ul>
+            <button class="btn btn-dark-ghost btn-block" type="button" id="gw-toggle" aria-pressed="false"><span id="gw-toggle-label">Simulate an unreachable gateway</span></button>
+            <div class="d-card-copy">
+              <h3 data-i18n="capability4">Keep review results and unread sections visible</h3>
+              <p data-i18n="bentoReviewBody">One review composes analysis, change, compliance and gateway health. A section that couldn’t be read is recorded as not read — never as an empty result.</p>
+            </div>
+          </article>
+
+          <!-- F: diff by uid -->
+          <article class="d-card span-3 reveal" data-spotlight>
+            <div class="diff-layout">
+              <div class="d-card-copy">
+                <h3 data-i18n="capability3">Compare changes across policy snapshots</h3>
+                <p data-i18n="bentoDiffBody">Rules are matched by uid, never by number — so inserting one rule doesn’t report every rule below it as rewritten, and incomparable reach gets its own category.</p>
+                <button class="btn btn-dark-ghost" type="button" id="diff-toggle" aria-pressed="false"><span id="diff-toggle-label">Insert a rule at position 2</span></button>
+                <div class="diff-summary mono" id="diff-summary" aria-live="polite"></div>
+              </div>
+              <div class="diff-cols" aria-hidden="true">
+                <div class="diff-col"><b class="mono">SNAPSHOT A</b><ol id="diff-a"></ol></div>
+                <div class="diff-col"><b class="mono">SNAPSHOT B</b><ol id="diff-b"></ol></div>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div class="modules reveal">
+          <p class="modules-label" data-i18n="modulesLabel">14 pages, one app</p>
+          <ul class="module-chips mono">
+            <li>Dashboard</li><li>Access Policy</li><li>Analyze</li><li>NAT Policy</li><li>Traffic Path</li><li>Network Mapping</li><li>Policy Diff</li><li>Compliance</li><li>Gateway Health</li><li>Objects</li><li>Rule Usage</li><li>Trends</li><li>Reviews</li><li>Settings</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Explore: real screens -->
+    <section class="section explore" id="explore" aria-labelledby="explore-title">
+      <div class="wrap">
+        <div class="section-head center reveal">
+          <p class="eyebrow" data-i18n="exploreKicker">SEE IT IN ACTION</p>
+          <h2 id="explore-title" data-i18n="exploreTitle">No guesswork.<br><em>These are real screens.</em></h2>
+          <p class="section-lead" data-i18n="exploreIntro">Explore captured Firewall Insight screens from the project. They show the interface and data at the time each capture was taken.</p>
+          <div class="section-cta">
+            <a class="btn btn-ink" href="demo/"><span data-i18n="exploreDemo">Try the interactive demo</span><svg class="ic" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+            <p class="section-cta-note" data-i18n="exploreDemoNote">The real interface, running in your browser on sample lab data.</p>
+          </div>
+        </div>
+        <div class="explorer reveal">
+          <div class="explorer-rail" role="tablist" aria-label="Product features" data-tabs="explorer">
+            <button class="tab" type="button" role="tab" id="tab-analysis" aria-controls="feature-panel" aria-selected="true" data-feature="analysis" data-i18n="tabAnalysis">Policy Analysis</button>
+            <button class="tab" type="button" role="tab" id="tab-path" aria-controls="feature-panel" aria-selected="false" tabindex="-1" data-feature="path" data-i18n="tabPath">Traffic Path</button>
+            <button class="tab" type="button" role="tab" id="tab-map" aria-controls="feature-panel" aria-selected="false" tabindex="-1" data-feature="map" data-i18n="tabMap">Network Map</button>
+            <button class="tab" type="button" role="tab" id="tab-diff" aria-controls="feature-panel" aria-selected="false" tabindex="-1" data-feature="diff" data-i18n="tabDiff">Policy Diff</button>
+            <button class="tab" type="button" role="tab" id="tab-compliance" aria-controls="feature-panel" aria-selected="false" tabindex="-1" data-feature="compliance" data-i18n="tabCompliance">Compliance</button>
+            <button class="tab" type="button" role="tab" id="tab-health" aria-controls="feature-panel" aria-selected="false" tabindex="-1" data-feature="health" data-i18n="tabHealth">Gateway Health</button>
+            <button class="tab" type="button" role="tab" id="tab-usage" aria-controls="feature-panel" aria-selected="false" tabindex="-1" data-feature="usage" data-i18n="tabUsage">Rule Usage</button>
+            <button class="tab" type="button" role="tab" id="tab-trends" aria-controls="feature-panel" aria-selected="false" tabindex="-1" data-feature="trends" data-i18n="tabTrends">Trends</button>
+          </div>
+          <div class="explorer-body" role="tabpanel" id="feature-panel" aria-labelledby="tab-analysis">
+            <div class="feature-copy">
+              <p class="eyebrow" id="feature-overline">01 / ANALYZE</p>
+              <h3 id="feature-title">Find the rules worth reviewing</h3>
+              <p id="feature-description">Inspect duplicate, shadowed, and overly broad rules. Analysis stays within each layer so findings keep their policy context.</p>
+              <div class="feature-facts mono" id="feature-facts"><span>SHADOWED RULES</span><span>DUPLICATES</span><span>INLINE LAYERS</span></div>
+              <a class="text-link" href="https://github.com/IyolrymtnXmo/firewall-insight#features" target="_blank" rel="noopener noreferrer"><span data-i18n="featureMore">Read feature details</span><svg class="ic" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
+            </div>
+            <figure class="browser">
+              <div class="browser-bar"><span class="browser-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="browser-url mono">127.0.0.1:8000 / <span id="image-path">ANALYZE</span></span><span class="browser-live mono"><span class="live-dot" aria-hidden="true"></span><span data-i18n="captureLabel">PRODUCT CAPTURE</span></span></div>
+              <div class="browser-shot"><img id="feature-image" src="assets/analyze.jpg" data-fallback="assets/product-fallback.svg" alt="Firewall Insight policy analysis screenshot" width="1536" height="711" loading="lazy"><button class="shot-zoom" type="button" aria-label="Expand screenshot"><span class="zoom-pill"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg><span data-i18n="zoomHint">Tap to zoom</span></span></button></div>
+              <figcaption class="mono" id="image-caption">ACTUAL PRODUCT SCREENSHOT / 15 OCT 2026</figcaption>
+            </figure>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Research -->
+    <section class="section research" id="research" aria-labelledby="research-title">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <p class="eyebrow" data-i18n="researchKicker">RESEARCH · NCCY 2026</p>
+          <h2 id="research-title" data-i18n="researchTitle">Be right,<br><em>or say you don’t know.</em></h2>
+          <p class="section-lead" data-i18n="researchIntro">Firewall Insight was evaluated against known answers — on synthetic policies and on a real lab gateway. The goal isn’t to answer every question; it’s never to be confidently wrong.</p>
+        </div>
+
+        <div class="stats reveal">
+          <div class="stat"><b class="stat-num" data-count="7050">7,050</b><span data-i18n="stat1">synthetic rules with known answers</span></div>
+          <div class="stat"><b class="stat-num" data-count="180000">180,000</b><span data-i18n="stat2">simulated connections</span></div>
+          <div class="stat"><b class="stat-num">0</b><span data-i18n="stat3">wrong confirmed answers after fixing four defects</span></div>
+          <div class="stat"><b class="stat-num">15/15</b><span data-i18n="stat4">confirmed results matched the real gateway</span></div>
+        </div>
+
+        <div class="charts" data-carousel>
+          <article class="chart-card reveal">
+            <h3 data-i18n="chart1Title">Coverage of never-used rules</h3>
+            <p class="chart-sub" data-i18n="chart1Sub">7,050 rules with known answers · 730 can never be hit</p>
+            <div class="hbars">
+              <div class="hbar"><span class="hbar-label" data-i18n="chart1Pair">Pairwise</span><span class="hbar-track"><i style="--v:.77"></i></span><b>0.77</b></div>
+              <div class="hbar hbar-strong"><span class="hbar-label" data-i18n="chart1Multi">Pairwise + multi-rule</span><span class="hbar-track"><i style="--v:1"></i></span><b>1.00</b></div>
+            </div>
+            <p class="chart-note" data-i18n="chart1Note">Recall against all unreachable rules · no false reports in either mode</p>
+          </article>
+
+          <article class="chart-card reveal">
+            <h3 data-i18n="chart2Title">Per 100 questions</h3>
+            <p class="chart-sub" data-i18n="chart2Sub">Against a gateway model, 36,000 connections · pick the share of unknown conditions</p>
+            <div class="seg" role="group" aria-label="Unknown condition share">
+              <button type="button" class="seg-btn" data-unknown="10" aria-pressed="true">10%</button>
+              <button type="button" class="seg-btn" data-unknown="20" aria-pressed="false">20%</button>
+              <button type="button" class="seg-btn" data-unknown="30" aria-pressed="false">30%</button>
+            </div>
+            <div class="vbars" aria-live="polite">
+              <div class="vbar vbar-bad"><b id="vbar-wrong">6.9</b><span class="vbar-col"><i id="vbar-wrong-fill" style="--v:.069"></i></span><span class="vbar-label" data-i18n="chart2Two">Two-state: wrong</span></div>
+              <div class="vbar vbar-good"><b id="vbar-conf">94.5</b><span class="vbar-col"><i id="vbar-conf-fill" style="--v:.945"></i></span><span class="vbar-label" data-i18n="chart2Three">Three-state: confirmed (0 wrong)</span></div>
+            </div>
+          </article>
+
+          <article class="chart-card reveal">
+            <h3 data-i18n="chart3Title">Against the real gateway</h3>
+            <p class="chart-sub" data-i18n="chart3Sub">22 cases on a 16-rule outer policy</p>
+            <div class="tiles">
+              <div class="tile"><b>15/15</b><span data-i18n="tile1">match fw up_execute · the other 7 abstained instead of guessing</span></div>
+              <div class="tile"><b>6/6</b><span data-i18n="tile2">write commands rejected (Read Only All account)</span></div>
+              <div class="tile"><b>4/4</b><span data-i18n="tile3">real logs name the same rule</span></div>
+              <div class="tile tile-warn"><b>2</b><span data-i18n="tile4">defects found and fixed</span></div>
+            </div>
+          </article>
+        </div>
+
+        <article class="paper reveal">
+          <span class="paper-label mono">PAPER</span>
+          <div class="paper-body">
+            <h3 data-i18n="paperTitle">An Uncertainty-Aware Read-Only Framework for Firewall Policy Verification</h3>
+            <p class="paper-en" data-i18n="paperSub">กรอบงานตรวจสอบนโยบายไฟร์วอลล์แบบอ่านอย่างเดียวที่คำนึงถึงความไม่แน่นอนของการประเมินกฎ</p>
+            <p class="paper-meta"><span lang="th">ณันสพัทธ์ เติมทรัพย์, อัครพล หวังพิทักษ์, จักรชัย โสอินทร์</span> · <span data-i18n="paperVenue">Co-operative education technical paper · Netpoleon (Thailand) · Khon Kaen University</span></p>
+          </div>
+          <p class="paper-note" data-i18n="researchNote">Figures from paper v12. Every test policy was written for the project — no customer data.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- Workflow: dark band with code window -->
+    <section class="band-dark workflow" id="workflow" aria-labelledby="workflow-title">
+      <div class="band-glow band-glow-right" aria-hidden="true"></div>
+      <div class="wrap">
+        <div class="workflow-grid">
+          <div class="workflow-copy reveal">
+            <p class="eyebrow" data-i18n="workflowKicker">FROM DATA TO DECISION</p>
+            <h2 id="workflow-title" data-i18n="workflowTitle">Readable data.<br><em>More informed action.</em></h2>
+            <p class="section-lead" data-i18n="workflowIntro">A clear path from reading policy to reviewing the evidence, with people always making the final decision.</p>
+            <ol class="steps-list">
+              <li><span class="step-n mono">01</span><div><h3 data-i18n="workflow1Title">Connect &amp; read</h3><p data-i18n="workflow1Body">Read through the Check Point Management API. Optionally enable the Gaia API for gateway information.</p></div></li>
+              <li><span class="step-n mono">02</span><div><h3 data-i18n="workflow2Title">Explore &amp; explain</h3><p data-i18n="workflow2Body">Investigate rules, topology, traffic paths, and findings in connected context.</p></div></li>
+              <li><span class="step-n mono">03</span><div><h3 data-i18n="workflow3Title">Review &amp; compare</h3><p data-i18n="workflow3Body">Compare snapshots, check selected profiles, and keep review history for later inspection.</p></div></li>
+            </ol>
+            <div class="workflow-buttons">
+              <a class="btn btn-light" href="demo/"><span data-i18n="workflowExplore">Explore the platform</span><svg class="ic" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+              <a class="btn btn-dark-ghost" href="https://github.com/IyolrymtnXmo/firewall-insight" target="_blank" rel="noopener noreferrer"><span data-i18n="workflowSource">View source code</span></a>
+            </div>
+          </div>
+
+          <div class="code-window reveal">
+            <div class="code-bar">
+              <span class="browser-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <div class="code-tabs" role="tablist" aria-label="Code samples" data-tabs="code">
+                <button class="code-tab" type="button" role="tab" id="code-tab-mgmt" aria-controls="code-panel" aria-selected="true" data-code="mgmt">Management API</button>
+                <button class="code-tab" type="button" role="tab" id="code-tab-gaia" aria-controls="code-panel" aria-selected="false" tabindex="-1" data-code="gaia">Gaia API</button>
+                <button class="code-tab" type="button" role="tab" id="code-tab-setup" aria-controls="code-panel" aria-selected="false" tabindex="-1" data-code="setup">Setup</button>
+                <button class="code-tab" type="button" role="tab" id="code-tab-docker" aria-controls="code-panel" aria-selected="false" tabindex="-1" data-code="docker">Docker</button>
+              </div>
+            </div>
+            <div class="code-body mono" role="tabpanel" id="code-panel" aria-labelledby="code-tab-mgmt" tabindex="0"><ol id="code-lines"></ol></div>
+            <div class="code-log">
+              <div class="code-log-head"><span><span class="live-dot" aria-hidden="true"></span><span data-i18n="logTitle">Recent reads</span></span><span class="demo-badge mono" data-i18n="demoBadge">Sample data</span></div>
+              <ul class="code-log-list mono" role="log" aria-live="off" data-feed="reads"></ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="flows">
+          <div class="flow reveal">
+            <p class="flow-label mono" data-i18n="archLabel">Architecture</p>
+            <div class="flow-row">
+              <div class="flow-node"><b>Web UI</b><span>Vanilla JS</span></div>
+              <span class="flow-arrow" aria-hidden="true"><i></i></span>
+              <div class="flow-node"><b>FastAPI</b><span>API Router</span></div>
+              <span class="flow-arrow" aria-hidden="true"><i></i></span>
+              <div class="flow-node"><b>Analysis</b><span>Policy · Traffic · Health</span></div>
+              <span class="flow-arrow" aria-hidden="true"><i></i></span>
+              <div class="flow-node flow-node-accent"><b>Read-only APIs</b><span>Check Point · Gaia</span></div>
+            </div>
+            <p class="flow-note" data-i18n="archNote">Snapshots and reviews stay on this machine as JSON. Nothing is written back to Check Point.</p>
+          </div>
+          <div class="flow reveal">
+            <p class="flow-label mono" data-i18n="labLabel">The ClusterXL lab it was tested on</p>
+            <div class="flow-row">
+              <div class="flow-node"><b>Client</b><span>VLAN 10 / 20</span></div>
+              <span class="flow-arrow" aria-hidden="true"><i></i></span>
+              <div class="flow-node"><b>Internal GW</b><span>Internal-GW01</span></div>
+              <span class="flow-arrow" aria-hidden="true"><i></i></span>
+              <div class="flow-node flow-node-accent"><b>ClusterXL HA</b><span>External-GW01 / GW02</span></div>
+              <span class="flow-arrow" aria-hidden="true"><i></i></span>
+              <div class="flow-node"><b>External</b><span>Internet</span></div>
+            </div>
+            <p class="flow-note" data-i18n="labNote">Simplified path, not full wiring · Management HA and NAT live in the same lab.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Principle quote -->
+    <section class="quote" aria-label="Design principle">
+      <figure class="wrap reveal">
+        <blockquote data-i18n="workflowNote">Insight for humans.<br>Decisions by humans.</blockquote>
+        <figcaption><span class="brand-mark small" aria-hidden="true"><svg viewBox="0 0 44 44" fill="none"><path d="M22 3 38 12v19L22 40 6 31V12L22 3Z" stroke="currentColor" stroke-width="2.6"/><path d="M12 23h8l3-7 4 12 2-5h5" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span data-i18n="quoteCaption">The design principle behind Firewall Insight</span></figcaption>
+      </figure>
+    </section>
+
+    <!-- Source CTA -->
+    <section class="cta" id="source" aria-labelledby="source-title">
+      <div class="cta-floor" aria-hidden="true"></div>
+      <div class="cta-glow" aria-hidden="true"></div>
+      <div class="wrap cta-grid">
+        <div class="cta-copy reveal">
+          <p class="eyebrow" data-i18n="sourceKicker">GO DEEPER</p>
+          <h2 id="source-title" data-i18n="sourceTitle">Curious about<br><em>what is under the hood?</em></h2>
+          <p class="section-lead" data-i18n="sourceDescription">Explore the source code, architecture, setup guide, and full feature details on GitHub. See how Firewall Insight approaches policy understanding.</p>
+          <div class="cta-actions">
+            <a class="btn btn-ink" href="https://github.com/IyolrymtnXmo/firewall-insight" target="_blank" rel="noopener noreferrer"><span data-i18n="sourceButton">Open the GitHub project</span><svg class="ic" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
+            <a class="btn btn-ghost glass" href="#research"><span data-i18n="ctaResearch">See the results</span></a>
+            <button class="btn btn-ghost share-btn" type="button" id="share-btn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg><span id="share-label" data-i18n="shareBtn">Share</span></button>
+          </div>
+          <p class="source-url mono">github.com/IyolrymtnXmo/firewall-insight</p>
+        </div>
+        <a class="qr-card reveal" href="https://github.com/IyolrymtnXmo/firewall-insight" target="_blank" rel="noopener noreferrer" aria-label="Scan QR code or open the Firewall Insight GitHub repository">
+          <span class="qr-label mono">SCAN / EXPLORE</span>
+          <img src="assets/github-qr.svg" data-fallback="assets/qr-fallback.svg" alt="QR code linking to Firewall Insight source code on GitHub" width="220" height="220" loading="lazy">
+          <span class="qr-bottom"><span data-i18n="qrCaption">Scan for the source code</span><svg class="ic" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span>
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="#top" aria-label="Firewall Insight home"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 44 44" fill="none"><path d="M22 3 38 12v19L22 40 6 31V12L22 3Z" stroke="currentColor" stroke-width="2.4"/><path d="M12 23h8l3-7 4 12 2-5h5" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="brand-name">Firewall <b>Insight</b></span></a>
+        <p data-i18n="footerNote">Read to understand · Analyze to review · People decide</p>
+        <span class="status-pill"><span class="proof-dot" aria-hidden="true"></span>Read-only · Management API</span>
+      </div>
+      <div class="footer-cols">
+        <div><p class="footer-h" data-i18n="footProduct">Product</p><a href="#overview" data-i18n="navOverview">Overview</a><a href="#capabilities" data-i18n="navCapabilities">Capabilities</a><a href="#explore" data-i18n="navExplore">Product</a><a href="#workflow" data-i18n="navWorkflow">How it works</a><a href="demo/" data-i18n="navDemo">Live demo</a></div>
+        <div><p class="footer-h" data-i18n="footResources">Resources</p><a href="https://github.com/IyolrymtnXmo/firewall-insight#safety-model" target="_blank" rel="noopener noreferrer" data-i18n="footSafety">Safety model</a><a href="https://github.com/IyolrymtnXmo/firewall-insight#setup" target="_blank" rel="noopener noreferrer" data-i18n="footSetup">Setup</a><a href="https://github.com/IyolrymtnXmo/firewall-insight#known-limitations" target="_blank" rel="noopener noreferrer" data-i18n="footLimits">Known limitations</a><a href="https://github.com/IyolrymtnXmo/firewall-insight" target="_blank" rel="noopener noreferrer">GitHub</a></div>
+        <div><p class="footer-h" data-i18n="footResearch">Research</p><a href="#research" data-i18n="footPaper">Evaluation</a><a href="#workflow" data-i18n="archLabel">Architecture</a><a href="#top" data-i18n="backTop">Back to top ↑</a></div>
+      </div>
+    </div>
+    <div class="wrap copyright"><span>© 2026 FIREWALL INSIGHT</span><span data-i18n="copyrightNote">Independent project · Check Point is a trademark of its respective owner.</span></div>
+  </footer>
+
+  <a class="to-top glass" href="#top" aria-label="Back to top">
+    <svg class="ring" viewBox="0 0 48 48" aria-hidden="true"><circle class="ring-track" cx="24" cy="24" r="22"/><circle class="ring-fill" cx="24" cy="24" r="22" pathLength="100"/></svg>
+    <svg class="ic" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+  </a>
+
+  <dialog class="lightbox" id="lightbox" aria-labelledby="lightbox-title">
+    <div class="lightbox-bar"><span class="mono" id="lightbox-title">ANALYZE</span><button class="lightbox-close" type="button" aria-label="Close"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+    <div class="lightbox-scroll"><img id="lightbox-img" src="assets/analyze.jpg" alt="" width="1536" height="711"></div>
+    <p class="lightbox-hint" data-i18n="lightboxHint">Swipe sideways to see the whole screen</p>
+  </dialog>
+</body>
+</html>

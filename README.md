@@ -1,8 +1,45 @@
-# Firewall Insight
+<!--
+  Website: https://iyolrymtnxmo.github.io/firewall-insight/
+  If GitHub Pages gives this repository a different address (a custom domain,
+  or a renamed repository), replace that address everywhere in this file.
+-->
 
-Read-only analysis and visualisation layer for Check Point Security Management.
+<a href="https://iyolrymtnxmo.github.io/firewall-insight/">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/readme/banner-dark.png">
+    <img alt="Firewall Insight: see every rule, understand the risk. Read-only analysis for Check Point Security Management." src="docs/readme/banner-light.png" width="100%">
+  </picture>
+</a>
 
-Firewall Insight connects to a Check Point Management Server over the Management API,
+<p align="center">
+  <a href="https://iyolrymtnxmo.github.io/firewall-insight/"><img alt="Open the website" src="https://img.shields.io/badge/Website-Open-1d63c7?style=for-the-badge&logo=githubpages&logoColor=white"></a>
+  <a href="https://iyolrymtnxmo.github.io/firewall-insight/demo/"><img alt="Try the live demo" src="https://img.shields.io/badge/Live_demo-Try_it-0b7a6e?style=for-the-badge&logo=googlechrome&logoColor=white"></a>
+  <a href="#setup"><img alt="Run it yourself" src="https://img.shields.io/badge/Run_it-Setup-0b1b2b?style=for-the-badge&logo=docker&logoColor=white"></a>
+</p>
+
+<p align="center">
+  <img alt="Version 4.43.1" src="https://img.shields.io/badge/version-4.43.1-0b1b2b?style=flat-square">
+  <img alt="Check Point R82" src="https://img.shields.io/badge/Check_Point-R82-475569?style=flat-square">
+  <img alt="Python 3.12" src="https://img.shields.io/badge/Python-3.12-3776ab?style=flat-square&logo=python&logoColor=white">
+  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.116-009688?style=flat-square&logo=fastapi&logoColor=white">
+  <img alt="Read-only: show-* calls only" src="https://img.shields.io/badge/read--only-show--*_calls_only-16a34a?style=flat-square">
+  <a href="https://github.com/IyolrymtnXmo/firewall-insight/actions/workflows/deploy-website.yml"><img alt="Website deployment status" src="https://github.com/IyolrymtnXmo/firewall-insight/actions/workflows/deploy-website.yml/badge.svg"></a>
+</p>
+
+<p align="center">
+  <a href="https://iyolrymtnxmo.github.io/firewall-insight/"><b>Website</b></a> &nbsp;·&nbsp;
+  <a href="https://iyolrymtnxmo.github.io/firewall-insight/demo/"><b>Live demo</b></a> &nbsp;·&nbsp;
+  <a href="#features">Features</a> &nbsp;·&nbsp;
+  <a href="#setup">Setup</a> &nbsp;·&nbsp;
+  <a href="#safety-model">Safety model</a> &nbsp;·&nbsp;
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
+
+---
+
+**Firewall Insight** is a read-only analysis and visualisation layer for Check Point Security Management.
+
+It connects to a Check Point Management Server over the Management API,
 retrieves Access Control and NAT policy, and presents an analytical view that
 SmartConsole does not provide out of the box: shadowed and duplicate rules, overly broad
 rules, Inline Layer hierarchy, a configuration-based traffic-path simulator, a topology
@@ -13,6 +50,46 @@ asked in Thai or English.
 
 **It is not a SmartConsole replacement, and it never modifies policy.**
 
+> [!TIP]
+> **Look around without a firewall.** The [live demo](https://iyolrymtnxmo.github.io/firewall-insight/demo/) is the real interface running in your browser on the External-FW lab policy, with its addresses changed. Trace a flow, ask a question in Thai or English, run a compliance profile, compare two snapshots or open a review PDF. Nothing is sent anywhere.
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="https://iyolrymtnxmo.github.io/firewall-insight/demo/"><img alt="Dashboard: total hits over time, where the hits are, and a policy health score of 95" src="docs/readme/demo-dashboard.jpg"></a>
+      <p align="center"><sub><b>Dashboard</b> · hits, health score and findings from one read</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="https://iyolrymtnxmo.github.io/firewall-insight/demo/"><img alt="Traffic Path: a flow over RDP reported as UNVERIFIED because rule 7 uses a service with no static model" src="docs/readme/demo-trace.jpg"></a>
+      <p align="center"><sub><b>Traffic Path</b> · UNVERIFIED rather than a confident wrong answer</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="https://iyolrymtnxmo.github.io/firewall-insight/demo/"><img alt="Compliance: a house profile with 6 checks, 4 failed and 0 unverifiable, each with the offending rules" src="docs/readme/demo-compliance.jpg"></a>
+      <p align="center"><sub><b>Compliance</b> · profiles you own; every check cited or labelled a house rule</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="https://iyolrymtnxmo.github.io/firewall-insight/demo/"><img alt="The demo on a phone: guide, rulebase cards, trace result and network map" src="docs/readme/demo-mobile.jpg"></a>
+      <p align="center"><sub><b>On a phone</b> · the demo has its own phone layout</sub></p>
+    </td>
+  </tr>
+</table>
+
+<details>
+<summary><b>ภาษาไทย</b></summary>
+
+**Firewall Insight** คือเครื่องมือวิเคราะห์ policy ของ Check Point แบบอ่านอย่างเดียว อ่านข้อมูลผ่าน Management API แล้วแสดงสิ่งที่ SmartConsole ไม่ได้บอกตรง ๆ เช่น rule ที่ถูกบังหรือซ้ำซ้อน rule ที่กว้างเกินไป เส้นทางของทราฟฟิกผ่าน Inline Layer แผนที่เครือข่าย การตรวจ compliance การเปรียบเทียบ snapshot สุขภาพของ gateway และการถามเรื่องทราฟฟิกเป็นภาษาไทยหรืออังกฤษ
+
+ระบบไม่เคยแก้ไข policy เมื่อข้อมูลไม่พอจะตัดสิน จะตอบว่า **UNVERIFIED** แทนการเดา
+
+- เว็บไซต์: <https://iyolrymtnxmo.github.io/firewall-insight/>
+- เดโมให้ลองกดเอง (ทำงานในเบราว์เซอร์ ใช้ข้อมูลตัวอย่างจากแล็บ): <https://iyolrymtnxmo.github.io/firewall-insight/demo/>
+- ติดตั้งใช้งานจริง: ดูหัวข้อ [Setup](#setup)
+
+</details>
+
+The product website and its interactive demo are built from [`website/`](website/), which also explains how they are deployed to GitHub Pages.
 The current version is in [`app/version.py`](app/version.py) and reported by `GET /health`.
 Release history is in [CHANGELOG.md](CHANGELOG.md).
 
